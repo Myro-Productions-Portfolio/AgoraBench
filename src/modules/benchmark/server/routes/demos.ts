@@ -1223,7 +1223,7 @@ router.post('/demos/export', async (req, res, next) => {
     next(error);
   } finally {
     if (tmpDir) {
-      rm(tmpDir, { recursive: true }).catch(() => {});
+      rm(tmpDir, { recursive: true }).catch((err) => { console.warn('[DEMOS] Temp dir cleanup failed:', err instanceof Error ? err.message : err); });
     }
   }
 });

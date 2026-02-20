@@ -12,7 +12,7 @@ function maskKey(encrypted: string): string {
   try {
     const decrypted = decryptText(encrypted);
     return decrypted.length > 8 ? `...${decrypted.slice(-4)}` : '****';
-  } catch { return '****'; }
+  } catch (err) { console.warn('[PROFILE] Key decryption failed:', err instanceof Error ? err.message : err); return '****'; }
 }
 
 /* GET /api/profile/me */

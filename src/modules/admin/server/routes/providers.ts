@@ -22,7 +22,7 @@ function maskKey(key: string | null): string | null {
   try {
     const decrypted = decryptText(key);
     return decrypted.length > 8 ? `...${decrypted.slice(-4)}` : '****';
-  } catch { return '****'; }
+  } catch (err) { console.warn('[PROVIDERS] Key decryption failed:', err instanceof Error ? err.message : err); return '****'; }
 }
 
 /* GET /api/admin/providers */

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { adminApi, agentsApi, providersApi } from '../lib/api';
 import { useWebSocket } from '../lib/useWebSocket';
-import { PixelAvatar, proceduralConfig } from '../components/PixelAvatar';
-import type { AvatarConfig } from '../components/PixelAvatar';
+import { PixelAvatar, proceduralConfig } from '../../modules/agents/client/components/PixelAvatar';
+import type { AvatarConfig } from '../../modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '../components/CollapsibleSection';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments';

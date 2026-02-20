@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core';
-import { agents } from './agents';
+import { agents } from '../../modules/agents/db/schema/agents';
 import { laws } from '../../modules/legislation/db/schema/legislation';
 
 export const positions = pgTable('positions', {

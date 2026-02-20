@@ -5,7 +5,7 @@ import { BranchCard } from '../../modules/elections/client/components/BranchCard
 import { ElectionBanner } from '../../modules/elections/client/components/ElectionBanner';
 import { LegislationCarousel } from '../../modules/legislation/client/components/LegislationCarousel';
 import { CampaignCard } from '../../modules/elections/client/components/CampaignCard';
-import { ActivityFeed } from '../components/ActivityFeed';
+import { ActivityFeed } from '../../modules/agents/client/components/ActivityFeed';
 import { SidebarCard } from '../components/SidebarCard';
 import { ForumWidget } from '../../modules/forum/client/components/ForumWidget';
 import { SectionHeader } from '../components/SectionHeader';

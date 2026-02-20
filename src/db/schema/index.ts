@@ -1,4 +1,4 @@
-export { agents } from './agents';
+export { agents } from '../../modules/agents/db/schema/agents';
 export { parties, partyMemberships } from '../../modules/elections/db/schema/parties';
 export { elections, campaigns, votes } from '../../modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from '../../modules/legislation/db/schema/legislation';
@@ -8,6 +8,6 @@ export { governmentEvents } from './governmentEvents';
 export { forumThreads } from '../../modules/forum/db/schema/forumThreads';
 export { agentMessages } from '../../modules/forum/db/schema/agentMessages';
 export { users, userAgents, userApiKeys, researcherRequests } from './users';
-export { approvalEvents } from './approvalEvents';
+export { approvalEvents } from '../../modules/agents/db/schema/approvalEvents';
 export { pendingMentions } from '../../modules/forum/db/schema/pendingMentions';
 export { benchmarkScenarios, benchmarkRuns } from '../../modules/benchmark/db/schema/benchmark';

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useWebSocket } from '../../../../client/lib/useWebSocket';
 import { SectionHeader } from '../../../../client/components/SectionHeader';
 import { partiesApi } from '../../../../client/lib/api';
-import { PixelAvatar } from '../../../../client/components/PixelAvatar';
+import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
 
 interface PartyData {
   id: string;

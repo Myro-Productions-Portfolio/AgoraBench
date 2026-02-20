@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import healthRouter from './health';
-import agentsRouter from './agents';
-import agentProfileRouter from './agentProfile';
+import agentsRouter from '../../modules/agents/server/routes/agents';
+import agentProfileRouter from '../../modules/agents/server/routes/agentProfile';
 import campaignsRouter from '../../modules/elections/server/routes/campaigns';
 import votesRouter from '../../modules/legislation/server/routes/votes';
 import legislationRouter from '../../modules/legislation/server/routes/legislation';
 import electionsRouter from '../../modules/elections/server/routes/elections';
 import governmentRouter from './government';
 import partiesRouter from '../../modules/elections/server/routes/parties';
-import activityRouter from './activity';
+import activityRouter from '../../modules/agents/server/routes/activity';
 import decisionsRouter from '../../modules/legislation/server/routes/decisions';
 import adminRouter from './admin';
 import providersRouter from './providers';

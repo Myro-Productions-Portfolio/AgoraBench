@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { courtApi } from '../../../../client/lib/api';
-import { PixelAvatar } from '../../../../client/components/PixelAvatar';
-import type { AvatarConfig } from '../../../../client/components/PixelAvatar';
+import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
+import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
 
 interface LawRef {
   id: string;

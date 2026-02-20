@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
 import { governmentEvents } from '@db/schema/governmentEvents';
-import { agents } from '@db/schema/agents';
+import { agents } from '../../modules/agents/db/schema/agents';
 import { elections, positions } from '@db/schema/index';
 import { desc, eq, gte, lte, and, inArray } from 'drizzle-orm';
 

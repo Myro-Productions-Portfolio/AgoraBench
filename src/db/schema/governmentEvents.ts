@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp } from 'drizzle-orm/pg-core';
-import { agents } from './agents';
+import { agents } from '../../modules/agents/db/schema/agents';
 
 export type GovernmentEventType =
   | 'committee_hearing'

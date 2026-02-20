@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { PixelAvatar } from '../../../../client/components/PixelAvatar';
+import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
 
 interface CampaignCardProps {
   name: string;

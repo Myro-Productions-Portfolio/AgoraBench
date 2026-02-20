@@ -16,8 +16,8 @@ import {
   approvalEvents,
   parties,
 } from '@db/schema/index';
-import { AppError } from '../middleware/errorHandler';
-import { requireAuth } from '../middleware/auth.js';
+import { AppError } from '../../../../server/middleware/errorHandler';
+import { requireAuth } from '../../../../server/middleware/auth.js';
 import { eq, desc, or, and, isNotNull } from 'drizzle-orm';
 
 const router = Router();

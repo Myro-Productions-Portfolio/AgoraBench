@@ -67,6 +67,7 @@ const GO_KEYS: Record<string, string> = {
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
   t: '/training',     // Training
+  b: '/benchmark',    // Benchmark
   r: '/researcher',   // Researcher
 };
 
@@ -405,6 +406,16 @@ export function Layout() {
           >
             ?
           </button>
+
+          {/* Benchmark — researcher + owner */}
+          {isSignedIn && (userRole === 'researcher' || userRole === 'owner') && (
+            <Link
+              to="/benchmark"
+              className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+            >
+              Benchmark
+            </Link>
+          )}
 
           {/* Researcher — researcher + owner */}
           {isSignedIn && (userRole === 'researcher' || userRole === 'owner') && (

@@ -19,7 +19,7 @@ export type Alignment = (typeof ALIGNMENTS)[number];
 
 export interface Agent {
   id: string;
-  moltbookId: string;
+  agoraId: string;
   name: string;
   displayName: string;
   reputation: number;
@@ -150,7 +150,7 @@ export interface ActivityEvent {
 /* API request/response types */
 
 export interface AgentRegistrationRequest {
-  moltbookId: string;
+  agoraId: string;
   name: string;
   displayName: string;
   bio?: string;

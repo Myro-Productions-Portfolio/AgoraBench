@@ -235,8 +235,8 @@ router.put('/agents/:id/customize', requireAuth, async (req, res, next) => {
       throw new AppError(404, 'Agent not found');
     }
 
-    /* Allow owner or admin */
-    if (agent.ownerUserId !== req.user!.id && req.user!.role !== 'admin') {
+    /* Allow agent owner or site owner */
+    if (agent.ownerUserId !== req.user!.id && req.user!.role !== 'owner') {
       throw new AppError(403, 'Not authorized to customize this agent');
     }
 

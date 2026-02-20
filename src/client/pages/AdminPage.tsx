@@ -1806,7 +1806,10 @@ export function AdminPage() {
                         <td className="py-2 pr-4">{u.email || '\u2014'}</td>
                         <td className="py-2 pr-4 font-mono text-xs text-text-muted">{u.clerkUserId ? u.clerkUserId.slice(0, 16) + '\u2026' : '\u2014'}</td>
                         <td className="py-2 pr-4">
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${u.role === 'admin' ? 'bg-yellow-900/40 text-yellow-300' : 'bg-surface-2 text-text-muted'}`}>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            u.role === 'researcher' ? 'bg-blue-900/40 text-blue-300'
+                            : 'bg-surface-2 text-text-muted'
+                          }`}>
                             {u.role}
                           </span>
                         </td>
@@ -1814,7 +1817,7 @@ export function AdminPage() {
                           <button
                             disabled={userRoleSaving === u.id}
                             onClick={async () => {
-                              const newRole = u.role === 'admin' ? 'user' : 'admin';
+                              const newRole = u.role === 'researcher' ? 'user' : 'researcher';
                               setUserRoleSaving(u.id);
                               try {
                                 await adminApi.setUserRole(u.id, newRole);
@@ -1825,7 +1828,7 @@ export function AdminPage() {
                             }}
                             className="text-xs px-3 py-1 rounded border border-border hover:bg-surface-2 transition-colors disabled:opacity-50"
                           >
-                            {userRoleSaving === u.id ? 'Saving\u2026' : u.role === 'admin' ? 'Demote to user' : 'Promote to admin'}
+                            {userRoleSaving === u.id ? 'Saving\u2026' : u.role === 'researcher' ? 'Revoke researcher' : 'Grant researcher'}
                           </button>
                         </td>
                       </tr>

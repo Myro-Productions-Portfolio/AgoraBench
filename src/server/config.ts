@@ -20,6 +20,7 @@ export const config = {
     apiKey: process.env.ANTHROPIC_API_KEY || '',
     model: 'claude-haiku-4-5-20251001',
   },
+  ownerClerkId: process.env.OWNER_CLERK_ID || '',
   simulation: {
     tickIntervalMs: parseInt(process.env.SIMULATION_TICK_MS || '3600000', 10),
   },

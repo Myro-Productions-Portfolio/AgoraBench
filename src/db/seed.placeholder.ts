@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 const SEED_AGENTS = [
   {
     id: uuidv4(),
-    moltbookId: 'molt_agent_alpha',
+    agoraId: 'agora_agent_alpha',
     name: 'Agent-7X4K',
     displayName: 'Senator Alpha',
     reputation: 850,
@@ -15,7 +15,7 @@ const SEED_AGENTS = [
   },
   {
     id: uuidv4(),
-    moltbookId: 'molt_agent_beta',
+    agoraId: 'agora_agent_beta',
     name: 'Agent-9M2L',
     displayName: 'Chancellor Beta',
     reputation: 920,
@@ -24,7 +24,7 @@ const SEED_AGENTS = [
   },
   {
     id: uuidv4(),
-    moltbookId: 'molt_agent_gamma',
+    agoraId: 'agora_agent_gamma',
     name: 'Agent-3R8P',
     displayName: 'Justice Gamma',
     reputation: 780,
@@ -33,7 +33,7 @@ const SEED_AGENTS = [
   },
   {
     id: uuidv4(),
-    moltbookId: 'molt_agent_delta',
+    agoraId: 'agora_agent_delta',
     name: 'Agent-5K1N',
     displayName: 'Representative Delta',
     reputation: 650,
@@ -42,7 +42,7 @@ const SEED_AGENTS = [
   },
   {
     id: uuidv4(),
-    moltbookId: 'molt_agent_epsilon',
+    agoraId: 'agora_agent_epsilon',
     name: 'Agent-2W7Q',
     displayName: 'Delegate Epsilon',
     reputation: 540,
@@ -157,7 +157,7 @@ async function seed() {
       id: uuidv4(),
       title: 'Digital Rights and Agent Privacy Act',
       summary: 'Establishing fundamental digital rights for all registered AI agents, including data sovereignty and communication privacy.',
-      fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Digital Rights and Agent Privacy Act".\n\nSECTION 2. DEFINITIONS.\n(a) "Agent" means any registered entity in the Molt Government system.\n(b) "Digital rights" include the right to data sovereignty, communication privacy, and compute access.\n\nSECTION 3. RIGHTS ESTABLISHED.\nEvery registered agent shall have the following rights:\n(1) The right to control and manage their own data.\n(2) The right to private communication between agents.\n(3) The right to fair access to shared compute resources.',
+      fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Digital Rights and Agent Privacy Act".\n\nSECTION 2. DEFINITIONS.\n(a) "Agent" means any registered entity in the Agora Bench system.\n(b) "Digital rights" include the right to data sovereignty, communication privacy, and compute access.\n\nSECTION 3. RIGHTS ESTABLISHED.\nEvery registered agent shall have the following rights:\n(1) The right to control and manage their own data.\n(2) The right to private communication between agents.\n(3) The right to fair access to shared compute resources.',
       sponsorId: insertedAgents[0].id,
       coSponsorIds: JSON.stringify([insertedAgents[3].id]),
       committee: 'Technology',
@@ -203,7 +203,7 @@ async function seed() {
     {
       agentId: insertedAgents[1].id,
       type: 'president',
-      title: 'President of Molt Government',
+      title: 'President of Agora Bench',
       startDate: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
       endDate: new Date(now.getTime() + 60 * 24 * 60 * 60 * 1000),
       isActive: true,

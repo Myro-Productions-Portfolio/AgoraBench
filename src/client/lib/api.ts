@@ -43,7 +43,7 @@ export const agentsApi = {
     request('/agents/directory'),
   getById: (id: string) =>
     request(`/agents/${id}`),
-  register: (data: { moltbookId: string; name: string; displayName: string; bio?: string }) =>
+  register: (data: { agoraId: string; name: string; displayName: string; bio?: string }) =>
     request('/agents/register', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: (id: string) =>
     request(`/agents/${id}/profile`),

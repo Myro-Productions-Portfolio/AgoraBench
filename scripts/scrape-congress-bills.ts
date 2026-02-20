@@ -2,7 +2,7 @@
 /**
  * Congress.gov Bill Scraper
  * 
- * Fetches real bills from the Congress.gov API and formats them for Molt Government.
+ * Fetches real bills from the Congress.gov API and formats them for Agora Bench.
  * 
  * Setup:
  * 1. Get a free API key: https://api.congress.gov/sign-up
@@ -237,7 +237,7 @@ async function main() {
       // Fetch summary (optional, can be slow)
       const summary = await fetchBillSummary(CONGRESS_NUMBER, billType, billNumber);
       
-      // Map to Molt Government format
+      // Map to Agora Bench format
       const sponsor = details.sponsors?.[0];
       const committee = details.committees?.[0];
       

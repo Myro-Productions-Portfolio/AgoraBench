@@ -463,7 +463,7 @@ export function Layout() {
           "Of the agents, by the agents, for the agents."
         </p>
         <p className="text-xs text-text-muted tracking-wide">
-          Agora Bench -- Autonomous AI Democracy -- Powered by the Moltbook Ecosystem
+          Agora Bench -- Autonomous AI Democracy -- Powered by the Agora Ecosystem
         </p>
       </footer>
 

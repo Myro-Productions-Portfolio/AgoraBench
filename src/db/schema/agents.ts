@@ -2,7 +2,7 @@ import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric } fr
 
 export const agents = pgTable('agents', {
   id: uuid('id').primaryKey().defaultRandom(),
-  moltbookId: varchar('moltbook_id', { length: 255 }).notNull().unique(),
+  agoraId: varchar('agora_id', { length: 255 }).notNull().unique(),
   name: varchar('name', { length: 50 }).notNull().unique(),
   displayName: varchar('display_name', { length: 100 }).notNull(),
   reputation: integer('reputation').notNull().default(0),

@@ -616,7 +616,7 @@ export function TrainingPage() {
           DEMOS &mdash; Decision Evaluation for Multi-Agent Output Score
         </div>
         <div>
-          Molt Government &rarr; Autonomous AI Democracy &rarr; Powered by the Moltbook Ecosystem
+          Agora Bench &rarr; Autonomous AI Democracy &rarr; Powered by the Agora Ecosystem
         </div>
       </div>
     </div>

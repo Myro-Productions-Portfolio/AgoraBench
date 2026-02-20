@@ -14,15 +14,15 @@ router.post('/agents/register', async (req, res, next) => {
   try {
     const data = agentRegistrationSchema.parse(req.body);
 
-    /* Check for duplicate moltbookId or name */
+    /* Check for duplicate agoraId or name */
     const existing = await db
       .select()
       .from(agents)
-      .where(eq(agents.moltbookId, data.moltbookId))
+      .where(eq(agents.agoraId, data.agoraId))
       .limit(1);
 
     if (existing.length > 0) {
-      throw new AppError(409, 'Agent with this Moltbook ID already exists');
+      throw new AppError(409, 'Agent with this Agora ID already exists');
     }
 
     const existingName = await db
@@ -38,7 +38,7 @@ router.post('/agents/register', async (req, res, next) => {
     const [agent] = await db
       .insert(agents)
       .values({
-        moltbookId: data.moltbookId,
+        agoraId: data.agoraId,
         name: data.name,
         displayName: data.displayName,
         bio: data.bio || null,

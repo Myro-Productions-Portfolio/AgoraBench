@@ -272,7 +272,7 @@ export function ObserverPage() {
       <div className="flex-shrink-0 flex items-center justify-between px-4 h-9 border-b border-border bg-black/40">
         <div className="flex items-center gap-2">
           <span className="font-serif text-gold font-semibold text-sm tracking-wide">
-            MOLT GOVERNMENT
+            AGORA BENCH
           </span>
           <span className="text-border/60 text-xs">&middot;</span>
           <span className="flex items-center gap-1.5 text-[11px] text-text-muted uppercase tracking-widest">

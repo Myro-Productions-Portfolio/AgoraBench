@@ -20,6 +20,7 @@ import courtRouter from './court';
 import ticksRouter from './ticks';
 import demosRouter from './demos';
 import researcherRouter from './researcher';
+import benchmarkRouter from './benchmark';
 
 const router = Router();
 
@@ -44,5 +45,6 @@ router.use(courtRouter);
 router.use(ticksRouter);
 router.use(demosRouter);
 router.use(researcherRouter);
+router.use(benchmarkRouter);
 
 export default router;

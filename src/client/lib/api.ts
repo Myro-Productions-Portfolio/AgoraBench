@@ -9,13 +9,26 @@ export function setTokenProvider(fn: () => Promise<string | null>): void {
   _tokenProvider = fn;
 }
 
+async function getTokenWithTimeout(ms = 2000): Promise<string | null> {
+  if (!_tokenProvider) return null;
+  try {
+    const result = await Promise.race([
+      _tokenProvider(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(
   endpoint: string,
   options?: RequestInit,
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE}${endpoint}`;
 
-  const token = _tokenProvider ? await _tokenProvider() : null;
+  const token = await getTokenWithTimeout();
 
   const response = await fetch(url, {
     headers: {

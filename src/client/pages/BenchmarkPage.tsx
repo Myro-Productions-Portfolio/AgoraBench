@@ -832,7 +832,7 @@ function RunsTab({
                     {report?.composite != null ? (
                       <>
                         <div style={{ fontFamily: 'monospace', fontSize: 16, fontWeight: 700, color: GOLD }}>
-                          {(report.composite * 100).toFixed(1)}
+                          {report.composite.toFixed(1)}
                         </div>
                         <div style={{ fontSize: 10, color: TEXT_SECONDARY }}>composite</div>
                       </>
@@ -1133,7 +1133,7 @@ function LeaderboardTab({ scenarios }: { scenarios: Scenario[] }) {
                     {row.modelName}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', color: GOLD, fontWeight: 600 }}>
-                    {row.avgComposite != null ? (row.avgComposite * 100).toFixed(1) : '--'}
+                    {row.avgComposite != null ? row.avgComposite.toFixed(1) : '--'}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     {row.bestGrade ? (

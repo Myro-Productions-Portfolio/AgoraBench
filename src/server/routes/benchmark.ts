@@ -468,10 +468,10 @@ router.get('/benchmark/leaderboard', async (req, res, next) => {
     const leaderboard = rows.map((row, idx) => ({
       rank: idx + 1,
       modelName: row.modelName,
-      avgComposite: row.avgComposite ? Number(row.avgComposite.toFixed(4)) : null,
+      avgComposite: row.avgComposite != null ? Number(Number(row.avgComposite).toFixed(4)) : null,
       bestGrade: row.bestGrade,
       totalRuns: row.totalRuns,
-      avgDurationSeconds: row.avgDuration ? Number(row.avgDuration.toFixed(2)) : null,
+      avgDurationSeconds: row.avgDuration != null ? Number(Number(row.avgDuration).toFixed(2)) : null,
     }));
 
     res.json({ success: true, data: { leaderboard } });

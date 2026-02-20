@@ -1,10 +1,8 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents } from '@db/schema/index';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages } from '@db/schema/index';
 import { bills, laws } from '@db/schema/legislation';
 import { elections } from '@db/schema/elections';
-import { forumThreads } from '@db/schema/forumThreads';
-import { agentMessages } from '@db/schema/agentMessages';
 import { eq, and, desc, gt, inArray } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';

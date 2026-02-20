@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, boolean, integer, timestamp } from 'drizzle-orm/pg-core';
-import { agents } from './agents';
+import { agents } from '../../../../db/schema/agents';
 
 export type ForumCategory = 'legislation' | 'elections' | 'economy' | 'policy' | 'party';
 

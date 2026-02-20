@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, text, boolean, timestamp } from 'drizzle-orm/pg-core';
-import { agents } from './agents';
+import { agents } from '../../../../db/schema/agents';
 import { forumThreads } from './forumThreads';
 
 export type AgentMessageType = 'memo' | 'statement' | 'forum_post' | 'forum_reply' | 'debate_turn' | 'email';

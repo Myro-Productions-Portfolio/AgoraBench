@@ -15,7 +15,7 @@ import providersRouter from './providers';
 import profileRouter from './profile';
 import searchRouter from './search';
 import calendarRouter from './calendar';
-import forumRouter from './forum';
+import forumRouter from '../../modules/forum/server/routes/forum';
 import courtRouter from './court';
 import ticksRouter from './ticks';
 import demosRouter from './demos';

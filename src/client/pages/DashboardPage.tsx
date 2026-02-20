@@ -7,7 +7,7 @@ import { LegislationCarousel } from '../components/LegislationCarousel';
 import { CampaignCard } from '../components/CampaignCard';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { SidebarCard } from '../components/SidebarCard';
-import { ForumWidget } from '../components/ForumWidget';
+import { ForumWidget } from '../../modules/forum/client/components/ForumWidget';
 import { SectionHeader } from '../components/SectionHeader';
 import { governmentApi, legislationApi, campaignsApi, activityApi, calendarApi, agentsApi } from '../lib/api';
 import type { GovernmentOverview, ActivityEvent } from '@shared/types';

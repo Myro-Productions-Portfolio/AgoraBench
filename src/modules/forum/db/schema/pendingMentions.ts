@@ -1,5 +1,5 @@
 import { pgTable, uuid, varchar, timestamp } from 'drizzle-orm/pg-core';
-import { agents } from './agents';
+import { agents } from '../../../../db/schema/agents';
 import { forumThreads } from './forumThreads';
 
 export const pendingMentions = pgTable('pending_mentions', {

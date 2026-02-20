@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { forumApi } from '../lib/api';
-import { useWebSocket } from '../lib/useWebSocket';
+import { forumApi } from '../../../../client/lib/api';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
 
 interface ForumThread {
   id: string;

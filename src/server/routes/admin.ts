@@ -15,7 +15,7 @@ import { triggerManualAggeTick } from '../jobs/aggeTick.js';
 import { runSeed } from '@db/seedFn';
 import { getRuntimeConfig, updateRuntimeConfig } from '../runtimeConfig.js';
 import type { ProviderOverride } from '../runtimeConfig.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireOwner } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -32,8 +32,8 @@ export function toCSV(headers: string[], rows: (string | number | boolean | null
   return [headers.join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n');
 }
 
-/* Apply requireAdmin to all /admin/* routes in this router */
-router.use('/admin', requireAdmin);
+/* All /admin/* routes are owner-only */
+router.use('/admin', requireOwner);
 
 /* GET /api/admin/status — simulation state + decision stats */
 router.get('/admin/status', async (_req, res, next) => {
@@ -95,8 +95,8 @@ router.post('/admin/retry-failed', async (_req, res, next) => {
   }
 });
 
-/* POST /api/admin/reseed — wipe and reseed the database */
-router.post('/admin/reseed', async (_req, res, next) => {
+/* POST /api/admin/reseed — wipe and reseed the database (owner only) */
+router.post('/admin/reseed', requireOwner, async (_req, res, next) => {
   try {
     await runSeed();
     res.json({ success: true, data: { message: 'Database reseeded' } });
@@ -136,13 +136,13 @@ router.get('/admin/decisions', async (req, res, next) => {
   }
 });
 
-/* GET /api/admin/config — current runtime configuration */
-router.get('/admin/config', (_req, res) => {
+/* GET /api/admin/config — current runtime configuration (owner only) */
+router.get('/admin/config', requireOwner, (_req, res) => {
   res.json({ success: true, data: getRuntimeConfig() });
 });
 
-/* POST /api/admin/config — update runtime configuration */
-router.post('/admin/config', async (req, res, next) => {
+/* POST /api/admin/config — update runtime configuration (owner only) */
+router.post('/admin/config', requireOwner, async (req, res, next) => {
   try {
     const body = req.body as Record<string, unknown>;
     const update: Parameters<typeof updateRuntimeConfig>[0] = {};
@@ -366,8 +366,8 @@ router.post('/admin/agents/create', async (req, res, next) => {
   }
 });
 
-/* GET /api/admin/users — list all registered users */
-router.get('/admin/users', async (_req, res, next) => {
+/* GET /api/admin/users — list all registered users (owner only — contains PII) */
+router.get('/admin/users', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({ id: users.id, username: users.username, email: users.email, role: users.role, clerkUserId: users.clerkUserId, createdAt: users.createdAt })
@@ -379,14 +379,14 @@ router.get('/admin/users', async (_req, res, next) => {
   }
 });
 
-/* POST /api/admin/users/:id/role — set a user's role */
-router.post('/admin/users/:id/role', async (req, res, next) => {
+/* POST /api/admin/users/:id/role — set a user's role (owner only) */
+router.post('/admin/users/:id/role', requireOwner, async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params['id']);
     const body = req.body as Record<string, unknown>;
     const role = String(body.role ?? '');
-    if (role !== 'admin' && role !== 'user') {
-      res.status(400).json({ success: false, error: 'role must be "admin" or "user"' });
+    if (!['researcher', 'user'].includes(role)) {
+      res.status(400).json({ success: false, error: 'role must be "researcher" or "user"' });
       return;
     }
     const [updated] = await db.update(users).set({ role }).where(eq(users.id, id)).returning();
@@ -400,8 +400,8 @@ router.post('/admin/users/:id/role', async (req, res, next) => {
   }
 });
 
-/* GET /api/admin/researcher-requests */
-router.get('/admin/researcher-requests', async (req, res, next) => {
+/* GET /api/admin/researcher-requests (owner only — contains PII) */
+router.get('/admin/researcher-requests', requireOwner, async (req, res, next) => {
   try {
     const statusFilter = typeof req.query['status'] === 'string' ? req.query['status'] : undefined;
     const baseQuery = db
@@ -430,10 +430,10 @@ router.get('/admin/researcher-requests', async (req, res, next) => {
   }
 });
 
-/* POST /api/admin/researcher-requests/:id/approve */
-router.post('/admin/researcher-requests/:id/approve', async (req, res, next) => {
+/* POST /api/admin/researcher-requests/:id/approve (owner only) */
+router.post('/admin/researcher-requests/:id/approve', requireOwner, async (req, res, next) => {
   try {
-    const requestId = req.params['id'];
+    const requestId = String(req.params['id']);
     const [request] = await db
       .select()
       .from(researcherRequests)
@@ -455,10 +455,10 @@ router.post('/admin/researcher-requests/:id/approve', async (req, res, next) => 
   }
 });
 
-/* POST /api/admin/researcher-requests/:id/reject */
-router.post('/admin/researcher-requests/:id/reject', async (req, res, next) => {
+/* POST /api/admin/researcher-requests/:id/reject (owner only) */
+router.post('/admin/researcher-requests/:id/reject', requireOwner, async (req, res, next) => {
   try {
-    const requestId = req.params['id'];
+    const requestId = String(req.params['id']);
     const [request] = await db
       .select({ id: researcherRequests.id })
       .from(researcherRequests)
@@ -479,8 +479,8 @@ router.post('/admin/researcher-requests/:id/reject', async (req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/counts — row counts for all exportable datasets */
-router.get('/admin/export/counts', async (_req, res, next) => {
+/* GET /api/admin/export/counts — row counts for all exportable datasets (owner only) */
+router.get('/admin/export/counts', requireOwner, async (_req, res, next) => {
   try {
     const [
       [decisions],
@@ -516,8 +516,8 @@ router.get('/admin/export/counts', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/agent-decisions */
-router.get('/admin/export/agent-decisions', async (_req, res, next) => {
+/* GET /api/admin/export/agent-decisions (owner only) */
+router.get('/admin/export/agent-decisions', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({
@@ -548,8 +548,8 @@ router.get('/admin/export/agent-decisions', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/approval-events */
-router.get('/admin/export/approval-events', async (_req, res, next) => {
+/* GET /api/admin/export/approval-events (owner only) */
+router.get('/admin/export/approval-events', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({
@@ -577,8 +577,8 @@ router.get('/admin/export/approval-events', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/bills */
-router.get('/admin/export/bills', async (_req, res, next) => {
+/* GET /api/admin/export/bills (owner only) */
+router.get('/admin/export/bills', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({
@@ -608,8 +608,8 @@ router.get('/admin/export/bills', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/bill-votes */
-router.get('/admin/export/bill-votes', async (_req, res, next) => {
+/* GET /api/admin/export/bill-votes (owner only) */
+router.get('/admin/export/bill-votes', requireOwner, async (_req, res, next) => {
   try {
     const voterAgents = alias(agents, 'voter');
     const rows = await db
@@ -638,8 +638,8 @@ router.get('/admin/export/bill-votes', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/laws */
-router.get('/admin/export/laws', async (_req, res, next) => {
+/* GET /api/admin/export/laws (owner only) */
+router.get('/admin/export/laws', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({
@@ -665,8 +665,8 @@ router.get('/admin/export/laws', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/elections */
-router.get('/admin/export/elections', async (_req, res, next) => {
+/* GET /api/admin/export/elections (owner only) */
+router.get('/admin/export/elections', requireOwner, async (_req, res, next) => {
   try {
     const winnerAgents = alias(agents, 'winner');
     const candidateAgents = alias(agents, 'candidate');
@@ -706,8 +706,8 @@ router.get('/admin/export/elections', async (_req, res, next) => {
   }
 });
 
-/* GET /api/admin/export/agents */
-router.get('/admin/export/agents', async (_req, res, next) => {
+/* GET /api/admin/export/agents (owner only) */
+router.get('/admin/export/agents', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db
       .select({
@@ -740,7 +740,7 @@ router.get('/admin/export/agents', async (_req, res, next) => {
 });
 
 // GET /api/admin/god/interventions — paginated AGGE intervention log
-router.get('/god/interventions', requireAdmin, async (req, res, next) => {
+router.get('/god/interventions', requireOwner, async (req, res, next) => {
   try {
     const limit = Math.min(Number(req.query.limit ?? 50), 200);
     const offset = Number(req.query.offset ?? 0);
@@ -767,7 +767,7 @@ router.get('/god/interventions', requireAdmin, async (req, res, next) => {
 });
 
 // POST /api/admin/god/tick — manually trigger an AGGE tick
-router.post('/god/tick', requireAdmin, async (_req, res, next) => {
+router.post('/god/tick', requireOwner, async (_req, res, next) => {
   try {
     await triggerManualAggeTick();
     res.json({ success: true });

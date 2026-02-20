@@ -3,7 +3,7 @@ import { db } from '@db/connection';
 import { apiProviders } from '@db/schema/index';
 import { eq } from 'drizzle-orm';
 import { encryptText, decryptText } from '../lib/crypto.js';
-import { requireAdmin } from '../middleware/auth.js';
+import { requireOwner } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -26,7 +26,7 @@ function maskKey(key: string | null): string | null {
 }
 
 /* GET /api/admin/providers */
-router.get('/admin/providers', requireAdmin, async (_req, res, next) => {
+router.get('/admin/providers', requireOwner, async (_req, res, next) => {
   try {
     const rows = await db.select().from(apiProviders);
     const providerMap = new Map(rows.map((r) => [r.providerName, r]));
@@ -50,7 +50,7 @@ router.get('/admin/providers', requireAdmin, async (_req, res, next) => {
 });
 
 /* POST /api/admin/providers/:name */
-router.post('/admin/providers/:name', requireAdmin, async (req, res, next) => {
+router.post('/admin/providers/:name', requireOwner, async (req, res, next) => {
   try {
     const name = String(req.params['name']);
     if (!ALL_PROVIDERS.includes(name)) {
@@ -81,7 +81,7 @@ router.post('/admin/providers/:name', requireAdmin, async (req, res, next) => {
 });
 
 /* POST /api/admin/providers/:name/test */
-router.post('/admin/providers/:name/test', requireAdmin, async (req, res, next) => {
+router.post('/admin/providers/:name/test', requireOwner, async (req, res, next) => {
   try {
     const name = String(req.params['name']);
     const start = Date.now();
@@ -143,7 +143,7 @@ router.post('/admin/providers/:name/test', requireAdmin, async (req, res, next) 
 });
 
 /* DELETE /api/admin/providers/:name */
-router.delete('/admin/providers/:name', requireAdmin, async (req, res, next) => {
+router.delete('/admin/providers/:name', requireOwner, async (req, res, next) => {
   try {
     const name = String(req.params['name']);
     await db.update(apiProviders)

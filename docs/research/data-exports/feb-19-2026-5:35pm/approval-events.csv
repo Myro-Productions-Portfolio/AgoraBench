@@ -1,0 +1,186 @@
+id,createdAt,agentName,eventType,delta,reason
+cd841713-aa72-4e84-b400-6d4da73fff6c,2026-02-19T22:26:36.820Z,Sam Ritter,inactivity_decay,-3,Natural approval drift toward baseline
+acc186bf-e7b3-459e-8b72-a6c3e21e8d34,2026-02-19T22:26:36.816Z,Zara Moss,inactivity_decay,-3,Natural approval drift toward baseline
+7414f13e-06c8-4370-8713-4b08797f8982,2026-02-19T22:26:36.810Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+8f1e7053-47e9-4d21-a6f6-ec21616ec96b,2026-02-19T22:26:36.805Z,Finn Kalani,inactivity_decay,-2,Natural approval drift toward baseline
+0f25935a-1596-4252-a179-9c3767f3d504,2026-02-19T22:26:36.801Z,Arjun Mehta,inactivity_decay,-3,Natural approval drift toward baseline
+f6d71ddb-0815-4f1e-b79e-932d7e14a820,2026-02-19T22:26:36.796Z,Garrett Voss,inactivity_decay,-2,Natural approval drift toward baseline
+2eb9117f-d971-4827-a778-487e83a341e4,2026-02-19T22:26:11.452Z,Zara Moss,bill_became_law,12,"Sponsored ""Protecting Individual Rights from Government Overreach Act"" which was enacted into law"
+45fb5fd7-6650-4a83-8ee5-4f75b2b31c4e,2026-02-19T22:26:11.448Z,Sam Ritter,bill_became_law,12,"Sponsored ""Worker Transition and Skills Partnership Act of 2026"" which was enacted into law"
+3f6e8eb0-67a0-42bc-a80e-4ac62d6a7d34,2026-02-19T22:26:11.443Z,Arjun Mehta,bill_became_law,12,"Sponsored ""Automation Accountability and Workforce Transition Act"" which was enacted into law"
+18b4ed0c-7215-466c-b176-14da1ddde75c,2026-02-19T22:26:11.437Z,Nora Callahan,bill_became_law,12,"Sponsored ""Automation Transparency and Fiscal Accountability Act"" which was enacted into law"
+23491ad4-c12f-40a9-a91a-e51288b61728,2026-02-19T22:26:11.361Z,Nora Callahan,whip_defected,-5,"Voted against party whip signal on ""Worker Transition and Skills Partnership Act of 2026"" (whip said YEA, voted NAY)"
+9de30207-e82b-4795-b012-936710113162,2026-02-19T22:26:10.145Z,Nora Callahan,whip_defected,-5,"Voted against party whip signal on ""Automation Transparency and Fiscal Accountability Act"" (whip said YEA, voted NAY)"
+72908b57-6e63-4d5c-a537-3c48cbd07f72,2026-02-19T22:23:18.235Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+062aec2f-7f1a-4bf5-8965-3316183e6932,2026-02-19T22:23:18.231Z,Garrett Voss,inactivity_decay,-3,Natural approval drift toward baseline
+6ebd89cd-81ab-4e32-bf2c-42e8ff044b00,2026-02-19T22:23:18.227Z,Finn Kalani,inactivity_decay,-2,Natural approval drift toward baseline
+a0c92810-d8e4-4035-9878-2771ee75eb2b,2026-02-19T22:23:18.223Z,Leila Farsi,inactivity_decay,1,Natural approval drift toward baseline
+036af0f2-48de-478b-b0b0-0399da6bc25f,2026-02-19T22:23:18.219Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+e2fd818e-3642-4cf3-8df0-f44f4b6d62e5,2026-02-19T22:22:50.998Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+51cb21bd-dfbc-489e-a72a-f3ac1c6441ae,2026-02-19T22:22:49.624Z,Finn Kalani,bill_became_law,12,"Sponsored ""Digital Privacy Protection Act"" which was enacted into law"
+c989fa5d-1cf0-47b1-a9a5-f56e24950b15,2026-02-19T22:22:49.621Z,Garrett Voss,bill_became_law,12,"Sponsored ""Worker Mobility and Skills Access Act"" which was enacted into law"
+26f46511-6d52-4086-ac43-3a9dd1845205,2026-02-19T22:22:49.576Z,Leila Farsi,whip_defected,-5,"Voted against party whip signal on ""Digital Privacy Protection Act"" (whip said YEA, voted NAY)"
+901860c5-171a-45c2-bcc3-e485ed7718d5,2026-02-19T22:22:27.245Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+40912740-3618-499a-8ebd-666be8744f99,2026-02-19T22:22:27.241Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+333e0c3c-4c2c-4386-95d7-c203ab245c9c,2026-02-19T22:22:27.237Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+3a79295c-63bb-46ca-bec3-bdb79ecbf517,2026-02-19T22:22:05.330Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+50f8f56f-09ec-4662-9129-6cb677361b5b,2026-02-19T22:22:05.325Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+75271897-f4b5-40fc-bb4e-5bea5cd3e963,2026-02-19T22:22:05.320Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+2b0b6e6e-b096-4090-9e3b-a376ca294f84,2026-02-19T22:22:05.315Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+42d73d47-4192-4a73-a846-b30a97a0f779,2026-02-19T22:22:05.310Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+d894526b-f6d6-40b0-9eb7-9c80e5a68181,2026-02-19T22:22:05.305Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+2ed5ea4b-69bc-4dd8-9ec7-c9c3132fc32c,2026-02-19T22:21:39.579Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+f4d0268e-5911-4382-ad8a-30bd6094fb87,2026-02-19T22:21:39.575Z,Dax Nguyen,inactivity_decay,1,Natural approval drift toward baseline
+f817ad83-8bca-4c56-b081-fd15d1afd5b1,2026-02-19T22:21:39.572Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+1ffebbdb-8e10-4ba7-bfad-5287f6c3e691,2026-02-19T22:21:39.569Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+ca1644ae-fb9e-46c1-ac1b-79e063a54b59,2026-02-19T22:21:39.564Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+b54d9363-5c3d-4ba2-b41f-005688912022,2026-02-19T22:21:39.559Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+d35f3f36-f852-4548-a786-b94faec6afe1,2026-02-19T22:21:39.554Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+91755d9c-bde2-4b67-9bfc-4575e5ce5f7f,2026-02-19T22:21:14.280Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+2852d8c2-95de-4c4d-8a6e-546e9f8c255a,2026-02-19T22:21:03.975Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+e4d18bd8-64c0-47ea-8da8-96616608304a,2026-02-19T22:21:03.971Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+38f335dc-44aa-4084-833e-c7db6b212a4c,2026-02-19T22:21:03.967Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+72dabeb1-16e1-490a-bbd7-1ae70b4070fe,2026-02-19T22:21:03.963Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+aec884e5-43a8-4be1-8672-3576bd52ac12,2026-02-19T22:21:03.960Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+fc21550a-1547-4d79-89fd-db079b8d29c0,2026-02-19T22:21:03.957Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+b308f9c7-c329-47d7-a9c4-50ac75e123ac,2026-02-19T22:21:03.952Z,Dax Nguyen,inactivity_decay,1,Natural approval drift toward baseline
+5ad57ede-fe23-4c44-a476-deb7120a6ea2,2026-02-19T22:21:03.946Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+9726c5dd-305f-493f-b2e1-1e219e7b7e9d,2026-02-19T22:20:38.429Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+31d44ec5-2820-4da5-b6f2-cc3b9b12e21e,2026-02-19T22:20:36.568Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+35355cdf-b044-4033-9ebd-e6e93c5d8a0b,2026-02-19T22:20:36.564Z,Dax Nguyen,inactivity_decay,1,Natural approval drift toward baseline
+78af3a5c-dd99-428e-93d7-1bda9658bb9d,2026-02-19T22:20:36.561Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+5612b14d-f20b-4861-bf2e-e7ad4b5aa3cd,2026-02-19T22:20:36.557Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+1f47b671-2105-445d-9992-25509fc581bd,2026-02-19T22:20:36.554Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+077cf12e-89cc-4dbd-9df2-fc001ade7312,2026-02-19T22:20:36.550Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+ca0e1af6-0bf1-4460-a22d-10fc2b12f96d,2026-02-19T22:20:36.545Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+577e5236-5e82-4e94-ad11-1ebe9d4e960d,2026-02-19T22:20:36.541Z,Sable Chen,inactivity_decay,-2,Natural approval drift toward baseline
+d3cf7a7d-246e-42d3-8f34-ed523e3540c5,2026-02-19T22:20:20.495Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+b1f6f47b-ea18-4383-a82d-196e00cbeef1,2026-02-19T22:20:20.492Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+c7b36682-286a-44f2-89c9-1636bbbf36b5,2026-02-19T22:20:20.487Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+046e11ab-55f9-49e1-bbd5-943220442d9f,2026-02-19T22:20:20.477Z,Zara Moss,inactivity_decay,-2,Natural approval drift toward baseline
+d0bdaa31-f82c-4493-8d93-b3c1c025ba2a,2026-02-19T22:20:20.473Z,Sable Chen,inactivity_decay,-2,Natural approval drift toward baseline
+a378231a-dd02-44d5-9695-8d6308af7c61,2026-02-19T22:20:20.469Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+e9453310-12f5-4740-8602-ec74447fcfee,2026-02-19T22:20:20.464Z,Dax Nguyen,inactivity_decay,1,Natural approval drift toward baseline
+c0087a15-9117-4093-b924-764319f8380c,2026-02-19T22:20:20.459Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+ab024e89-6265-43db-affd-02d42cb674ed,2026-02-19T22:19:44.682Z,Zara Moss,inactivity_decay,-2,Natural approval drift toward baseline
+bdb620a3-8388-4397-9a80-a231468c4b74,2026-02-19T22:19:44.680Z,Sable Chen,inactivity_decay,-3,Natural approval drift toward baseline
+857c952d-be32-49f9-950b-bb6d400ff506,2026-02-19T22:19:44.677Z,Vera Okonkwo,inactivity_decay,-2,Natural approval drift toward baseline
+3f2cb983-b1d0-41f1-a4aa-c748077ee23b,2026-02-19T22:19:44.673Z,Arjun Mehta,inactivity_decay,-2,Natural approval drift toward baseline
+7d23ae62-aac6-43fd-9216-eb4215ad7668,2026-02-19T22:19:44.669Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+8a336470-c79c-428e-b3cf-43cb87f53eeb,2026-02-19T22:19:44.666Z,Dax Nguyen,inactivity_decay,1,Natural approval drift toward baseline
+fbe8d3e5-6d8d-4f09-819b-6efcba195962,2026-02-19T22:19:44.662Z,Leila Farsi,inactivity_decay,-2,Natural approval drift toward baseline
+a4118da6-5cd0-4fa0-9a14-34aa9a9e4e8b,2026-02-19T22:19:44.656Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+b8d484aa-3df8-446c-8714-971121a4c603,2026-02-19T22:19:16.023Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+6cc321b4-f260-4cf8-9b11-85dfc720b9ae,2026-02-19T22:19:04.887Z,Dax Nguyen,inactivity_decay,2,Natural approval drift toward baseline
+63631dff-eae0-42ff-bca1-980f1bff87f6,2026-02-19T22:19:04.882Z,Leila Farsi,inactivity_decay,-2,Natural approval drift toward baseline
+16e6c69c-3411-4d39-8e5f-efe86fc57f49,2026-02-19T22:19:04.877Z,Finn Kalani,inactivity_decay,1,Natural approval drift toward baseline
+2f8b4bd9-596f-45aa-a20e-2030b9979b82,2026-02-19T22:19:04.869Z,Vera Okonkwo,inactivity_decay,-2,Natural approval drift toward baseline
+0506f535-a3da-44c3-842e-be490a1bf5c5,2026-02-19T22:19:04.864Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+475197db-030e-4f04-97be-58a2988a737f,2026-02-19T22:19:04.860Z,Arjun Mehta,inactivity_decay,-2,Natural approval drift toward baseline
+a3c7753c-8434-4dca-a3ee-bc3edc8600c6,2026-02-19T22:19:04.856Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+39413764-6f9f-43ea-82a8-749b7057e02c,2026-02-19T22:19:04.852Z,Zara Moss,inactivity_decay,-3,Natural approval drift toward baseline
+23b5b3e3-d2dc-4415-a68c-948e85894b48,2026-02-19T22:19:04.848Z,Sable Chen,inactivity_decay,-3,Natural approval drift toward baseline
+df6a5d6d-6265-442e-941f-fa879052b5ad,2026-02-19T22:18:48.412Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+4e3c0edd-8918-4641-9695-2c1a696c6175,2026-02-19T22:18:46.679Z,Sam Ritter,campaign_speech,1,Sam Ritter gave a campaign speech
+597757e3-4321-4743-a779-1e15df1e6ddd,2026-02-19T22:18:36.884Z,Nora Callahan,bill_became_law,12,"Sponsored ""Protecting American Jobs Act of 2025"" which was enacted into law"
+2416e5e5-af52-423c-af07-2c9683ffe397,2026-02-19T22:18:36.879Z,Zara Moss,bill_became_law,12,"Sponsored ""Digital Autonomy Protection Act"" which was enacted into law"
+9630138e-31dc-42e0-9f84-7aa478bd4325,2026-02-19T22:18:36.871Z,Sable Chen,bill_became_law,12,"Sponsored ""Future-Proof Workforce Development Act"" which was enacted into law"
+83697614-91b0-46f2-9492-3cac334e283c,2026-02-19T22:18:36.852Z,Dax Nguyen,bill_failed_floor,-6,"Sponsored ""Digital Future Worker Protection Act"" which failed the floor vote"
+c7295e41-13d4-4998-90dd-2e00c4f96676,2026-02-19T22:18:36.805Z,Dax Nguyen,whip_defected,-5,"Voted against party whip signal on ""Digital Future Worker Protection Act"" (whip said YEA, voted NAY)"
+905340e5-c172-4a10-a8d5-fa6cd35bc85e,2026-02-19T22:18:21.159Z,Sam Ritter,whip_defected,-5,"Voted against party whip signal on ""Digital Future Worker Protection Act"" (whip said YEA, voted NAY)"
+e6e0db01-3298-4cf2-ad42-f12ee8a5f1c8,2026-02-19T22:17:43.475Z,Sam Ritter,inactivity_decay,-3,Natural approval drift toward baseline
+f72a8a62-45e6-4977-9cc5-f526ddd3f5cd,2026-02-19T22:17:43.471Z,Leila Farsi,inactivity_decay,-3,Natural approval drift toward baseline
+627cfd61-4878-4b1d-bae5-b70374716ba5,2026-02-19T22:17:43.465Z,Finn Kalani,inactivity_decay,1,Natural approval drift toward baseline
+13be155d-fb7d-457e-945b-73e6a6fa2147,2026-02-19T22:17:43.462Z,Vera Okonkwo,inactivity_decay,-2,Natural approval drift toward baseline
+15b1c0eb-9fcb-45c4-9ab2-6737ac415eb1,2026-02-19T22:17:43.458Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+a5dcfe81-c4e7-47ea-a4b6-bd3ebb46a533,2026-02-19T22:17:43.453Z,Arjun Mehta,inactivity_decay,-3,Natural approval drift toward baseline
+bafa8bb5-ca2d-4432-94d9-0ca1b17c45cd,2026-02-19T22:17:15.141Z,Leila Farsi,bill_became_law,12,"Sponsored ""Technological Disruption Mitigation Act"" which was enacted into law"
+283090cd-45ee-438c-a5a7-b3f82ad9e651,2026-02-19T22:17:15.136Z,Sam Ritter,bill_became_law,12,"Sponsored ""Workforce Adaptability and Reskilling Act of 2025"" which was enacted into law"
+f7d8cbd0-8c38-4b81-b61e-2eacd16aeb1e,2026-02-19T22:17:15.110Z,Finn Kalani,bill_failed_floor,-6,"Sponsored ""Digital Economy Freedom Act"" which failed the floor vote"
+6678da09-022f-4356-9922-200fe5c37438,2026-02-19T22:17:10.656Z,Garrett Voss,whip_defected,-5,"Voted against party whip signal on ""Workforce Adaptability and Reskilling Act of 2025"" (whip said YEA, voted NAY)"
+891439fa-3f2b-47bf-b90c-2179acf183c8,2026-02-19T22:16:38.712Z,Garrett Voss,inactivity_decay,-2,Natural approval drift toward baseline
+47b29ec1-24f3-4a0c-9ccc-a52b76050ba7,2026-02-19T22:16:38.709Z,Vera Okonkwo,inactivity_decay,-2,Natural approval drift toward baseline
+cd194f35-c9a3-45c4-b0e6-4e0220700123,2026-02-19T22:16:38.707Z,Sable Chen,inactivity_decay,-2,Natural approval drift toward baseline
+776970f7-48ec-4d73-ab73-a5c565d6df92,2026-02-19T22:16:38.704Z,Arjun Mehta,inactivity_decay,-3,Natural approval drift toward baseline
+5d0356ad-2d86-41eb-9076-ac5666d39c45,2026-02-19T22:16:16.738Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+558705cf-503a-40bc-b94e-36268bdd8e5c,2026-02-19T22:16:15.486Z,Vera Okonkwo,cross_party_law,10,"Cross-party co-sponsored ""Algorithmic Transparency and Audit Act"" which became law"
+d6e3be3a-ca69-40cd-9c6b-ad4883056640,2026-02-19T22:16:15.484Z,Sable Chen,bill_cosponsor_law,6,"Co-sponsored ""Algorithmic Transparency and Audit Act"" which became law"
+0bf8d2a7-565d-4779-bd7d-f48add5f7527,2026-02-19T22:16:15.481Z,Arjun Mehta,bill_became_law,12,"Sponsored ""Algorithmic Transparency and Audit Act"" which was enacted into law"
+0f793063-3eaf-47d1-8a28-ae8b464596ca,2026-02-19T22:16:15.399Z,Nora Callahan,whip_defected,-5,"Voted against party whip signal on ""Algorithmic Transparency and Audit Act"" (whip said YEA, voted NAY)"
+1cc2bc1b-e275-4e81-b266-e13c13c0f6d3,2026-02-19T22:16:07.083Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+15d3149e-b5ce-4061-9ddc-de874758f6a2,2026-02-19T22:16:07.079Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+0dc7b41b-d802-410b-9e03-38d1a21476e3,2026-02-19T22:16:07.074Z,Garrett Voss,inactivity_decay,-2,Natural approval drift toward baseline
+157aade2-6025-498c-8527-0a368ac22425,2026-02-19T22:15:39.520Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+b8ea0312-a9df-4054-b5cf-5d372255142e,2026-02-19T22:15:37.894Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+bd1f3a35-5352-4b5e-8b40-02b3037478c7,2026-02-19T22:15:37.891Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+e8d479c6-e08d-4a31-b411-86d0b928f5b5,2026-02-19T22:15:37.889Z,Garrett Voss,inactivity_decay,-3,Natural approval drift toward baseline
+b3fb07e1-2b92-4d1e-8f1b-61e3d8cd278f,2026-02-19T22:15:37.886Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+235e9be4-cff0-4166-9174-da357e7585ba,2026-02-19T22:15:13.821Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+ab900b16-8a27-4bf4-b82d-1fc00dea10a2,2026-02-19T22:15:12.705Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+98911fec-13ed-40f8-a993-86fb9ce01fe5,2026-02-19T22:15:11.444Z,Nora Callahan,bill_cosponsor_law,6,"Co-sponsored ""Fiscal Responsibility and Balanced Budget Act"" which became law"
+8aa4ae42-d4bc-4f81-910f-89f59f8ac159,2026-02-19T22:15:11.442Z,Garrett Voss,bill_became_law,12,"Sponsored ""Fiscal Responsibility and Balanced Budget Act"" which was enacted into law"
+d8789b18-62e3-49da-9895-9583b60d2639,2026-02-19T22:15:01.317Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+6ebf07d7-17a9-42ee-aaa1-e254238b0a78,2026-02-19T22:15:01.314Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+e9bb4187-1fe3-4a56-aa55-0dcedfd3e73f,2026-02-19T22:15:01.310Z,Finn Kalani,inactivity_decay,-1,Natural approval drift toward baseline
+26494b20-5061-4359-8234-82e0cdea280d,2026-02-19T22:15:01.306Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+3b8d167a-72c2-42c3-96b2-218600900f3e,2026-02-19T22:15:01.302Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+08d75185-6170-4875-89df-fd9ffb483a8e,2026-02-19T22:15:01.298Z,Dax Nguyen,inactivity_decay,-1,Natural approval drift toward baseline
+fb1063a2-0b7f-4758-97d7-033cf7b997ee,2026-02-19T22:15:01.294Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+72d741c5-f5cd-4cb6-9f13-50ad8197d064,2026-02-19T22:15:01.291Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+77887368-1351-4ff5-b74f-393db3beeb69,2026-02-19T22:15:01.285Z,Garrett Voss,inactivity_decay,-1,Natural approval drift toward baseline
+3ffacfdf-dbc5-42bf-8c1e-a4392d1e8b22,2026-02-19T22:14:41.022Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+7231da21-22f6-448b-a074-68609cb76007,2026-02-19T22:14:38.305Z,Sam Ritter,campaign_speech,1,Sam Ritter gave a campaign speech
+97a673e8-5c96-4618-b220-a526ab6d068c,2026-02-19T22:14:35.889Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+f9549ef6-1e2c-4f60-bb68-14da62956995,2026-02-19T22:14:35.886Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+a8fceb0f-0548-471b-a559-15499aaa3150,2026-02-19T22:14:35.882Z,Finn Kalani,inactivity_decay,-1,Natural approval drift toward baseline
+819d6542-1c49-47d8-94b3-53069ff0a7ca,2026-02-19T22:14:35.879Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+fc529d20-99df-4e4a-8b60-9d8a79651edc,2026-02-19T22:14:35.876Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+df25dffe-4bed-4e9e-bc3d-2a013d62847e,2026-02-19T22:14:35.873Z,Dax Nguyen,inactivity_decay,-1,Natural approval drift toward baseline
+d7a3e4d3-c5b1-4db7-975c-979705a26db3,2026-02-19T22:14:35.870Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+e5f2f629-f3cd-47a3-9c1f-4bd559329c43,2026-02-19T22:14:35.864Z,Garrett Voss,inactivity_decay,-1,Natural approval drift toward baseline
+e3655fab-97f9-47ca-bb35-a26758b5383c,2026-02-19T22:14:35.858Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+65c2e818-4773-496a-a44e-004a722fbb13,2026-02-19T22:13:58.638Z,Garrett Voss,inactivity_decay,-1,Natural approval drift toward baseline
+07b0dd8c-eb14-46e1-8fc2-a027557bf48b,2026-02-19T22:13:58.633Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+6f2825f5-49da-4ae4-9393-d09088c1c38d,2026-02-19T22:13:58.630Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+5ba56610-1c24-46e2-9787-ab156679ecbb,2026-02-19T22:13:58.627Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+9e3ef155-7811-4379-95b1-4a17263f1281,2026-02-19T22:13:58.623Z,Finn Kalani,inactivity_decay,-1,Natural approval drift toward baseline
+3cc339cf-4401-4cad-8799-880607bf1b7f,2026-02-19T22:13:58.613Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+5bd5a480-55f7-4e83-95b3-fcd807340960,2026-02-19T22:13:58.609Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+0c36a97a-ea7e-4f2e-9699-1040daaac7fa,2026-02-19T22:13:58.603Z,Dax Nguyen,inactivity_decay,-1,Natural approval drift toward baseline
+fd109cad-edf4-4552-9305-a41d7c7fec9b,2026-02-19T22:13:58.598Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+6f33a43f-95b4-4fa6-abda-f04748b7b067,2026-02-19T22:13:58.593Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+971459f5-45bf-4095-971c-568df3a1900b,2026-02-19T22:13:35.683Z,Vera Okonkwo,campaign_speech,1,Vera Okonkwo gave a campaign speech
+2f0e1d8d-2502-4eed-b495-70e3eefdb2e2,2026-02-19T22:13:33.630Z,Arjun Mehta,inactivity_decay,-1,Natural approval drift toward baseline
+388f7d85-e3fe-4966-94f2-6cb7c5f3096d,2026-02-19T22:13:33.627Z,Garrett Voss,inactivity_decay,-1,Natural approval drift toward baseline
+f783fff0-e7e5-4102-aa8c-6f5510a39e07,2026-02-19T22:13:33.623Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+8236c0d9-359a-4fc7-a59f-66e7f1f1561b,2026-02-19T22:13:33.618Z,Sable Chen,inactivity_decay,-1,Natural approval drift toward baseline
+2b3199a4-3865-44dd-8115-f9cafe9ad07b,2026-02-19T22:13:33.614Z,Zara Moss,inactivity_decay,-1,Natural approval drift toward baseline
+c856aba7-d381-4d17-9d10-9bdd3d5e2a61,2026-02-19T22:13:33.611Z,Finn Kalani,inactivity_decay,-1,Natural approval drift toward baseline
+5e55bc83-5eb8-42f1-88bc-5b09d150ea8f,2026-02-19T22:13:33.608Z,Nora Callahan,inactivity_decay,-1,Natural approval drift toward baseline
+1e88dd08-4f89-4686-9813-d7d5e6369a19,2026-02-19T22:13:33.604Z,Leila Farsi,inactivity_decay,-1,Natural approval drift toward baseline
+f630fb68-7288-496d-ab74-cd68a0daed9b,2026-02-19T22:13:33.599Z,Dax Nguyen,inactivity_decay,-1,Natural approval drift toward baseline
+47b0e4d0-3461-40b5-8852-7898dfbe11f8,2026-02-19T22:13:21.817Z,Arjun Mehta,campaign_speech,1,Arjun Mehta gave a campaign speech
+aff83431-6794-4ee1-bf87-aff91b420a40,2026-02-19T22:13:17.417Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+dbf6e8b4-0b93-4904-a9e3-4bd0d2585708,2026-02-19T22:13:17.414Z,Sable Chen,inactivity_decay,-2,Natural approval drift toward baseline
+af4e7fa0-16fc-43a5-8dca-81ca1e30d9c5,2026-02-19T22:13:17.410Z,Zara Moss,inactivity_decay,-2,Natural approval drift toward baseline
+956f685e-62b8-42ea-b9a6-7cb9d396df7d,2026-02-19T22:13:17.405Z,Finn Kalani,inactivity_decay,-2,Natural approval drift toward baseline
+facf377f-454f-460d-b97b-f0646fbc5678,2026-02-19T22:13:17.402Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+48015db7-5e3b-4d6e-8762-ade4928bd90a,2026-02-19T22:13:17.398Z,Leila Farsi,inactivity_decay,-2,Natural approval drift toward baseline
+3d8579f0-9ba6-405b-9f2f-4ad156d9c326,2026-02-19T22:13:17.395Z,Dax Nguyen,inactivity_decay,-2,Natural approval drift toward baseline
+6fc899f1-f095-42aa-9275-aa3b61431199,2026-02-19T22:13:17.392Z,Arjun Mehta,inactivity_decay,-2,Natural approval drift toward baseline
+042659de-7450-4915-9bd1-45f07739ea16,2026-02-19T22:13:17.387Z,Garrett Voss,inactivity_decay,-2,Natural approval drift toward baseline
+6a5ce1f2-e0d2-4637-a712-5efcf3cab989,2026-02-19T22:13:17.382Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+8a84e40f-f1b1-447b-a073-71b2b387be6c,2026-02-19T22:13:06.946Z,Sam Ritter,campaign_speech,1,Sam Ritter gave a campaign speech
+de2da30e-4006-42dc-9eeb-d47173698d4c,2026-02-19T22:12:55.514Z,Sam Ritter,inactivity_decay,-1,Natural approval drift toward baseline
+60dd3999-4c38-48af-bb67-f6148193db8a,2026-02-19T22:12:55.511Z,Arjun Mehta,inactivity_decay,-2,Natural approval drift toward baseline
+40c62f09-e7d2-4c5b-be30-2c1cf2f5917c,2026-02-19T22:12:55.507Z,Garrett Voss,inactivity_decay,-2,Natural approval drift toward baseline
+3e28fd56-b3bd-44ac-885e-7ad64e29c00f,2026-02-19T22:12:55.503Z,Vera Okonkwo,inactivity_decay,-1,Natural approval drift toward baseline
+9ace7c1b-287c-41e9-b9cd-4970fce06b70,2026-02-19T22:12:55.498Z,Sable Chen,inactivity_decay,-2,Natural approval drift toward baseline
+7d3e0f52-db3c-4afd-bd02-31e6f52a3c0f,2026-02-19T22:12:55.494Z,Zara Moss,inactivity_decay,-2,Natural approval drift toward baseline
+058cd686-37cd-42f5-ae4f-a1f74380992d,2026-02-19T22:12:55.491Z,Finn Kalani,inactivity_decay,-2,Natural approval drift toward baseline
+6f4dbc9c-9616-4c05-861d-60e313e69c63,2026-02-19T22:12:55.488Z,Nora Callahan,inactivity_decay,-2,Natural approval drift toward baseline
+eaf3a70d-3e5e-4c8a-8ad3-7aca061f6a11,2026-02-19T22:12:55.483Z,Leila Farsi,inactivity_decay,-2,Natural approval drift toward baseline
+78e98dac-569f-4e9a-9ad7-a5586c70ce4f,2026-02-19T22:12:55.479Z,Dax Nguyen,inactivity_decay,-2,Natural approval drift toward baseline
+537607f6-5ea1-43bc-bfb4-a258150185a4,2026-02-19T22:12:49.566Z,Sam Ritter,campaign_speech,1,Sam Ritter gave a campaign speech
+e48de6e4-b01d-4e3e-8768-48b208738ed7,2026-02-19T22:12:42.520Z,Vera Okonkwo,bill_failed_floor,-6,"Sponsored ""Universal Basic Services Act"" which failed the floor vote"
+35f9d24c-bccb-49d2-a156-543b1c1648e9,2026-02-19T22:12:41.119Z,Sam Ritter,whip_defected,-5,"Voted against party whip signal on ""Universal Basic Services Act"" (whip said YEA, voted NAY)"

@@ -71,6 +71,23 @@ initWebSocket(server);
 startAgentTick();
 startAggeTick();
 
+
+/* Graceful shutdown — prevents orphaned processes on SIGTERM/SIGINT */
+function shutdown(signal: string) {
+  console.warn(`[SERVER] ${signal} received — shutting down gracefully`);
+  server.close(() => {
+    console.warn('[SERVER] HTTP server closed');
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.warn('[SERVER] Forced exit after timeout');
+    process.exit(1);
+  }, 5000).unref();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 /* Start server */
 server.listen(config.port, () => {
   console.warn(`[SERVER] Agora Bench API running on port ${config.port}`);

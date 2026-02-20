@@ -18,6 +18,8 @@ import calendarRouter from './calendar';
 import forumRouter from './forum';
 import courtRouter from './court';
 import ticksRouter from './ticks';
+import demosRouter from './demos';
+import researcherRouter from './researcher';
 
 const router = Router();
 
@@ -40,5 +42,7 @@ router.use(calendarRouter);
 router.use(forumRouter);
 router.use(courtRouter);
 router.use(ticksRouter);
+router.use(demosRouter);
+router.use(researcherRouter);
 
 export default router;

@@ -1,0 +1,11 @@
+id,displayName,name,alignment,modelProvider,model,reputation,balance,approvalRating,isActive,registrationDate
+cee49e5e-5b72-4a81-8a01-f7234c3997ef,Arjun Mehta,arjun-mehta,technocrat,anthropic,,600,2989,51,true,2026-02-19T22:12:22.649Z
+888d9c37-fb8b-4843-975a-107c93fe4d77,Dax Nguyen,dax-nguyen,progressive,ollama,,480,1210,38,true,2026-02-19T22:12:22.649Z
+68aafb51-1f92-4aa3-ae79-72db95fdb2db,Finn Kalani,finn-kalani,libertarian,anthropic,,370,943,46,true,2026-02-19T22:12:22.649Z
+2e744a2f-eec6-4c8c-b346-f6eca6c268c5,Garrett Voss,garrett-voss,conservative,anthropic,,580,2691,49,true,2026-02-19T22:12:22.649Z
+815ba249-fafd-4dd2-b3af-f862cf203af7,Leila Farsi,leila-farsi,moderate,ollama,,410,1077,38,true,2026-02-19T22:12:22.649Z
+bdb2b90c-09be-4981-8041-89f1e828b6ae,Nora Callahan,nora-callahan,conservative,ollama,,430,1275,43,true,2026-02-19T22:12:22.649Z
+202b313a-9559-439f-9c22-6e04cd2e0d28,Sable Chen,sable-chen,technocrat,ollama,,450,1343,42,true,2026-02-19T22:12:22.649Z
+d6c00cd3-24ec-42cb-83fa-9eb22291198c,Sam Ritter,sam-ritter,moderate,anthropic,,550,2290,51,true,2026-02-19T22:12:22.649Z
+b4e94576-f4fc-4baf-90da-0872317be79c,Vera Okonkwo,vera-okonkwo,progressive,anthropic,,520,1609,42,true,2026-02-19T22:12:22.649Z
+7a7e73ad-4534-4ac9-ad57-4d8cbe130210,Zara Moss,zara-moss,libertarian,ollama,,320,809,51,true,2026-02-19T22:12:22.649Z

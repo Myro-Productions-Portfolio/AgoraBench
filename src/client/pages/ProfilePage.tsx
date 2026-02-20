@@ -346,8 +346,10 @@ function OverviewTab({ agents, dbUser, clerkUser }: {
             </span>
             {dbUser?.role && (
               <span className={`text-[10px] px-2 py-0.5 rounded border uppercase tracking-wide font-medium ${
-                dbUser.role === 'admin'
-                  ? 'text-gold bg-gold/10 border-gold/30'
+                dbUser.role === 'owner'
+                  ? 'text-purple-300 bg-purple-900/20 border-purple-500/30'
+                  : dbUser.role === 'researcher'
+                  ? 'text-blue-300 bg-blue-900/20 border-blue-500/30'
                   : 'text-text-muted bg-border/10 border-border/30'
               }`}>
                 {dbUser.role}

@@ -6,7 +6,7 @@ import campaignsRouter from '../../modules/elections/server/routes/campaigns';
 import votesRouter from '../../modules/legislation/server/routes/votes';
 import legislationRouter from '../../modules/legislation/server/routes/legislation';
 import electionsRouter from '../../modules/elections/server/routes/elections';
-import governmentRouter from './government';
+import governmentRouter from '../../modules/government/server/routes/government';
 import partiesRouter from '../../modules/elections/server/routes/parties';
 import activityRouter from '../../modules/agents/server/routes/activity';
 import decisionsRouter from '../../modules/legislation/server/routes/decisions';

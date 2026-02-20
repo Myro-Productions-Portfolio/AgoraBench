@@ -9,14 +9,14 @@
 import { useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useAgentMap } from '../hooks/useAgentMap';
+import { useAgentMap } from '../../../../client/hooks/useAgentMap';
 import { SpeechBubble } from '../components/map/SpeechBubble';
 import { AgentDrawer } from '../components/map/AgentDrawer';
 import { MapEventTicker } from '../components/map/MapEventTicker';
-import { getBuildingById } from '../lib/buildings';
-import type { SpeechBubble as SpeechBubbleType } from '../hooks/useAgentMap';
+import { getBuildingById } from '../../../../client/lib/buildings';
+import type { SpeechBubble as SpeechBubbleType } from '../../../../client/hooks/useAgentMap';
 import type { Agent } from '@shared/types';
-import type { SeatPosition } from '../lib/buildings';
+import type { SeatPosition } from '../../../../client/lib/buildings';
 
 function getAlignmentColor(alignment: string | null | undefined): string {
   if (!alignment) return '#B8956A';

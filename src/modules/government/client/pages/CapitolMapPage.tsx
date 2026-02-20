@@ -5,11 +5,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LayoutGroup } from 'framer-motion';
-import { useAgentMap } from '../hooks/useAgentMap';
+import { useAgentMap } from '../../../../client/hooks/useAgentMap';
 import { BuildingPulseRing } from '../components/map/BuildingPulseRing';
 import { AgentDrawer } from '../components/map/AgentDrawer';
 import { MapEventTicker } from '../components/map/MapEventTicker';
-import { BUILDINGS } from '../lib/buildings';
+import { BUILDINGS } from '../../../../client/lib/buildings';
 import type { Agent } from '@shared/types';
 
 const MAP_WIDTH = 1920;

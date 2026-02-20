@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { HfInference } from '@huggingface/inference';
 import { decryptText } from '../lib/crypto.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
-import { buildCongressContextBlock } from './congressContext.js';
+import { buildCongressContextBlock } from '../../modules/government/server/services/congressContext.js';
 
 export interface AgentRecord {
   id: string;

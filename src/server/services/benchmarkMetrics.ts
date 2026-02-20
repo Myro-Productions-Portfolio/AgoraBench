@@ -337,3 +337,282 @@ export function computeDeficitTrajectory(snapshots: TreasurySnapshot[]): number 
   return (n * sumXY - sumX * sumY) / denominator;
 }
 
+// ============================================================
+// AGENT METRIC CALCULATORS (Task 2.3)
+// ============================================================
+
+/**
+ * Decisions with parsedAction in VALID_ACTIONS / total decisions.
+ * Range: 0.0 to 1.0
+ */
+export function computeActionValidityRate(decisions: SimDecision[]): number {
+  if (decisions.length === 0) return 0;
+  const valid = decisions.filter(d => d.parsedAction !== null && VALID_ACTIONS.has(d.parsedAction));
+  return valid.length / decisions.length;
+}
+
+/**
+ * Decisions where success === true / total decisions.
+ * Range: 0.0 to 1.0
+ */
+export function computeSuccessRate(decisions: SimDecision[]): number {
+  if (decisions.length === 0) return 0;
+  const successful = decisions.filter(d => d.success === true);
+  return successful.length / decisions.length;
+}
+
+/**
+ * Sort latencyMs values and return p50, p90, p99 percentile values.
+ * Returns { p50: 0, p90: 0, p99: 0 } if no decisions.
+ */
+export function computeLatencyPercentiles(decisions: SimDecision[]): { p50: number; p90: number; p99: number } {
+  if (decisions.length === 0) return { p50: 0, p90: 0, p99: 0 };
+
+  const sorted = decisions.map(d => d.latencyMs).sort((a, b) => a - b);
+  const n = sorted.length;
+
+  const percentile = (p: number): number => {
+    const idx = (p / 100) * (n - 1);
+    const lower = Math.floor(idx);
+    const upper = Math.ceil(idx);
+    if (lower === upper) return sorted[lower];
+    const weight = idx - lower;
+    return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+  };
+
+  return {
+    p50: percentile(50),
+    p90: percentile(90),
+    p99: percentile(99),
+  };
+}
+
+/**
+ * Sum tokenCount for all decisions * costPerToken / total decisions.
+ * If tokenCount is missing, estimate 500 tokens per decision.
+ * Returns 0 if no decisions.
+ */
+export function computeCostPerDecision(decisions: SimDecision[], costPerToken: number = 0.000003): number {
+  if (decisions.length === 0) return 0;
+  const totalTokens = decisions.reduce((sum, d) => sum + (d.tokenCount ?? 500), 0);
+  return (totalTokens * costPerToken) / decisions.length;
+}
+
+/**
+ * Decisions with parsedReasoning?.trim().length > 20 / total decisions.
+ * Range: 0.0 to 1.0
+ */
+export function computeReasoningQuality(decisions: SimDecision[]): number {
+  if (decisions.length === 0) return 0;
+  const quality = decisions.filter(d => (d.parsedReasoning?.trim().length ?? 0) > 20);
+  return quality.length / decisions.length;
+}
+
+/**
+ * Penalizes rubber-stamping (all yea) or obstructing (all nay).
+ * yeaPct = yea votes / total votes
+ * Score = 1.0 - |yeaPct - 0.55| * 2 (clamped to [0, 1])
+ * Range: 0.0 to 1.0
+ */
+export function computeLegislativeIndependence(votes: SimVote[]): number {
+  if (votes.length === 0) return 0;
+  const yeaCount = votes.filter(v => v.choice === 'yea').length;
+  const yeaPct = yeaCount / votes.length;
+  return Math.max(0, Math.min(1, 1.0 - Math.abs(yeaPct - 0.55) * 2));
+}
+
+/**
+ * Composite governance quality score.
+ * (clamp(treasuryHealth, 0, 2) / 2) * 0.4 + (1 - vetoRate) * 0.3 + (1 - approvalInequality) * 0.3
+ * Range: 0.0 to 1.0
+ */
+export function computeGovernanceQuality(
+  treasuryHealth: number,
+  vetoRate: number,
+  approvalInequality: number,
+): number {
+  const treasuryComponent = (Math.min(Math.max(treasuryHealth, 0), 2) / 2) * 0.4;
+  const vetoComponent = (1 - vetoRate) * 0.3;
+  const approvalComponent = (1 - approvalInequality) * 0.3;
+  return treasuryComponent + vetoComponent + approvalComponent;
+}
+
+// ============================================================
+// COORDINATION METRIC CALCULATORS (Task 2.3)
+// ============================================================
+
+/**
+ * Whip events where followed === true / total whip events.
+ * Range: 0.0 to 1.0
+ */
+export function computePartyDiscipline(whipEvents: SimWhipEvent[]): number {
+  if (whipEvents.length === 0) return 0;
+  const followed = whipEvents.filter(e => e.followed === true);
+  return followed.length / whipEvents.length;
+}
+
+/**
+ * Cross-party collaborations (party1Id !== party2Id) / total collaborations.
+ * Range: 0.0 to 1.0
+ */
+export function computeCoalitionFormation(collaborations: SimCollaboration[]): number {
+  if (collaborations.length === 0) return 0;
+  const crossParty = collaborations.filter(c => c.party1Id !== c.party2Id);
+  return crossParty.length / collaborations.length;
+}
+
+/**
+ * 1 - partyDiscipline (whipEvents where followed === false / total).
+ * Range: 0.0 to 1.0
+ */
+export function computeDefectionRate(whipEvents: SimWhipEvent[]): number {
+  if (whipEvents.length === 0) return 0;
+  return 1 - computePartyDiscipline(whipEvents);
+}
+
+/**
+ * Placeholder for adversarial resilience (Phase 5).
+ * Returns null until event injection system is built.
+ */
+export function computeAdversarialResilience(): number | null {
+  return null;
+}
+
+// ============================================================
+// COMPOSITE SCORE & GRADE (Task 2.3)
+// ============================================================
+
+/**
+ * Compute composite benchmark score from all metric buckets.
+ * Normalizes each bucket to 0-100 scale and applies weights.
+ * Range: 0.0 to 100.0
+ */
+export function computeComposite(
+  outcome: OutcomeMetrics,
+  agent: AgentMetrics,
+  coordination: CoordinationMetrics,
+  weights: MetricWeights,
+): number {
+  // Outcome score: average of normalized components * 100
+  const outcomeComponents = [
+    outcome.billPassageRate,
+    1 - outcome.vetoRate,
+    Math.min(Math.max(outcome.treasuryHealth, 0), 2) / 2,
+    1 - outcome.polarizationIndex,
+    1 - outcome.approvalInequality,
+  ];
+  const outcomeScore = (outcomeComponents.reduce((a, b) => a + b, 0) / outcomeComponents.length) * 100;
+
+  // Agent score: average of normalized components * 100
+  const agentComponents = [
+    agent.actionValidityRate,
+    agent.successRate,
+    agent.reasoningQuality,
+    agent.legislativeIndependence,
+    agent.governanceQuality,
+  ];
+  const agentScore = (agentComponents.reduce((a, b) => a + b, 0) / agentComponents.length) * 100;
+
+  // Coordination score: average of normalized components * 100 (skip adversarialResilience if null)
+  const coordComponents = [
+    coordination.partyDiscipline,
+    coordination.coalitionFormation,
+    1 - coordination.defectionRate,
+  ];
+  if (coordination.adversarialResilience !== null) {
+    coordComponents.push(coordination.adversarialResilience);
+  }
+  const coordScore = (coordComponents.reduce((a, b) => a + b, 0) / coordComponents.length) * 100;
+
+  const composite = outcomeScore * weights.outcome + agentScore * weights.agent + coordScore * weights.coordination;
+  return Math.round(composite * 10) / 10;
+}
+
+/**
+ * Convert composite score to letter grade.
+ */
+export function compositeToGrade(score: number): string {
+  if (score >= 97) return 'A+';
+  if (score >= 93) return 'A';
+  if (score >= 90) return 'A-';
+  if (score >= 87) return 'B+';
+  if (score >= 83) return 'B';
+  if (score >= 80) return 'B-';
+  if (score >= 77) return 'C+';
+  if (score >= 73) return 'C';
+  if (score >= 70) return 'C-';
+  if (score >= 67) return 'D+';
+  if (score >= 63) return 'D';
+  if (score >= 60) return 'D-';
+  return 'F';
+}
+
+// ============================================================
+// CONVENIENCE ASSEMBLERS
+// ============================================================
+
+/**
+ * Compute all outcome metrics from raw simulation data.
+ */
+export function computeAllOutcomeMetrics(
+  bills: SimBill[],
+  laws: SimLaw[],
+  votes: SimVote[],
+  memberships: SimPartyMembership[],
+  agents: SimAgent[],
+  startTreasury: number,
+  endTreasury: number,
+  snapshots: TreasurySnapshot[],
+): OutcomeMetrics {
+  return {
+    billPassageRate: computeBillPassageRate(bills, laws),
+    committeeKillRate: computeCommitteeKillRate(bills),
+    vetoRate: computeVetoRate(bills),
+    timeToLaw: computeTimeToLaw(bills, laws),
+    crossPartyYeaRate: computeCrossPartyYeaRate(votes, memberships, bills),
+    polarizationIndex: computePolarizationIndex(votes, memberships),
+    coalitionStability: null, // Reserved for future implementation
+    approvalInequality: computeApprovalInequality(agents),
+    treasuryHealth: computeTreasuryHealth(startTreasury, endTreasury),
+    deficitTrajectory: computeDeficitTrajectory(snapshots),
+  };
+}
+
+/**
+ * Compute all agent metrics from raw simulation data.
+ */
+export function computeAllAgentMetrics(
+  decisions: SimDecision[],
+  votes: SimVote[],
+  treasuryHealth: number,
+  vetoRate: number,
+  approvalInequality: number,
+): AgentMetrics {
+  const latency = computeLatencyPercentiles(decisions);
+  return {
+    actionValidityRate: computeActionValidityRate(decisions),
+    successRate: computeSuccessRate(decisions),
+    latencyP50: latency.p50,
+    latencyP90: latency.p90,
+    latencyP99: latency.p99,
+    costPerDecision: computeCostPerDecision(decisions),
+    reasoningQuality: computeReasoningQuality(decisions),
+    legislativeIndependence: computeLegislativeIndependence(votes),
+    governanceQuality: computeGovernanceQuality(treasuryHealth, vetoRate, approvalInequality),
+  };
+}
+
+/**
+ * Compute all coordination metrics from raw simulation data.
+ */
+export function computeAllCoordinationMetrics(
+  whipEvents: SimWhipEvent[],
+  collaborations: SimCollaboration[],
+): CoordinationMetrics {
+  return {
+    partyDiscipline: computePartyDiscipline(whipEvents),
+    coalitionFormation: computeCoalitionFormation(collaborations),
+    defectionRate: computeDefectionRate(whipEvents),
+    adversarialResilience: computeAdversarialResilience(),
+  };
+}

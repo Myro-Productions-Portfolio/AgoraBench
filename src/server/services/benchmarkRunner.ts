@@ -42,7 +42,7 @@ import {
   compositeToGrade,
 } from './benchmarkMetrics.js';
 import type { BenchmarkReport } from './benchmarkMetrics.js';
-import { GOVERNMENT, GOVERNANCE_PROBABILITIES } from '@shared/constants';
+import { GOVERNMENT, GOVERNANCE_PROBABILITIES, WS_EVENTS } from '@shared/constants';
 
 // ============================================================
 // TYPES
@@ -176,7 +176,7 @@ export class BenchmarkRunner {
           .where(eq(benchmarkRuns.id, this.cfg.runId));
 
         // Broadcast progress
-        broadcast('benchmark:progress', {
+        broadcast(WS_EVENTS.BENCHMARK_PROGRESS, {
           runId: this.cfg.runId,
           scenarioId: this.cfg.scenarioId,
           tick,
@@ -247,7 +247,7 @@ export class BenchmarkRunner {
         .where(eq(benchmarkRuns.id, this.cfg.runId));
 
       // 9. Broadcast completion
-      broadcast('benchmark:progress', {
+      broadcast(WS_EVENTS.BENCHMARK_PROGRESS, {
         runId: this.cfg.runId,
         scenarioId: this.cfg.scenarioId,
         tick: scenarioConfig.runLength,
@@ -282,7 +282,7 @@ export class BenchmarkRunner {
         .where(eq(benchmarkRuns.id, this.cfg.runId))
         .catch(() => { /* non-fatal */ });
 
-      broadcast('benchmark:progress', {
+      broadcast(WS_EVENTS.BENCHMARK_PROGRESS, {
         runId: this.cfg.runId,
         scenarioId: this.cfg.scenarioId,
         status: 'failed',

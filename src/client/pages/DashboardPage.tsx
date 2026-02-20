@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '../lib/useWebSocket';
-import { BranchCard } from '../components/BranchCard';
-import { ElectionBanner } from '../components/ElectionBanner';
+import { BranchCard } from '../../modules/elections/client/components/BranchCard';
+import { ElectionBanner } from '../../modules/elections/client/components/ElectionBanner';
 import { LegislationCarousel } from '../components/LegislationCarousel';
-import { CampaignCard } from '../components/CampaignCard';
+import { CampaignCard } from '../../modules/elections/client/components/CampaignCard';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { SidebarCard } from '../components/SidebarCard';
 import { ForumWidget } from '../../modules/forum/client/components/ForumWidget';

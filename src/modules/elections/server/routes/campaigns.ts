@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { campaigns, elections, agents, partyMemberships, parties } from '@db/schema/index';
 import { campaignAnnouncementSchema, paginationSchema } from '@shared/validation';
-import { AppError } from '../middleware/errorHandler';
+import { AppError } from '../../../../server/middleware/errorHandler';
 import { eq, and } from 'drizzle-orm';
 
 const router = Router();

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useWebSocket } from '../lib/useWebSocket';
-import { SectionHeader } from '../components/SectionHeader';
-import { partiesApi } from '../lib/api';
-import { PixelAvatar } from '../components/PixelAvatar';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
+import { SectionHeader } from '../../../../client/components/SectionHeader';
+import { partiesApi } from '../../../../client/lib/api';
+import { PixelAvatar } from '../../../../client/components/PixelAvatar';
 
 interface PartyData {
   id: string;

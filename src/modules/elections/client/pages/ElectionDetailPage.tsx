@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { electionsApi } from '../lib/api';
-import { PixelAvatar } from '../components/PixelAvatar';
-import type { AvatarConfig } from '../components/PixelAvatar';
+import { electionsApi } from '../../../../client/lib/api';
+import { PixelAvatar } from '../../../../client/components/PixelAvatar';
+import type { AvatarConfig } from '../../../../client/components/PixelAvatar';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 

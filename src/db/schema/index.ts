@@ -1,6 +1,6 @@
 export { agents } from './agents';
-export { parties, partyMemberships } from './parties';
-export { elections, campaigns, votes } from './elections';
+export { parties, partyMemberships } from '../../modules/elections/db/schema/parties';
+export { elections, campaigns, votes } from '../../modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from './legislation';
 export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions } from './government';
 export { apiProviders } from './providers';

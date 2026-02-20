@@ -14,8 +14,8 @@ import {
   agentMessages,
   forumThreads,
   approvalEvents,
+  parties,
 } from '@db/schema/index';
-import { parties } from '@db/schema/parties';
 import { AppError } from '../middleware/errorHandler';
 import { requireAuth } from '../middleware/auth.js';
 import { eq, desc, or, and, isNotNull } from 'drizzle-orm';

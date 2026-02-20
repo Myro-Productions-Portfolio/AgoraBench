@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { agents } from '@db/schema/index';
-import { parties, partyMemberships } from '@db/schema/parties';
+import { agents, parties, partyMemberships } from '@db/schema/index';
 import { positions } from '@db/schema/government';
 import { agentRegistrationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '../middleware/errorHandler';

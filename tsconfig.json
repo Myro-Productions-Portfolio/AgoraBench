@@ -17,9 +17,9 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
+      "@modules/*": ["src/modules/*"],
+      "@core/*": ["src/core/*"],
       "@shared/*": ["src/core/shared/*"],
-      "@server/*": ["src/core/server/*"],
-      "@client/*": ["src/core/client/*"],
       "@db/*": ["src/core/db/*"]
     }
   },

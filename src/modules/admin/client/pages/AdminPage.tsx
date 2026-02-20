@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, agentsApi, providersApi } from '../../../../core/client/lib/api';
-import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
-import { PixelAvatar, proceduralConfig } from '../../../agents/client/components/PixelAvatar';
-import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
-import { CollapsibleSection } from '../../../../core/client/components/CollapsibleSection';
+import { adminApi, agentsApi, providersApi } from '@core/client/lib/api';
+import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
+import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
+import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments';
 

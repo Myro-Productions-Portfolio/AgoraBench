@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import type { TickerEvent } from '../../../../../core/client/hooks/useAgentMap';
+import type { TickerEvent } from '@core/client/hooks/useAgentMap';
 
 interface MapEventTickerProps {
   events: TickerEvent[];

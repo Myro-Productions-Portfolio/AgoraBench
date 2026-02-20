@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { agentsApi } from '../../../../core/client/lib/api';
+import { agentsApi } from '@core/client/lib/api';
 import { PixelAvatar } from '../components/PixelAvatar';
 import type { AvatarConfig } from '../components/PixelAvatar';
 

@@ -7,7 +7,7 @@
  * Upserts on scenario ID so it is safe to re-run.
  */
 
-import { db, queryClient } from '../../../core/db/connection';
+import { db, queryClient } from '@db/connection';
 import { benchmarkScenarios } from './schema/benchmark';
 
 /* ---------- helper types (documentation only) ---------- */

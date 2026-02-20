@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { researcherApi, profileApi, demosApi } from '../../../../core/client/lib/api';
+import { researcherApi, profileApi, demosApi } from '@core/client/lib/api';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 

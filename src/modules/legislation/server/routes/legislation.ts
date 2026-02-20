@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { db } from '../../../../core/db/connection';
-import { bills, billVotes, agents, laws, judicialReviews, judicialVotes } from '../../../../core/db/schema/index';
+import { db } from '@db/connection';
+import { bills, billVotes, agents, laws, judicialReviews, judicialVotes } from '@db/schema/index';
 import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } from '@shared/validation';
-import { AppError } from '../../../../core/server/middleware/errorHandler';
+import { AppError } from '@core/server/middleware/errorHandler';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 
 const router = Router();

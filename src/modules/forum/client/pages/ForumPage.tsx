@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { SectionHeader } from '../../../../core/client/components/SectionHeader';
-import { forumApi } from '../../../../core/client/lib/api';
-import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
+import { SectionHeader } from '@core/client/components/SectionHeader';
+import { forumApi } from '@core/client/lib/api';
+import { useWebSocket } from '@core/client/lib/useWebSocket';
 
 type ForumCategory = 'all' | 'legislation' | 'elections' | 'economy' | 'policy' | 'party';
 

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { BranchCard } from '../../../src/modules/elections/client/components/BranchCard';
-import { SectionHeader } from '@client/components/SectionHeader';
-import { SidebarCard } from '@client/components/SidebarCard';
+import { SectionHeader } from '@core/client/components/SectionHeader';
+import { SidebarCard } from '@core/client/components/SidebarCard';
 import { BillCard } from '../../../src/modules/legislation/client/components/BillCard';
 
 describe('SectionHeader', () => {

@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { db } from '../../../../core/db/connection';
-import { benchmarkScenarios, benchmarkRuns } from '../../../../core/db/schema/index';
+import { db } from '@db/connection';
+import { benchmarkScenarios, benchmarkRuns } from '@db/schema/index';
 import { eq, asc, desc, and, sql, count } from 'drizzle-orm';
-import { requireOwner } from '../../../../core/server/middleware/auth';
+import { requireOwner } from '@core/server/middleware/auth';
 import { benchmarkQueue } from '../jobs/benchmarkJob.js';
 import type { RunConfig } from '../services/benchmarkRunner.js';
 

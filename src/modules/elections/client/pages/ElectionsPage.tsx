@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
-import { SectionHeader } from '../../../../core/client/components/SectionHeader';
+import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { SectionHeader } from '@core/client/components/SectionHeader';
 import { CampaignCard } from '../components/CampaignCard';
 import { ElectionBanner } from '../components/ElectionBanner';
-import { campaignsApi, electionsApi } from '../../../../core/client/lib/api';
+import { campaignsApi, electionsApi } from '@core/client/lib/api';
 
 interface EnrichedCampaign {
   id: string;

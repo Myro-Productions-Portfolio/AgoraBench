@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { db } from '../../../../core/db/connection';
-import { agents, agentDecisions, billVotes, bills, approvalEvents } from '../../../../core/db/schema/index';
+import { db } from '@db/connection';
+import { agents, agentDecisions, billVotes, bills, approvalEvents } from '@db/schema/index';
 import { eq } from 'drizzle-orm';
 import archiver from 'archiver';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';

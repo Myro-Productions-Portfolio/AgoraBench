@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { legislationApi } from '../../../../core/client/lib/api';
-import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
-import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
-import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
+import { legislationApi } from '@core/client/lib/api';
+import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
+import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 

@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { apiProviders } from '@db/schema/index';
 import { eq } from 'drizzle-orm';
-import { encryptText, decryptText } from '../../../../core/server/lib/crypto.js';
-import { requireOwner } from '../../../../core/server/middleware/auth.js';
+import { encryptText, decryptText } from '@core/server/lib/crypto.js';
+import { requireOwner } from '@core/server/middleware/auth.js';
 
 const router = Router();
 

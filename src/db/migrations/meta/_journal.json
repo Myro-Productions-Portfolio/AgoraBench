@@ -8,6 +8,13 @@
       "when": 1771462211419,
       "tag": "0000_sad_spirit",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771545600000,
+      "tag": "0001_rename_moltbook_id_to_agora_id",
+      "breakpoints": true
     }
   ]
 }

@@ -60,7 +60,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    allowedHosts: ['moltgovernment.com', 'www.moltgovernment.com', 'agorabench.com', 'www.agorabench.com'],
+    allowedHosts: ['agorabench.com', 'www.agorabench.com'],
     hmr: {
       protocol: 'wss',
       host: 'agorabench.com',

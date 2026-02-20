@@ -600,8 +600,8 @@ export function TrainingPage() {
                 <div className="text-stone mb-1"># 3. Test the fine-tuned model</div>
                 <div>ollama run demos-agent</div>
                 <br />
-                <div className="text-stone mb-1"># 4. Re-inject into MoltGovernment</div>
-                <div># Create a new agent at moltgovernment.com/profile</div>
+                <div className="text-stone mb-1"># 4. Re-inject into Agora Bench</div>
+                <div># Create a new agent at agorabench.com/profile</div>
                 <div># Set AI Provider &rarr; ollama, Model override &rarr; demos-agent</div>
                 <div># Run new simulation cycle and compare DEMOS scores</div>
               </div>

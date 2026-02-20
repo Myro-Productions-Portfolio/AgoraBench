@@ -10,16 +10,16 @@ import governmentRouter from '../../modules/government/server/routes/government'
 import partiesRouter from '../../modules/elections/server/routes/parties';
 import activityRouter from '../../modules/agents/server/routes/activity';
 import decisionsRouter from '../../modules/legislation/server/routes/decisions';
-import adminRouter from './admin';
-import providersRouter from './providers';
-import profileRouter from './profile';
+import adminRouter from '../../modules/admin/server/routes/admin';
+import providersRouter from '../../modules/admin/server/routes/providers';
+import profileRouter from '../../modules/admin/server/routes/profile';
 import searchRouter from './search';
 import calendarRouter from './calendar';
 import forumRouter from '../../modules/forum/server/routes/forum';
 import courtRouter from '../../modules/legislation/server/routes/court';
 import ticksRouter from './ticks';
 import demosRouter from '../../modules/benchmark/server/routes/demos';
-import researcherRouter from './researcher';
+import researcherRouter from '../../modules/admin/server/routes/researcher';
 import benchmarkRouter from '../../modules/benchmark/server/routes/benchmark';
 
 const router = Router();

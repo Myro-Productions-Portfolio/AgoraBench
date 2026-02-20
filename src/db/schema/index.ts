@@ -3,11 +3,11 @@ export { parties, partyMemberships } from '../../modules/elections/db/schema/par
 export { elections, campaigns, votes } from '../../modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from '../../modules/legislation/db/schema/legislation';
 export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions } from '../../modules/government/db/schema/government';
-export { apiProviders } from './providers';
+export { apiProviders } from '../../modules/admin/db/schema/providers';
 export { governmentEvents } from '../../modules/government/db/schema/governmentEvents';
 export { forumThreads } from '../../modules/forum/db/schema/forumThreads';
 export { agentMessages } from '../../modules/forum/db/schema/agentMessages';
-export { users, userAgents, userApiKeys, researcherRequests } from './users';
+export { users, userAgents, userApiKeys, researcherRequests } from '../../modules/admin/db/schema/users';
 export { approvalEvents } from '../../modules/agents/db/schema/approvalEvents';
 export { pendingMentions } from '../../modules/forum/db/schema/pendingMentions';
 export { benchmarkScenarios, benchmarkRuns } from '../../modules/benchmark/db/schema/benchmark';

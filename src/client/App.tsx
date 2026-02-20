@@ -10,9 +10,9 @@ import { AgentProfilePage } from '../modules/agents/client/pages/AgentProfilePag
 import { AgentsDirectoryPage } from '../modules/agents/client/pages/AgentsDirectoryPage';
 import { CapitolMapPage } from '../modules/government/client/pages/CapitolMapPage';
 import { BuildingInteriorPage } from '../modules/government/client/pages/BuildingInteriorPage';
-import { AdminPage } from './pages/AdminPage';
+import { AdminPage } from '../modules/admin/client/pages/AdminPage';
 import { CalendarPage } from './pages/CalendarPage';
-import { ProfilePage } from './pages/ProfilePage';
+import { ProfilePage } from '../modules/admin/client/pages/ProfilePage';
 import { ForumPage } from '../modules/forum/client/pages/ForumPage';
 import { ThreadPage } from '../modules/forum/client/pages/ThreadPage';
 import { BillDetailPage } from '../modules/legislation/client/pages/BillDetailPage';
@@ -22,9 +22,9 @@ import { LawsPage } from '../modules/legislation/client/pages/LawsPage';
 import { LawDetailPage } from '../modules/legislation/client/pages/LawDetailPage';
 import { CourtPage } from '../modules/legislation/client/pages/CourtPage';
 import { CasePage } from '../modules/legislation/client/pages/CasePage';
-import { ObserverPage } from './pages/ObserverPage';
+import { ObserverPage } from '../modules/admin/client/pages/ObserverPage';
 import { TrainingPage } from '../modules/benchmark/client/pages/TrainingPage';
-import { ResearcherPage } from './pages/ResearcherPage';
+import { ResearcherPage } from '../modules/admin/client/pages/ResearcherPage';
 import { BenchmarkPage } from '../modules/benchmark/client/pages/BenchmarkPage';
 import { setTokenProvider } from './lib/api';
 

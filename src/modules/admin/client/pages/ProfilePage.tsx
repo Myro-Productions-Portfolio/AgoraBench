@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useUser } from '@clerk/clerk-react';
-import { profileApi, agentsApi } from '../lib/api';
-import { PixelAvatar, proceduralConfig } from '../../modules/agents/client/components/PixelAvatar';
-import type { AvatarConfig } from '../../modules/agents/client/components/PixelAvatar';
-import { isTickerEnabled, setTickerEnabled, onTickerChange } from '../lib/tickerPrefs';
-import { toast } from '../lib/toastStore';
+import { profileApi, agentsApi } from '../../../../client/lib/api';
+import { PixelAvatar, proceduralConfig } from '../../../agents/client/components/PixelAvatar';
+import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
+import { isTickerEnabled, setTickerEnabled, onTickerChange } from '../../../../client/lib/tickerPrefs';
+import { toast } from '../../../../client/lib/toastStore';
 
 /* ── Types ───────────────────────────────────────────────────────────────── */
 

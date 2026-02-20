@@ -10,8 +10,8 @@ import {
   bills,
   agentMessages,
 } from '@db/schema/index';
-import { requireResearcher } from '../middleware/auth.js';
-import { AppError } from '../middleware/errorHandler';
+import { requireResearcher } from '../../../../server/middleware/auth.js';
+import { AppError } from '../../../../server/middleware/errorHandler';
 import { eq, desc, inArray } from 'drizzle-orm';
 
 const router = Router();

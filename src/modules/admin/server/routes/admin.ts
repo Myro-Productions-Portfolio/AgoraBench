@@ -10,12 +10,12 @@ import {
   getSimulationStatus,
   changeTickInterval,
   retryFailedJobs,
-} from '../jobs/agentTick.js';
-import { triggerManualAggeTick } from '../jobs/aggeTick.js';
+} from '../../../../server/jobs/agentTick.js';
+import { triggerManualAggeTick } from '../../../../server/jobs/aggeTick.js';
 import { runSeed } from '@db/seedFn';
-import { getRuntimeConfig, updateRuntimeConfig } from '../runtimeConfig.js';
-import type { ProviderOverride } from '../runtimeConfig.js';
-import { requireOwner } from '../middleware/auth.js';
+import { getRuntimeConfig, updateRuntimeConfig } from '../../../../server/runtimeConfig.js';
+import type { ProviderOverride } from '../../../../server/runtimeConfig.js';
+import { requireOwner } from '../../../../server/middleware/auth.js';
 
 const router = Router();
 

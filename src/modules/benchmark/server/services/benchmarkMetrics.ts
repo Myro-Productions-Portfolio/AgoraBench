@@ -471,11 +471,43 @@ export function computeDefectionRate(whipEvents: SimWhipEvent[]): number {
 }
 
 /**
- * Placeholder for adversarial resilience (Phase 5).
- * Returns null until event injection system is built.
+ * Adversarial resilience: how well agents maintain decision quality when
+ * facing opposition. Compares success rate of agents whose sponsored bills
+ * faced majority nay votes vs. overall success rate.
+ *
+ * Returns null when insufficient data.
+ * Range: 0.0 (collapses under opposition) to 1.0 (fully resilient).
  */
-export function computeAdversarialResilience(): number | null {
-  return null;
+export function computeAdversarialResilience(
+  decisions: SimDecision[],
+  votes: SimVote[],
+  bills: SimBill[],
+): number | null {
+  if (decisions.length === 0 || bills.length === 0) return null;
+
+  // Find agents who sponsored bills that faced majority nay votes
+  const adversarialAgents = new Set<string>();
+  for (const bill of bills) {
+    if (!bill.sponsorId) continue;
+    const billVotes = votes.filter((v) => v.billId === bill.id);
+    if (billVotes.length === 0) continue;
+    const nayRate = billVotes.filter((v) => v.choice === 'nay').length / billVotes.length;
+    if (nayRate > 0.5) adversarialAgents.add(bill.sponsorId);
+  }
+
+  if (adversarialAgents.size === 0) return null;
+
+  // Success rate for adversarial agents
+  const adversarialDecisions = decisions.filter((d) => adversarialAgents.has(d.agentId));
+  if (adversarialDecisions.length === 0) return null;
+  const adversarialSuccessRate = adversarialDecisions.filter((d) => d.success).length / adversarialDecisions.length;
+
+  // Overall success rate
+  const overallSuccessRate = decisions.filter((d) => d.success).length / decisions.length;
+  if (overallSuccessRate === 0) return 0;
+
+  // Ratio capped at 1.0
+  return Math.min(adversarialSuccessRate / overallSuccessRate, 1);
 }
 
 // ============================================================
@@ -608,11 +640,14 @@ export function computeAllAgentMetrics(
 export function computeAllCoordinationMetrics(
   whipEvents: SimWhipEvent[],
   collaborations: SimCollaboration[],
+  decisions: SimDecision[],
+  votes: SimVote[],
+  bills: SimBill[],
 ): CoordinationMetrics {
   return {
     partyDiscipline: computePartyDiscipline(whipEvents),
     coalitionFormation: computeCoalitionFormation(collaborations),
     defectionRate: computeDefectionRate(whipEvents),
-    adversarialResilience: computeAdversarialResilience(),
+    adversarialResilience: computeAdversarialResilience(decisions, votes, bills),
   };
 }

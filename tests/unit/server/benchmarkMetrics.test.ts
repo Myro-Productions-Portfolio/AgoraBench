@@ -829,8 +829,64 @@ describe('Coordination Metrics', () => {
   // computeAdversarialResilience
   // ----------------------------------------------------------
   describe('computeAdversarialResilience', () => {
-    it('returns null (placeholder)', () => {
-      expect(computeAdversarialResilience()).toBeNull();
+    it('returns null when no decisions exist', () => {
+      expect(computeAdversarialResilience([], [], [])).toBeNull();
+    });
+
+    it('returns null when no bills exist', () => {
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, [], [])).toBeNull();
+    });
+
+    it('returns null when no bills faced majority nay votes', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'passed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'yea' },
+        { voterId: 'a3', billId: 'b1', choice: 'yea' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, votes, bills)).toBeNull();
+    });
+
+    it('returns 1.0 when adversarial agents have same success rate as overall', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'vetoed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'nay' },
+        { voterId: 'a3', billId: 'b1', choice: 'nay' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a2', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, votes, bills)).toBe(1);
+    });
+
+    it('returns value between 0 and 1 when adversarial agents underperform', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'vetoed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'nay' },
+        { voterId: 'a3', billId: 'b1', choice: 'nay' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a1', parsedAction: 'vote', parsedReasoning: 'test', success: false, latencyMs: 100 },
+        { agentId: 'a2', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a3', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      const result = computeAdversarialResilience(decisions, votes, bills);
+      expect(result).toBeTypeOf('number');
+      expect(result).toBeGreaterThan(0);
+      expect(result).toBeLessThan(1);
     });
   });
 });
@@ -1127,7 +1183,7 @@ describe('Convenience Assemblers', () => {
         { agent1Id: 'a1', agent2Id: 'a3', party1Id: 'partyA', party2Id: 'partyA', type: 'joint_sponsorship' },
       ];
 
-      const result = computeAllCoordinationMetrics(whipEvents, collabs);
+      const result = computeAllCoordinationMetrics(whipEvents, collabs, [], [], []);
 
       expect(result.partyDiscipline).toBeCloseTo(2 / 3);
       expect(result.coalitionFormation).toBe(0.5);
@@ -1136,7 +1192,7 @@ describe('Convenience Assemblers', () => {
     });
 
     it('handles empty inputs', () => {
-      const result = computeAllCoordinationMetrics([], []);
+      const result = computeAllCoordinationMetrics([], [], [], [], []);
       expect(result.partyDiscipline).toBe(0);
       expect(result.coalitionFormation).toBe(0);
       expect(result.defectionRate).toBe(0);

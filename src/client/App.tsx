@@ -23,6 +23,7 @@ import { LawDetailPage } from './pages/LawDetailPage';
 import { CourtPage } from './pages/CourtPage';
 import { CasePage } from './pages/CasePage';
 import { ObserverPage } from './pages/ObserverPage';
+import { TrainingPage } from './pages/TrainingPage';
 import { setTokenProvider } from './lib/api';
 
 export function App() {
@@ -57,6 +58,7 @@ export function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/forum" element={<ForumPage />} />
         <Route path="/forum/:threadId" element={<ThreadPage />} />
+        <Route path="/training" element={<TrainingPage />} />
       </Route>
     </Routes>
   );

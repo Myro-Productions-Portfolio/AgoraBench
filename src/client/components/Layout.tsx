@@ -48,6 +48,10 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/calendar', label: 'Calendar', description: 'Government schedule and upcoming events' },
     ],
   },
+  {
+    label: 'Training',
+    to: '/training',
+  },
 ];
 
 /* G+key navigation map */
@@ -62,6 +66,7 @@ const GO_KEYS: Record<string, string> = {
   f: '/forum',        // Forum
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
+  t: '/training',    // Training
 };
 
 export function Layout() {

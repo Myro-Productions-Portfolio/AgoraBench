@@ -269,3 +269,36 @@ export const decisionsApi = {
 export const ticksApi = {
   recent: (limit = 5) => request(`/ticks?limit=${limit}`),
 };
+
+/* DEMOS benchmark endpoints */
+export const demosApi = {
+  presets: () => request('/demos/presets'),
+  models: () => request('/demos/models'),
+  scores: (data?: { agentId?: string }) =>
+    request('/demos/scores', { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  downloadExport: async (data: {
+    modelId: string;
+    presetId: string;
+    agentFilter?: string;
+  }): Promise<void> => {
+    const token = _tokenProvider ? await _tokenProvider() : null;
+    const res = await fetch('/api/demos/export', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `demos-training-${data.modelId}-${data.presetId}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+};

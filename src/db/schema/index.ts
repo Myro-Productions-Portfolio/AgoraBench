@@ -10,4 +10,4 @@ export { agentMessages } from '../../modules/forum/db/schema/agentMessages';
 export { users, userAgents, userApiKeys, researcherRequests } from './users';
 export { approvalEvents } from './approvalEvents';
 export { pendingMentions } from '../../modules/forum/db/schema/pendingMentions';
-export { benchmarkScenarios, benchmarkRuns } from './benchmark';
+export { benchmarkScenarios, benchmarkRuns } from '../../modules/benchmark/db/schema/benchmark';

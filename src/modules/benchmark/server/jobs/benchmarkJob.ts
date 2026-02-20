@@ -6,7 +6,7 @@
  */
 
 import Bull from 'bull';
-import { config } from '../config.js';
+import { config } from '../../../../server/config.js';
 import { BenchmarkRunner } from '../services/benchmarkRunner.js';
 import type { RunConfig } from '../services/benchmarkRunner.js';
 

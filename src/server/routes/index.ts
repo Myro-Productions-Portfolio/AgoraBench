@@ -18,9 +18,9 @@ import calendarRouter from './calendar';
 import forumRouter from '../../modules/forum/server/routes/forum';
 import courtRouter from './court';
 import ticksRouter from './ticks';
-import demosRouter from './demos';
+import demosRouter from '../../modules/benchmark/server/routes/demos';
 import researcherRouter from './researcher';
-import benchmarkRouter from './benchmark';
+import benchmarkRouter from '../../modules/benchmark/server/routes/benchmark';
 
 const router = Router();
 

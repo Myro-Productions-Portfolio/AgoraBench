@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { benchmarkApi } from '../lib/api';
-import { useWebSocket } from '../lib/useWebSocket';
+import { benchmarkApi } from '../../../../client/lib/api';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 

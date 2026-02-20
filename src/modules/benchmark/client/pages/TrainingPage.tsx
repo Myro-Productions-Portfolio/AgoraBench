@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { demosApi, agentsApi } from '../lib/api';
+import { demosApi, agentsApi } from '../../../../client/lib/api';
 
 // ============================================================
 // TYPES

@@ -11,11 +11,11 @@
 
 import crypto from 'node:crypto';
 import { eq } from 'drizzle-orm';
-import { db } from '@db/connection';
-import { benchmarkScenarios, benchmarkRuns } from '@db/schema/index';
-import { broadcast } from '../websocket.js';
-import { generateAgentDecision } from './ai.js';
-import type { AgentRecord, AgentDecision } from './ai.js';
+import { db } from '../../../../db/connection';
+import { benchmarkScenarios, benchmarkRuns } from '../../../../db/schema/index';
+import { broadcast } from '../../../../server/websocket.js';
+import { generateAgentDecision } from '../../../../server/services/ai.js';
+import type { AgentRecord, AgentDecision } from '../../../../server/services/ai.js';
 import {
   BenchmarkWorldState,
 } from './benchmarkWorldState.js';
@@ -33,7 +33,7 @@ import {
   calculateInactivityDecay,
   parseVoteChoice,
   shouldFollowWhip,
-} from './simulationCore.js';
+} from '../../../../server/services/simulationCore.js';
 import {
   computeAllOutcomeMetrics,
   computeAllAgentMetrics,
@@ -43,7 +43,7 @@ import {
 } from './benchmarkMetrics.js';
 import type { BenchmarkReport } from './benchmarkMetrics.js';
 import { processTickEvents } from './benchmarkEventProcessor.js';
-import { GOVERNMENT, GOVERNANCE_PROBABILITIES, WS_EVENTS } from '@shared/constants';
+import { GOVERNMENT, GOVERNANCE_PROBABILITIES, WS_EVENTS } from '../../../../shared/constants';
 
 // ============================================================
 // TYPES

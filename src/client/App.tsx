@@ -23,9 +23,9 @@ import { LawDetailPage } from './pages/LawDetailPage';
 import { CourtPage } from './pages/CourtPage';
 import { CasePage } from './pages/CasePage';
 import { ObserverPage } from './pages/ObserverPage';
-import { TrainingPage } from './pages/TrainingPage';
+import { TrainingPage } from '../modules/benchmark/client/pages/TrainingPage';
 import { ResearcherPage } from './pages/ResearcherPage';
-import { BenchmarkPage } from './pages/BenchmarkPage';
+import { BenchmarkPage } from '../modules/benchmark/client/pages/BenchmarkPage';
 import { setTokenProvider } from './lib/api';
 
 export function App() {

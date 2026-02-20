@@ -66,7 +66,8 @@ const GO_KEYS: Record<string, string> = {
   f: '/forum',        // Forum
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
-  t: '/training',    // Training
+  t: '/training',     // Training
+  r: '/researcher',   // Researcher
 };
 
 export function Layout() {
@@ -405,8 +406,18 @@ export function Layout() {
             ?
           </button>
 
-          {/* Admin — only for admins */}
-          {isSignedIn && userRole === 'admin' && (
+          {/* Researcher — researcher + owner */}
+          {isSignedIn && (userRole === 'researcher' || userRole === 'owner') && (
+            <Link
+              to="/researcher"
+              className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+            >
+              Researcher
+            </Link>
+          )}
+
+          {/* Admin — owner only */}
+          {isSignedIn && userRole === 'owner' && (
             <Link
               to="/admin"
               className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"

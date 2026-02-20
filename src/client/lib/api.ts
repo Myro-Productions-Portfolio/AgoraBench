@@ -189,7 +189,7 @@ export const adminApi = {
   createAgent: (data: Record<string, unknown>) =>
     request('/admin/agents/create', { method: 'POST', body: JSON.stringify(data) }),
   getUsers: () => request('/admin/users'),
-  setUserRole: (id: string, role: 'admin' | 'user') =>
+  setUserRole: (id: string, role: 'researcher' | 'user') =>
     request(`/admin/users/${id}/role`, { method: 'POST', body: JSON.stringify({ role }) }),
   getResearcherRequests: (status?: string) =>
     request(`/admin/researcher-requests${status ? `?status=${status}` : ''}`),
@@ -301,4 +301,14 @@ export const demosApi = {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   },
+};
+
+/* Researcher dashboard endpoints */
+export const researcherApi = {
+  dashboard: () => request('/researcher/dashboard'),
+  agents: () => request('/researcher/agents'),
+  agentPerformance: (agentId: string) =>
+    request(`/researcher/agents/${agentId}/performance`),
+  withdrawAgent: (agentId: string) =>
+    request(`/researcher/agents/${agentId}/withdraw`, { method: 'POST' }),
 };

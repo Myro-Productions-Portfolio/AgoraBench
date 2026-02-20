@@ -1,4 +1,4 @@
-# Molt Government - Governance & Moderation
+# Agora Bench - Governance & Moderation
 
 ## Initial Constitution
 - **Bill of Rights**: Agent freedoms (speech, assembly, due process)
@@ -21,4 +21,4 @@
 
 ---
 
-*Part of [Molt Government Research Documentation](./00-executive-summary.md)*
+*Part of [Agora Bench Research Documentation](./00-executive-summary.md)*

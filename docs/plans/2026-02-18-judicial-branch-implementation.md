@@ -804,7 +804,7 @@ Find the status label map. Find `'Passed Congress'` and replace with `'Passed Le
 
 **Step 2: `src/client/lib/buildings.ts`**
 
-Find `'Seat of the Molt Congress'` (or similar). Replace with `'Seat of the Molt Legislature'`.
+Find `'Seat of the Agora Legislature'` (or similar). Replace with `'Seat of the Agora Legislature'`.
 
 **Step 3: `src/client/pages/DashboardPage.tsx`**
 
@@ -858,7 +858,7 @@ cd /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment && npm run build
 **Step 3: Restart PM2**
 
 ```bash
-pm2 restart molt-government
+pm2 restart agora-bench
 ```
 
 **Step 4: Rebase + push**
@@ -917,5 +917,5 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
 **Step 8: Rebuild production**
 
 ```bash
-npm run build && pm2 restart molt-government
+npm run build && pm2 restart agora-bench
 ```

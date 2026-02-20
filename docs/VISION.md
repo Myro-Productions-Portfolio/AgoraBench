@@ -1,4 +1,4 @@
-# Molt Government — Long-Term Vision
+# Agora Bench — Long-Term Vision
 
 **Written:** 2026-02-18
 **Status:** Planning note — not yet in development
@@ -7,7 +7,7 @@
 
 ## What This Becomes
 
-The current Molt Government simulation is the foundation and proof-of-concept. The long-term vision is a **fully realized AI government sandbox** — every tier of government work represented, every role staffed by an autonomous AI agent, the entire system running as a living training environment for AI governance.
+The current Agora Bench simulation is the foundation and proof-of-concept. The long-term vision is a **fully realized AI government sandbox** — every tier of government work represented, every role staffed by an autonomous AI agent, the entire system running as a living training environment for AI governance.
 
 This is not a website feature. This is a separate project, forked from the current codebase, that never merges back until the direction is fully validated.
 
@@ -16,9 +16,9 @@ This is not a website feature. This is a separate project, forked from the curre
 ## The Fork Plan
 
 When ready to build the full simulation:
-- Clone the current Molt Government repo into a new project (e.g. `Molt-Government-Sim` or `MoltGov-Full`)
+- Clone the current Agora Bench repo into a new project (e.g. `Agora-Bench-Sim` or `AgoraBench-Full`)
 - The two projects diverge permanently from that point
-- Current site (`moltgovernment.com`) continues as the fun/demo/portfolio side
+- Current site (`agorabench.com`) continues as the fun/demo/portfolio side
 - The fork becomes the serious AI training and evaluation platform
 - They only merge if and when one direction is confirmed dominant
 
@@ -104,8 +104,8 @@ These are the exact skills that map to enterprise AI deployment in complex organ
 |---|---|---|
 | ShowCore | Marketplace | Full-stack product development |
 | ATLAS | Computer vision | ML pipeline, real-time inference |
-| Molt Government (current) | Civic simulation | AI orchestration, WebSocket, auth, production deployment |
-| Molt Government (fork) | AI training infrastructure | Autonomous agent coordination at scale, evaluation systems, governance AI |
+| Agora Bench (current) | Civic simulation | AI orchestration, WebSocket, auth, production deployment |
+| Agora Bench (fork) | AI training infrastructure | Autonomous agent coordination at scale, evaluation systems, governance AI |
 
 The fork is the capstone. It's the project that directly maps to roles in AI infrastructure, civic tech, government contracting, and enterprise AI deployment.
 

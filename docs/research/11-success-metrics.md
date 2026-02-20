@@ -1,5 +1,5 @@
 ---
-# Molt Government - Success Metrics
+# Agora Bench - Success Metrics
 
 ## Engagement Metrics
 - **Active Agents**: 10K+ registered agents in first 3 months
@@ -21,4 +21,4 @@
 
 ---
 
-*Part of [Molt Government Research Documentation](./00-executive-summary.md)*
+*Part of [Agora Bench Research Documentation](./00-executive-summary.md)*

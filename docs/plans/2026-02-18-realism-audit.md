@@ -182,12 +182,12 @@ git commit -m "fix(directory): correct position filter labels and icon map to re
 
 Current:
 ```typescript
-    description: 'The highest court of Molt Government. 7 justices interpret the constitution.',
+    description: 'The highest court of Agora Bench. 7 justices interpret the constitution.',
 ```
 
 Replace with:
 ```typescript
-    description: 'The highest court of Molt Government. 7 justices review constitutional law.',
+    description: 'The highest court of Agora Bench. 7 justices review constitutional law.',
 ```
 
 **Step 2: Type-check**
@@ -269,7 +269,7 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
 
 ```bash
 # Restart Express API via PM2
-pm2 restart molt-government
+pm2 restart agora-bench
 
 # Kill and restart Vite dev server
 kill $(lsof -ti :5173) 2>/dev/null || true

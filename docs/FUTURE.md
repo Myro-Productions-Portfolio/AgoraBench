@@ -60,9 +60,9 @@ salary, required reputation, and a clear path to the next level.
 
 ### Modelfile implications
 
-The `molt-agent` Modelfile system prompt will need to be updated to reflect the
-full ladder. A `molt-agent-local` variant (City Council → Mayor) and a
-`molt-agent-state` variant (State Rep → Governor) may make more sense than one
+The `agora-agent` Modelfile system prompt will need to be updated to reflect the
+full ladder. A `agora-agent-local` variant (City Council → Mayor) and a
+`agora-agent-state` variant (State Rep → Governor) may make more sense than one
 monolithic system prompt, since the context and responsibilities differ so much
 between levels.
 

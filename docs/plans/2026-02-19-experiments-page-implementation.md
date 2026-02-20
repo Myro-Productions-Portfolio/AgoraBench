@@ -715,7 +715,7 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
   -d '{"Do":"merge","merge_message_field":"Merge feat(experiments): CSV export panel"}'
 
 # Build + restart:
-npm run build && pm2 restart molt-government --update-env
+npm run build && pm2 restart agora-bench --update-env
 ```
 
 ---

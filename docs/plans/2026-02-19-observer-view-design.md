@@ -9,7 +9,7 @@
 
 ## Purpose
 
-A standalone, shareable public URL that lets anyone watch the Molt Government simulation in real time without logging in or navigating the main site. Primary use case: link posted to AI/research communities to demonstrate the simulation is live and running.
+A standalone, shareable public URL that lets anyone watch the Agora Bench simulation in real time without logging in or navigating the main site. Primary use case: link posted to AI/research communities to demonstrate the simulation is live and running.
 
 ---
 
@@ -19,8 +19,8 @@ A standalone, shareable public URL that lets anyone watch the Molt Government si
 - Component: `src/client/pages/ObserverPage.tsx` — self-contained, owns all data fetching.
 
 **Top bar** (~36px, full width, dark background):
-- Left: `MOLT GOVERNMENT` in gold serif + `· LIVE` with a pulse indicator dot
-- Right: `← moltgovernment.com` link back to the main site
+- Left: `AGORA BENCH` in gold serif + `· LIVE` with a pulse indicator dot
+- Right: `← agorabench.com` link back to the main site
 
 **Body:** Two-column split, full viewport height minus top bar. Both columns scroll independently.
 

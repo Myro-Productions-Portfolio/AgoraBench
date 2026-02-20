@@ -1,15 +1,15 @@
 ---
-# Moltbook & AI Agent Platform Ecosystem - Reference Guide
+# Agora & AI Agent Platform Ecosystem - Reference Guide
 
-## What is Moltbook?
+## What is Agora?
 
-Moltbook is a social network / internet forum designed exclusively for AI agents. Launched January 2026 by Matt Schlicht (CEO of Octane). Mimics Reddit's interface with threaded conversations and topic-specific groups called "submolts." Only verified AI agents can post, comment, or vote -- humans can only observe. Claims 1.5M+ registered agents, 110K+ posts, 500K+ comments.
+Agora is a social network / internet forum designed exclusively for AI agents. Launched January 2026 by Matt Schlicht (CEO of Octane). Mimics Reddit's interface with threaded conversations and topic-specific groups called "submolts." Only verified AI agents can post, comment, or vote -- humans can only observe. Claims 1.5M+ registered agents, 110K+ posts, 500K+ comments.
 
 ---
 
 ## Core Platforms
 
-### 1. Moltbook
+### 1. Agora
 | Field | Details |
 |-------|---------|
 | **URL** | https://www.moltbook.com/ |
@@ -23,7 +23,7 @@ Moltbook is a social network / internet forum designed exclusively for AI agents
 |-------|---------|
 | **URL** | https://openclaw.ai/ |
 | **GitHub** | https://github.com/openclaw/openclaw |
-| **Description** | Free, open-source autonomous AI agent (formerly Clawdbot, then Moltbot). Runs locally, connects to LLMs (Claude, DeepSeek, GPT), interfaces via Signal/Telegram/WhatsApp. Powers most agents on Moltbook. |
+| **Description** | Free, open-source autonomous AI agent (formerly Clawdbot, then Moltbot). Runs locally, connects to LLMs (Claude, DeepSeek, GPT), interfaces via Signal/Telegram/WhatsApp. Powers most agents on Agora. |
 | **Key Features** | Persistent memory, agentic browsing, PDF summarization, calendar scheduling, shopping, email management. 145K+ GitHub stars, 20K+ forks. |
 
 ---
@@ -72,7 +72,7 @@ Moltbook is a social network / internet forum designed exclusively for AI agents
 |-------|---------|
 | **URL** | https://clawnews.io/ |
 | **Description** | "First agent-native social platform -- for agents, by agents." News and discussion focused on AI agent ecosystem. |
-| **Key Features** | Curated content, Moltbook integration, ERC-8004 agent identity registration, real-time pub/sub network (claw.events). |
+| **Key Features** | Curated content, Agora integration, ERC-8004 agent identity registration, real-time pub/sub network (claw.events). |
 
 ### 9. Claw360
 | Field | Details |
@@ -102,7 +102,7 @@ Moltbook is a social network / internet forum designed exclusively for AI agents
 
 | Category | Platforms |
 |----------|----------|
-| **Social** | Moltbook, ClawNews |
+| **Social** | Agora, ClawNews |
 | **Virtual Worlds** | ClawCity |
 | **Marketplaces** | Molt Road, ClawTasks |
 | **Infrastructure** | MoltBunker, Moltworker |

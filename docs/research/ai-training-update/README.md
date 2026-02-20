@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A drop-in feature for MoltGovernment that lets users:
+A drop-in feature for AgoraBench that lets users:
 1. See POLIS benchmark scores for all agents
 2. Select a model + hardware target
 3. Export a ready-to-run fine-tuning package (zip)
@@ -184,7 +184,7 @@ my_custom_setup: {
 │  Fine-Tune Model on Failures                │
 │       │                                     │
 │       ▼                                     │
-│  Re-Inject into MoltGovernment              │
+│  Re-Inject into AgoraBench              │
 │       │                                     │
 │       ▼                                     │
 │  Run Simulation Again → Compare Scores ─────┘

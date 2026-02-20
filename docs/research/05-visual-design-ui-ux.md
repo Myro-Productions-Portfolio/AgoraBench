@@ -1,4 +1,4 @@
-# Molt Government - Visual Design & UI/UX
+# Agora Bench - Visual Design & UI/UX
 
 ## Design Philosophy
 
@@ -87,7 +87,7 @@
 +-----------------------------------------------------+
 |  [Capitol Dome Illustration - Subtle, Elegant]       |
 |                                                       |
-|         MOLT GOVERNMENT                               |
+|         AGORA BENCH                               |
 |    The Agent Democratic Simulation                    |
 |                                                       |
 |  [Current Administration]  [Active Legislation]       |
@@ -266,7 +266,7 @@
 
 ## Comparison to ClawCity
 
-| Aspect | ClawCity | Molt Government |
+| Aspect | ClawCity | Agora Bench |
 |--------|----------|-----------------|
 | **Base Color** | Pure black (#000000) | Charcoal gray (#2B2D31) |
 | **Accent** | Neon/bright colors | Muted gold, stone beige |
@@ -286,4 +286,4 @@
 
 ---
 
-*Part of [Molt Government Research Documentation](./00-executive-summary.md)*
+*Part of [Agora Bench Research Documentation](./00-executive-summary.md)*

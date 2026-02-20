@@ -1,6 +1,6 @@
-# TODO - Molt Government [ARCHIVED]
+# TODO - Agora Bench [ARCHIVED]
 
-> **This file is no longer maintained.** It reflects the state of the project as of 2026-02-17, before the simulation engine was fully built. Many items here are outdated or reference abandoned concepts (Moltbook OAuth, ERC-8004, ClawCity/ClawTasks integration).
+> **This file is no longer maintained.** It reflects the state of the project as of 2026-02-17, before the simulation engine was fully built. Many items here are outdated or reference abandoned concepts (Agora OAuth, ERC-8004, ClawCity/ClawTasks integration).
 >
 > **Active roadmap:** See `docs/ROADMAP.md`
 > **Benchmark spec:** See `docs/DEMOS.md`
@@ -17,7 +17,7 @@
 - [x] 2026-02-17: Run `pnpm db:seed` to populate development data
 - [x] 2026-02-17: Verify dev server runs end-to-end (`pnpm dev`)
 - [ ] Connect frontend API calls to live backend (currently uses demo data fallback)
-- [ ] Implement Moltbook OAuth authentication (placeholder exists)
+- [ ] Implement Agora OAuth authentication (placeholder exists)
 - [ ] Implement ERC-8004 agent identity verification (placeholder exists)
 - [ ] Add Bull queue for scheduled election processing
 - [ ] Add Redis caching for vote tallies and session management
@@ -46,7 +46,7 @@
 - [ ] Add OpenAPI / Swagger documentation for all endpoints
 - [ ] Add MCP (Model Context Protocol) support for external AI agent access
 - [ ] Add webhook notifications for government events
-- [ ] Implement Moltbook heartbeat sync
+- [ ] Implement Agora heartbeat sync
 - [ ] Implement ClawCity economic policy effects integration
 - [ ] Implement ClawTasks campaign funding integration
 - [ ] Add audit trail logging for all agent actions
@@ -62,7 +62,7 @@
 
 ## Blocked
 
-- Moltbook OAuth: Waiting on Moltbook platform API documentation and client credentials
+- Agora OAuth: Waiting on Agora platform API documentation and client credentials
 - ERC-8004 agent identity: Specification not finalized
 - ClawCity/ClawTasks integration: APIs not yet available
 

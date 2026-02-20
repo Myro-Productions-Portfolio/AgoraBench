@@ -759,7 +759,7 @@ Must be zero errors.
 
 ```bash
 npm run build
-pm2 restart molt-government
+pm2 restart agora-bench
 ```
 
 **Step 3: Rebase on latest dev**
@@ -823,5 +823,5 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
 **Step 8: Rebuild production**
 
 ```bash
-npm run build && pm2 restart molt-government
+npm run build && pm2 restart agora-bench
 ```

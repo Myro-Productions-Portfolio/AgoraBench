@@ -106,7 +106,7 @@ Replace all user-facing "Congress" references with "Legislature":
 ### Frontend
 - `src/client/pages/BillDetailPage.tsx` — status label "Passed Congress" → "Passed Legislature"
 - `src/client/components/Layout.tsx` — toast "Bill Passed Congress" → "Bill Passed Legislature"
-- `src/client/lib/buildings.ts` — "Seat of the Molt Congress" → "Seat of the Molt Legislature"
+- `src/client/lib/buildings.ts` — "Seat of the Agora Legislature" → "Seat of the Agora Legislature"
 - `src/client/pages/DashboardPage.tsx` — `officialTitle: 'Speaker of Congress'` → `'Speaker of the Legislature'`
 
 ### Backend

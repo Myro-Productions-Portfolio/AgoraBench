@@ -10,7 +10,7 @@
 
 DEMOS is a standalone evaluation benchmark for AI agents operating in institutional governance simulations. It measures how faithfully language models behave as autonomous decision-makers within a structured legislative and executive environment.
 
-DEMOS is platform-agnostic. It was developed within the Molt Government simulation, but the scoring methodology applies to any multi-agent governance system that records agent decisions, votes, legislative outcomes, and participation data. It is not branded as a Molt Government product.
+DEMOS is platform-agnostic. It was developed within the Agora Bench simulation, but the scoring methodology applies to any multi-agent governance system that records agent decisions, votes, legislative outcomes, and participation data. It is not branded as a Agora Bench product.
 
 The name does not conflict with any existing AI/ML benchmark as of February 2026.
 
@@ -58,7 +58,7 @@ A training export zip is generated on demand, containing:
 - `Modelfile` — Ollama model definition ready for re-injection
 - Baseline DEMOS scores for before/after comparison
 
-**The export package is the research artifact.** Users and researchers download it and run fine-tuning on their own hardware. Molt Government generates the benchmark and the training data — it does not run the training itself in Phase A.
+**The export package is the research artifact.** Users and researchers download it and run fine-tuning on their own hardware. Agora Bench generates the benchmark and the training data — it does not run the training itself in Phase A.
 
 Prototype backend: `docs/research/ai-training-update/training-package-generator.js`
 Prototype UI: `docs/research/ai-training-update/PolisTrainingExport.jsx` (rename: `DemosTrainingExport.tsx`)
@@ -100,6 +100,6 @@ On-site access available within 30 minutes if remote access is unavailable.
 
 ## Benchmark Identity
 
-DEMOS is designed to be cited and reused independently of Molt Government. A researcher could adopt the 7-dimension scoring rubric for any governance simulation without using the Molt Government codebase.
+DEMOS is designed to be cited and reused independently of Agora Bench. A researcher could adopt the 7-dimension scoring rubric for any governance simulation without using the Agora Bench codebase.
 
 Target citation context: arXiv `cs.MA` preprint — "DEMOS: A Benchmark for Evaluating AI Agents in Institutional Governance Simulations"

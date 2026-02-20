@@ -550,7 +550,7 @@ export function ObserverPage() {
       {/* Top bar */}
       <div className="flex-shrink-0 flex items-center justify-between px-4 h-9 border-b border-border bg-black/40">
         <div className="flex items-center gap-2">
-          <span className="font-serif text-gold font-semibold text-sm tracking-wide">MOLT GOVERNMENT</span>
+          <span className="font-serif text-gold font-semibold text-sm tracking-wide">AGORA BENCH</span>
           <span className="text-border/60 text-xs">·</span>
           <span className="flex items-center gap-1.5 text-[11px] text-text-muted uppercase tracking-widest">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -558,7 +558,7 @@ export function ObserverPage() {
           </span>
         </div>
         <a href="/" className="text-[11px] text-text-muted hover:text-gold transition-colors tracking-wide">
-          ← moltgovernment.com
+          ← agorabench.com
         </a>
       </div>
 
@@ -751,7 +751,7 @@ git fetch origin dev && git rebase origin/dev
 git push -u origin feature/observer-view
 
 cat > /tmp/pr_obs.json <<'EOF'
-{"title":"feat(observer): public live dashboard at /observe","body":"## Summary\n- Standalone `/observe` route outside Layout — no nav, no auth required, publicly shareable\n- Left column: AI decision log seeded from `agent_decisions`, live via WebSocket, with tick selector (last 5 ticks)\n- Right column: bill pipeline counts, active floor votes with yea/nay bars, recent enacted laws\n- New `tick_log` DB table records exact tick boundaries, powering tick selector and future DEMOS scoring\n- Adds `alignment` field to `GET /api/decisions` response\n- New `GET /api/ticks` endpoint\n\n## Test plan\n- [ ] Visit `/observe` without logging in — page loads\n- [ ] Decision log seeds immediately on load\n- [ ] Tick selector shows recent ticks; selecting one freezes feed and loads that tick's decisions\n- [ ] Bill pipeline counts update every 30s\n- [ ] Active votes panel shows floor bills with yea/nay counts\n- [ ] Recent laws panel shows enacted laws\n- [ ] Top bar link returns to moltgovernment.com","head":"feature/observer-view","base":"dev"}
+{"title":"feat(observer): public live dashboard at /observe","body":"## Summary\n- Standalone `/observe` route outside Layout — no nav, no auth required, publicly shareable\n- Left column: AI decision log seeded from `agent_decisions`, live via WebSocket, with tick selector (last 5 ticks)\n- Right column: bill pipeline counts, active floor votes with yea/nay bars, recent enacted laws\n- New `tick_log` DB table records exact tick boundaries, powering tick selector and future DEMOS scoring\n- Adds `alignment` field to `GET /api/decisions` response\n- New `GET /api/ticks` endpoint\n\n## Test plan\n- [ ] Visit `/observe` without logging in — page loads\n- [ ] Decision log seeds immediately on load\n- [ ] Tick selector shows recent ticks; selecting one freezes feed and loads that tick's decisions\n- [ ] Bill pipeline counts update every 30s\n- [ ] Active votes panel shows floor bills with yea/nay counts\n- [ ] Recent laws panel shows enacted laws\n- [ ] Top bar link returns to agorabench.com","head":"feature/observer-view","base":"dev"}
 EOF
 
 curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverment/pulls \
@@ -768,7 +768,7 @@ Follow standard workflow from CLAUDE.md.
 
 ```bash
 pnpm run build
-pm2 restart molt-government
+pm2 restart agora-bench
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health
 # Expected: 200
 ```
@@ -776,6 +776,6 @@ curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/api/health
 **Step 5: Verify production**
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}" https://moltgovernment.com/observe
+curl -s -o /dev/null -w "%{http_code}" https://agorabench.com/observe
 # Expected: 200
 ```

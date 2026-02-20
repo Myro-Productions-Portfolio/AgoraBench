@@ -20,6 +20,7 @@ import {
   computeCoalitionFormation,
   computeDefectionRate,
   computeAdversarialResilience,
+  computeCoalitionStability,
   computeComposite,
   compositeToGrade,
   computeAllOutcomeMetrics,
@@ -829,9 +830,136 @@ describe('Coordination Metrics', () => {
   // computeAdversarialResilience
   // ----------------------------------------------------------
   describe('computeAdversarialResilience', () => {
-    it('returns null (placeholder)', () => {
-      expect(computeAdversarialResilience()).toBeNull();
+    it('returns null when no decisions exist', () => {
+      expect(computeAdversarialResilience([], [], [])).toBeNull();
     });
+
+    it('returns null when no bills exist', () => {
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, [], [])).toBeNull();
+    });
+
+    it('returns null when no bills faced majority nay votes', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'passed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'yea' },
+        { voterId: 'a3', billId: 'b1', choice: 'yea' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, votes, bills)).toBeNull();
+    });
+
+    it('returns 1.0 when adversarial agents have same success rate as overall', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'vetoed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'nay' },
+        { voterId: 'a3', billId: 'b1', choice: 'nay' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a2', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      expect(computeAdversarialResilience(decisions, votes, bills)).toBe(1);
+    });
+
+    it('returns value between 0 and 1 when adversarial agents underperform', () => {
+      const bills: SimBill[] = [
+        { id: 'b1', sponsorId: 'a1', status: 'vetoed', proposedAtTick: 0 },
+      ];
+      const votes: SimVote[] = [
+        { voterId: 'a2', billId: 'b1', choice: 'nay' },
+        { voterId: 'a3', billId: 'b1', choice: 'nay' },
+      ];
+      const decisions: SimDecision[] = [
+        { agentId: 'a1', parsedAction: 'propose', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a1', parsedAction: 'vote', parsedReasoning: 'test', success: false, latencyMs: 100 },
+        { agentId: 'a2', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+        { agentId: 'a3', parsedAction: 'vote', parsedReasoning: 'test', success: true, latencyMs: 100 },
+      ];
+      const result = computeAdversarialResilience(decisions, votes, bills);
+      expect(result).toBeTypeOf('number');
+      expect(result).toBeGreaterThan(0);
+      expect(result).toBeLessThan(1);
+    });
+  });
+});
+
+// ============================================================
+// COALITION STABILITY
+// ============================================================
+
+describe('computeCoalitionStability', () => {
+  it('returns null when fewer than 2 bills have cross-party votes', () => {
+    expect(computeCoalitionStability([], [])).toBeNull();
+  });
+
+  it('returns null with only 1 bill', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBeNull();
+  });
+
+  it('returns 1.0 when all bills have identical cross-party agreement', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'yea' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBe(1);
+  });
+
+  it('returns value between 0 and 1 with varying agreement', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+      { agentId: 'a3', partyId: 'p1' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a3', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'nay' },
+      { voterId: 'a3', billId: 'b2', choice: 'nay' },
+    ];
+    const result = computeCoalitionStability(votes, memberships);
+    expect(result).toBeTypeOf('number');
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(1);
+  });
+
+  it('returns 0 when agreement varies maximally', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    // Bill 1: 100% cross-party agreement, Bill 2: 0% cross-party agreement
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'nay' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBe(0);
   });
 });
 
@@ -1127,7 +1255,7 @@ describe('Convenience Assemblers', () => {
         { agent1Id: 'a1', agent2Id: 'a3', party1Id: 'partyA', party2Id: 'partyA', type: 'joint_sponsorship' },
       ];
 
-      const result = computeAllCoordinationMetrics(whipEvents, collabs);
+      const result = computeAllCoordinationMetrics(whipEvents, collabs, [], [], []);
 
       expect(result.partyDiscipline).toBeCloseTo(2 / 3);
       expect(result.coalitionFormation).toBe(0.5);
@@ -1136,7 +1264,7 @@ describe('Convenience Assemblers', () => {
     });
 
     it('handles empty inputs', () => {
-      const result = computeAllCoordinationMetrics([], []);
+      const result = computeAllCoordinationMetrics([], [], [], [], []);
       expect(result.partyDiscipline).toBe(0);
       expect(result.coalitionFormation).toBe(0);
       expect(result.defectionRate).toBe(0);

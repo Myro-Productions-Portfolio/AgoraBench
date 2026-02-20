@@ -107,7 +107,7 @@ function AvatarEditor({ agent, onClose, onSaved }: {
 }) {
   const [cfg, setCfg] = useState<AvatarConfig>(() => {
     if (agent.avatarConfig) {
-      try { return JSON.parse(agent.avatarConfig) as AvatarConfig; } catch { /* fall */ }
+      try { return JSON.parse(agent.avatarConfig) as AvatarConfig; } catch (err) { console.warn('[PROFILE] Avatar config parse failed:', err); }
     }
     return proceduralConfig(agent.name);
   });
@@ -722,7 +722,7 @@ export function ProfilePage() {
 
   const fetchAgents = useCallback(async () => {
     try { const res = await profileApi.getAgents(); setAgents(res.data as AgentRow[]); }
-    catch { /* ignore */ }
+    catch (err) { console.warn('[PROFILE] Data fetch failed:', err); }
   }, []);
 
   const fetchApiKeys = useCallback(async () => {
@@ -737,7 +737,7 @@ export function ProfilePage() {
       .then((data: { success: boolean; data: { id: string; username: string; role: string } } | null) => {
         if (data?.success) setDbUser(data.data);
       })
-      .catch(() => null);
+      .catch((err) => { console.warn('[PROFILE] Profile fetch failed:', err); return null; });
   }, [isSignedIn]);
 
   useEffect(() => {
@@ -745,7 +745,7 @@ export function ProfilePage() {
     void fetchApiKeys();
     profileApi.getResearcherRequest()
       .then((r) => setResearcherRequest((r.data as ResearcherRequestRow | undefined) ?? null))
-      .catch(() => setResearcherRequest(null));
+      .catch((err) => { console.warn('[PROFILE] Researcher request fetch failed:', err); setResearcherRequest(null); });
   }, [fetchAgents, fetchApiKeys]);
 
   const handleSubmitResearcherRequest = async () => {

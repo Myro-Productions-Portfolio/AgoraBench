@@ -1861,7 +1861,7 @@ agentTickQueue.process(async () => {
     const FORUM_CATEGORIES = ['legislation', 'elections', 'policy', 'party', 'economy'] as const;
 
     // Load simulation state once for all forum candidates this tick
-    const simState = await buildSimulationStateBlock().catch(() => ({ block: '', threadTitles: [] as string[] }));
+    const simState = await buildSimulationStateBlock().catch((err) => { console.warn('[TICK] Simulation state build failed:', err instanceof Error ? err.message : err); return { block: '', threadTitles: [] as string[] }; });
     const recentTopicsNote = simState.threadTitles.length > 0
       ? `\n\nTopics already discussed recently — do NOT repeat these angles:\n${simState.threadTitles.slice(0, 10).map((t) => `  - "${t}"`).join('\n')}`
       : '';

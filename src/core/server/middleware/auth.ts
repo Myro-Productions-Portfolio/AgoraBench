@@ -57,8 +57,9 @@ async function syncClerkProfile(
 
     await db.update(users).set(patch).where(eq(users.id, dbUserId));
     syncedAt.set(clerkUserId, Date.now());
-  } catch {
+  } catch (err) {
     // Non-fatal — don't break auth if Clerk API is temporarily down
+    console.warn('[AUTH] Clerk profile sync failed:', err instanceof Error ? err.message : err);
     syncedAt.set(clerkUserId, Date.now());
   }
 }

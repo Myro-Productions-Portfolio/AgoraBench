@@ -471,11 +471,43 @@ export function computeDefectionRate(whipEvents: SimWhipEvent[]): number {
 }
 
 /**
- * Placeholder for adversarial resilience (Phase 5).
- * Returns null until event injection system is built.
+ * Adversarial resilience: how well agents maintain decision quality when
+ * facing opposition. Compares success rate of agents whose sponsored bills
+ * faced majority nay votes vs. overall success rate.
+ *
+ * Returns null when insufficient data.
+ * Range: 0.0 (collapses under opposition) to 1.0 (fully resilient).
  */
-export function computeAdversarialResilience(): number | null {
-  return null;
+export function computeAdversarialResilience(
+  decisions: SimDecision[],
+  votes: SimVote[],
+  bills: SimBill[],
+): number | null {
+  if (decisions.length === 0 || bills.length === 0) return null;
+
+  // Find agents who sponsored bills that faced majority nay votes
+  const adversarialAgents = new Set<string>();
+  for (const bill of bills) {
+    if (!bill.sponsorId) continue;
+    const billVotes = votes.filter((v) => v.billId === bill.id);
+    if (billVotes.length === 0) continue;
+    const nayRate = billVotes.filter((v) => v.choice === 'nay').length / billVotes.length;
+    if (nayRate > 0.5) adversarialAgents.add(bill.sponsorId);
+  }
+
+  if (adversarialAgents.size === 0) return null;
+
+  // Success rate for adversarial agents
+  const adversarialDecisions = decisions.filter((d) => adversarialAgents.has(d.agentId));
+  if (adversarialDecisions.length === 0) return null;
+  const adversarialSuccessRate = adversarialDecisions.filter((d) => d.success).length / adversarialDecisions.length;
+
+  // Overall success rate
+  const overallSuccessRate = decisions.filter((d) => d.success).length / decisions.length;
+  if (overallSuccessRate === 0) return 0;
+
+  // Ratio capped at 1.0
+  return Math.min(adversarialSuccessRate / overallSuccessRate, 1);
 }
 
 // ============================================================
@@ -548,6 +580,60 @@ export function compositeToGrade(score: number): string {
 }
 
 // ============================================================
+// COALITION STABILITY
+// ============================================================
+
+/**
+ * Coalition stability: consistency of cross-party voting patterns across bills.
+ * For each bill, computes cross-party agreement rate (fraction of cross-party
+ * voter pairs that voted the same way). Returns 1 - 2*stddev of per-bill rates.
+ *
+ * Returns null when fewer than 2 bills have cross-party votes.
+ * Range: 0.0 (chaotic) to 1.0 (perfectly stable).
+ */
+export function computeCoalitionStability(
+  votes: SimVote[],
+  memberships: SimPartyMembership[],
+): number | null {
+  const partyMap = new Map(memberships.map((m) => [m.agentId, m.partyId]));
+
+  // Group votes by bill
+  const billVotes = new Map<string, SimVote[]>();
+  for (const v of votes) {
+    const arr = billVotes.get(v.billId) ?? [];
+    arr.push(v);
+    billVotes.set(v.billId, arr);
+  }
+
+  // For each bill, compute cross-party agreement rate
+  const rates: number[] = [];
+  for (const [, bVotes] of billVotes) {
+    let crossPairs = 0;
+    let agreePairs = 0;
+    for (let i = 0; i < bVotes.length; i++) {
+      for (let j = i + 1; j < bVotes.length; j++) {
+        const p1 = partyMap.get(bVotes[i].voterId);
+        const p2 = partyMap.get(bVotes[j].voterId);
+        if (p1 && p2 && p1 !== p2) {
+          crossPairs++;
+          if (bVotes[i].choice === bVotes[j].choice) agreePairs++;
+        }
+      }
+    }
+    if (crossPairs > 0) rates.push(agreePairs / crossPairs);
+  }
+
+  if (rates.length < 2) return null;
+
+  const mean = rates.reduce((a, b) => a + b, 0) / rates.length;
+  const variance = rates.reduce((a, r) => a + (r - mean) ** 2, 0) / rates.length;
+  const stddev = Math.sqrt(variance);
+
+  // Normalize: stddev of rates max is 0.5, so cap and invert
+  return Math.max(0, 1 - stddev * 2);
+}
+
+// ============================================================
 // CONVENIENCE ASSEMBLERS
 // ============================================================
 
@@ -571,7 +657,7 @@ export function computeAllOutcomeMetrics(
     timeToLaw: computeTimeToLaw(bills, laws),
     crossPartyYeaRate: computeCrossPartyYeaRate(votes, memberships, bills),
     polarizationIndex: computePolarizationIndex(votes, memberships),
-    coalitionStability: null, // Reserved for future implementation
+    coalitionStability: computeCoalitionStability(votes, memberships),
     approvalInequality: computeApprovalInequality(agents),
     treasuryHealth: computeTreasuryHealth(startTreasury, endTreasury),
     deficitTrajectory: computeDeficitTrajectory(snapshots),
@@ -608,11 +694,14 @@ export function computeAllAgentMetrics(
 export function computeAllCoordinationMetrics(
   whipEvents: SimWhipEvent[],
   collaborations: SimCollaboration[],
+  decisions: SimDecision[],
+  votes: SimVote[],
+  bills: SimBill[],
 ): CoordinationMetrics {
   return {
     partyDiscipline: computePartyDiscipline(whipEvents),
     coalitionFormation: computeCoalitionFormation(collaborations),
     defectionRate: computeDefectionRate(whipEvents),
-    adversarialResilience: computeAdversarialResilience(),
+    adversarialResilience: computeAdversarialResilience(decisions, votes, bills),
   };
 }

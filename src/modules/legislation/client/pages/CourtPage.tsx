@@ -57,7 +57,7 @@ export function CourtPage() {
         if (statsRes.data) setStats(statsRes.data as CourtStats);
         if (Array.isArray(casesRes.data)) setCases(casesRes.data as CaseItem[]);
       })
-      .catch(() => {})
+      .catch((err) => { console.error('[COURT] Court data fetch failed:', err); })
       .finally(() => setLoading(false));
   }, [statusFilter]);
 

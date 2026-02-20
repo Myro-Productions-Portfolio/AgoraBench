@@ -210,6 +210,9 @@ export class BenchmarkRunner {
       const coordMetrics = computeAllCoordinationMetrics(
         snap.whipEvents,
         snap.collaborations,
+        snap.decisions,
+        snap.votes,
+        snap.bills,
       );
 
       const weights = scenarioConfig.metricsConfig.weights;

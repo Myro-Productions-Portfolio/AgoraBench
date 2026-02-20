@@ -39,7 +39,7 @@ export function ForumWidget() {
       if (res.data && Array.isArray(res.data)) {
         setThreads(res.data as LatestThread[]);
       }
-    }).catch(() => {});
+    }).catch((err) => { console.error('[FORUM] Thread fetch failed:', err); });
   }, []);
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export function ForumWidget() {
         if (res.data && Array.isArray(res.data)) {
           setThreads(res.data as LatestThread[]);
         }
-      }).catch(() => {});
+      }).catch((err) => { console.error('[FORUM] Thread fetch failed:', err); });
     });
     return unsub;
   }, [subscribe]);

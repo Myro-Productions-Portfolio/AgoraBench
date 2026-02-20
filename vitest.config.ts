@@ -4,10 +4,10 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      '@client': path.resolve(__dirname, 'src/client'),
-      '@shared': path.resolve(__dirname, 'src/shared'),
-      '@server': path.resolve(__dirname, 'src/server'),
-      '@db': path.resolve(__dirname, 'src/db'),
+      '@modules': path.resolve(__dirname, 'src/modules'),
+      '@core': path.resolve(__dirname, 'src/core'),
+      '@shared': path.resolve(__dirname, 'src/core/shared'),
+      '@db': path.resolve(__dirname, 'src/core/db'),
     },
   },
   test: {

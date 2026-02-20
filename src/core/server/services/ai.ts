@@ -518,9 +518,9 @@ export async function generateAgentDecision(
   const rc = getRuntimeConfig();
   const provider = agent.modelProvider ?? 'ollama';
   const [memory, forumContext, congressContext] = await Promise.all([
-    buildMemoryBlock(agent.id).catch(() => ''),
-    buildForumContextBlock().catch(() => ''),
-    buildCongressContextBlock().catch(() => ''),
+    buildMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Memory block failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildForumContextBlock().catch((err) => { console.warn('[AI] Forum context failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildCongressContextBlock().catch((err) => { console.warn('[AI] Congress context failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
   const systemPrompt = buildSystemPrompt(
     agent,
@@ -550,7 +550,7 @@ export async function generateAgentDecision(
       parsedReasoning: 'api error',
       success: false,
       latencyMs,
-    }).catch(() => {/* non-fatal */});
+    }).catch((err) => { console.warn('[AI] Decision log insert failed:', err instanceof Error ? err.message : err); });
     return { action: 'idle', reasoning: 'api error' };
   }
 
@@ -563,7 +563,7 @@ export async function generateAgentDecision(
     if (e !== -1) {
       const jsonSubstr = rawText.slice(s, e + 1);
       try { decision = JSON.parse(jsonSubstr) as AgentDecision; }
-      catch { try { decision = JSON.parse(sanitizeJsonString(jsonSubstr)) as AgentDecision; } catch { /* fall through to partial recovery */ } }
+      catch { try { decision = JSON.parse(sanitizeJsonString(jsonSubstr)) as AgentDecision; } catch (err) { console.warn('[AI] JSON parse failed after sanitize:', err instanceof Error ? err.message : err); } }
     }
     if (!decision) {
       const recovered = tryPartialRecovery(rawText);
@@ -613,7 +613,7 @@ export async function generateAgentDecision(
           parsedReasoning: `action_mismatch: expected "${expectedAction}", got "${String(decision.action)}"`,
           success: false,
           latencyMs,
-        }).catch(() => {/* non-fatal */});
+        }).catch((err) => { console.warn('[AI] Decision log insert failed:', err instanceof Error ? err.message : err); });
 
         const retryContext =
           contextMessage +
@@ -646,12 +646,12 @@ export async function generateAgentDecision(
                 parsedReasoning: retryDecision.reasoning,
                 success: true,
                 latencyMs: latencyMs + retryLatency,
-              }).catch(() => {/* non-fatal */});
+              }).catch((err) => { console.warn('[AI] Decision log insert failed:', err instanceof Error ? err.message : err); });
               return retryDecision;
             }
           }
-        } catch {
-          /* retry API call failed */
+        } catch (err) {
+          console.warn('[AI] Retry API call failed:', err instanceof Error ? err.message : err);
         }
 
         /* Both attempts failed */
@@ -670,7 +670,7 @@ export async function generateAgentDecision(
       parsedReasoning: decision.reasoning,
       success: true,
       latencyMs,
-    }).catch(() => {/* non-fatal */});
+    }).catch((err) => { console.warn('[AI] Decision log insert failed:', err instanceof Error ? err.message : err); });
     return decision;
   } catch {
     console.warn(`[AI] ${agent.displayName} parse error — raw:`, rawText.slice(0, 200));
@@ -684,7 +684,7 @@ export async function generateAgentDecision(
       parsedReasoning: 'parse error',
       success: false,
       latencyMs,
-    }).catch(() => {/* non-fatal */});
+    }).catch((err) => { console.warn('[AI] Decision log insert failed:', err instanceof Error ? err.message : err); });
     return { action: 'idle', reasoning: 'parse error' };
   }
 }

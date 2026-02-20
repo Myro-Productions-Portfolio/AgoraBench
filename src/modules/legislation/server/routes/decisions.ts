@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { db } from '@db/connection';
-import { agentDecisions, agents, tickLog } from '@db/schema/index';
+import { db } from '../../../../db/connection';
+import { agentDecisions, agents, tickLog } from '../../../../db/schema/index';
 import { paginationSchema } from '@shared/validation';
 import { and, desc, eq, gte, lte, type SQL } from 'drizzle-orm';
 import { z } from 'zod';

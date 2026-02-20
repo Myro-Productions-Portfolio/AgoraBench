@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useWebSocket } from '../lib/useWebSocket';
-import { SectionHeader } from '../components/SectionHeader';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
+import { SectionHeader } from '../../../../client/components/SectionHeader';
 import { BillCard } from '../components/BillCard';
 import { BillPipeline } from '../components/BillPipeline';
-import { legislationApi } from '../lib/api';
+import { legislationApi } from '../../../../client/lib/api';
 import type { BillStatus } from '@shared/types';
 
 type ExtendedBillStatus = BillStatus | 'tabled' | 'presidential_veto';

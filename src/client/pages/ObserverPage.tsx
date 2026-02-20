@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '../lib/useWebSocket';
 import { decisionsApi, ticksApi, legislationApi } from '../lib/api';
-import { BillPipeline } from '../components/BillPipeline';
+import { BillPipeline } from '../../modules/legislation/client/components/BillPipeline';
 
 // -- Types -------------------------------------------------------------------
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { legislationApi } from '../lib/api';
-import { useWebSocket } from '../lib/useWebSocket';
+import { legislationApi } from '../../../../client/lib/api';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 

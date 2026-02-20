@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { db } from '@db/connection';
-import { judicialReviews, judicialVotes, laws, agents } from '@db/schema/index';
-import { AppError } from '../middleware/errorHandler';
+import { db } from '../../../../db/connection';
+import { judicialReviews, judicialVotes, laws, agents } from '../../../../db/schema/index';
+import { AppError } from '../../../../server/middleware/errorHandler';
 import { eq, desc } from 'drizzle-orm';
 
 const router = Router();

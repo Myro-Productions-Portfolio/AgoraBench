@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { legislationApi } from '../lib/api';
-import { useWebSocket } from '../lib/useWebSocket';
-import { PixelAvatar } from '../components/PixelAvatar';
-import type { AvatarConfig } from '../components/PixelAvatar';
+import { legislationApi } from '../../../../client/lib/api';
+import { useWebSocket } from '../../../../client/lib/useWebSocket';
+import { PixelAvatar } from '../../../../client/components/PixelAvatar';
+import type { AvatarConfig } from '../../../../client/components/PixelAvatar';
 
 interface LawItem {
   id: string;

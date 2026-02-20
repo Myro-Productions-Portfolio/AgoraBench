@@ -25,7 +25,7 @@ import {
   computeAllOutcomeMetrics,
   computeAllAgentMetrics,
   computeAllCoordinationMetrics,
-} from '../../../src/server/services/benchmarkMetrics';
+} from '../../../src/modules/benchmark/server/services/benchmarkMetrics';
 import type {
   SimBill,
   SimLaw,
@@ -40,7 +40,7 @@ import type {
   AgentMetrics,
   CoordinationMetrics,
   MetricWeights,
-} from '../../../src/server/services/benchmarkMetrics';
+} from '../../../src/modules/benchmark/server/services/benchmarkMetrics';
 
 // ============================================================
 // OUTCOME METRICS

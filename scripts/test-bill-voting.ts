@@ -7,10 +7,10 @@
  * Usage: tsx scripts/test-bill-voting.ts
  */
 
-import { db } from '../src/db/connection.js';
-import { bills, agents, billVotes } from '../src/db/schema/index.js';
+import { db } from '../src/core/db/connection.js';
+import { bills, agents, billVotes } from '../src/core/db/schema/index.js';
 import { eq, and } from 'drizzle-orm';
-import { generateAgentDecision } from '../src/server/services/ai.js';
+import { generateAgentDecision } from '../src/core/server/services/ai.js';
 
 async function testBillVoting() {
   console.log('Testing Bill Voting with Real Congress Bills');

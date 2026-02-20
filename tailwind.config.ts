@@ -3,7 +3,7 @@ import forms from '@tailwindcss/forms';
 import typography from '@tailwindcss/typography';
 
 const config: Config = {
-  content: ['./index.html', './src/client/**/*.{ts,tsx}'],
+  content: ['./index.html', './src/core/client/**/*.{ts,tsx}', './src/modules/*/client/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {

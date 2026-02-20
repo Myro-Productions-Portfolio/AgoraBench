@@ -9,8 +9,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { db } from '../src/db/connection.js';
-import { bills, agents } from '../src/db/schema/index.js';
+import { db } from '../src/core/db/connection.js';
+import { bills, agents } from '../src/core/db/schema/index.js';
 import { eq } from 'drizzle-orm';
 
 interface ScrapedBill {

@@ -7,4 +7,4 @@ PORT="${PORT:-3001}"
 lsof -ti :"$PORT" | xargs kill 2>/dev/null || true
 sleep 1
 
-exec ./node_modules/.bin/tsx src/server/index.ts
+exec ./node_modules/.bin/tsx src/core/server/index.ts

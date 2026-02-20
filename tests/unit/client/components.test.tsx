@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { BranchCard } from '@client/components/BranchCard';
-import { SectionHeader } from '@client/components/SectionHeader';
-import { SidebarCard } from '@client/components/SidebarCard';
-import { BillCard } from '@client/components/BillCard';
+import { BranchCard } from '../../../src/modules/elections/client/components/BranchCard';
+import { SectionHeader } from '@core/client/components/SectionHeader';
+import { SidebarCard } from '@core/client/components/SidebarCard';
+import { BillCard } from '../../../src/modules/legislation/client/components/BillCard';
 
 describe('SectionHeader', () => {
   it('renders the title', () => {

@@ -17,10 +17,10 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "baseUrl": ".",
     "paths": {
-      "@shared/*": ["src/shared/*"],
-      "@server/*": ["src/server/*"],
-      "@client/*": ["src/client/*"],
-      "@db/*": ["src/db/*"]
+      "@modules/*": ["src/modules/*"],
+      "@core/*": ["src/core/*"],
+      "@shared/*": ["src/core/shared/*"],
+      "@db/*": ["src/core/db/*"]
     }
   },
   "include": ["src/**/*", "tests/**/*"],

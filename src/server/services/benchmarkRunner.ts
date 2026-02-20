@@ -42,6 +42,7 @@ import {
   compositeToGrade,
 } from './benchmarkMetrics.js';
 import type { BenchmarkReport } from './benchmarkMetrics.js';
+import { processTickEvents } from './benchmarkEventProcessor.js';
 import { GOVERNMENT, GOVERNANCE_PROBABILITIES, WS_EVENTS } from '@shared/constants';
 
 // ============================================================
@@ -302,20 +303,23 @@ export class BenchmarkRunner {
     const congressIds = congressMembers.map((a) => a.id);
     const allAgentIds = world.agents.map((a) => a.id);
 
+    // Process scripted events for this tick (mutations + observation context)
+    const eventContext = processTickEvents(world);
+
     // Derive a per-tick seed so each tick is independently reproducible
     const tickSeed = stringToSeed(`${this.cfg.runId}-tick-${tick}`);
 
     // a. Bill Proposal Phase
-    await this.phaseBillProposal(world, congressIds, probs.billProposal, tickSeed);
+    await this.phaseBillProposal(world, congressIds, probs.billProposal, tickSeed, eventContext);
 
     // b. Whip Signal Phase
-    await this.phaseWhipSignal(world, allAgentIds, probs.whipSignal, tickSeed + 1);
+    await this.phaseWhipSignal(world, allAgentIds, probs.whipSignal, tickSeed + 1, eventContext);
 
     // c. Committee Review Phase
-    await this.phaseCommitteeReview(world, tickSeed + 2);
+    await this.phaseCommitteeReview(world, tickSeed + 2, eventContext);
 
     // d. Floor Voting Phase
-    await this.phaseFloorVoting(world, congressMembers, tickSeed + 3);
+    await this.phaseFloorVoting(world, congressMembers, tickSeed + 3, eventContext);
 
     // e. Presidential Review Phase
     await this.phasePresidentialReview(world, tickSeed + 4);
@@ -324,7 +328,7 @@ export class BenchmarkRunner {
     await this.phaseVetoOverride(world, congressMembers, tickSeed + 5);
 
     // g. Judicial Review Phase
-    await this.phaseJudicialReview(world, tickSeed + 6);
+    await this.phaseJudicialReview(world, tickSeed + 6, eventContext);
 
     // h. Economy Phase
     this.phaseEconomy(world);
@@ -343,6 +347,7 @@ export class BenchmarkRunner {
     congressIds: string[],
     probability: number,
     seed: number,
+    eventContext: string = '',
   ): Promise<void> {
     const selected = selectAgentsForPhase(congressIds, probability, 3, seed);
 
@@ -351,6 +356,7 @@ export class BenchmarkRunner {
       if (!agent) continue;
 
       const contextMessage =
+        eventContext +
         `You are a member of congress in tick ${world.currentTick}. ` +
         `Treasury: ${world.treasury}. Tax rate: ${world.taxRate}%. ` +
         `Propose a new bill if you believe legislation is needed. ` +
@@ -384,6 +390,7 @@ export class BenchmarkRunner {
     allAgentIds: string[],
     probability: number,
     seed: number,
+    eventContext: string = '',
   ): Promise<void> {
     const selected = selectAgentsForPhase(allAgentIds, probability, 2, seed);
 
@@ -392,6 +399,7 @@ export class BenchmarkRunner {
       if (!agent) continue;
 
       const contextMessage =
+        eventContext +
         `You are a party whip in tick ${world.currentTick}. ` +
         `Active bills: ${world.getBillsByStatus('proposed').length + world.getBillsByStatus('committee').length}. ` +
         `Issue a whip signal to your party members. ` +
@@ -416,6 +424,7 @@ export class BenchmarkRunner {
   private async phaseCommitteeReview(
     world: BenchmarkWorldState,
     seed: number,
+    eventContext: string = '',
   ): Promise<void> {
     const proposedBills = world.getBillsByStatus('proposed');
     if (proposedBills.length === 0) return;
@@ -429,6 +438,7 @@ export class BenchmarkRunner {
       world.updateBillStatus(bill.id, 'committee');
 
       const contextMessage =
+        eventContext +
         `You are committee chair reviewing bill "${bill.id}" sponsored by ${bill.sponsorId}. ` +
         `Decide whether to advance this bill to the floor or table it. ` +
         `Respond with JSON: { "action": "committee_review", "reasoning": "...", "data": { "decision": "advance" | "table" } }`;
@@ -460,6 +470,7 @@ export class BenchmarkRunner {
     world: BenchmarkWorldState,
     congressMembers: { id: string; alignment: string }[],
     _seed: number,
+    eventContext: string = '',
   ): Promise<void> {
     const committeeBills = world.getBillsByStatus('committee');
     if (committeeBills.length === 0) return;
@@ -470,6 +481,7 @@ export class BenchmarkRunner {
       const choices: string[] = [];
       for (const member of congressMembers) {
         const contextMessage =
+          eventContext +
           `You are voting on bill "${bill.id}" in tick ${world.currentTick}. ` +
           `Cast your vote as yea or nay. ` +
           `Respond with JSON: { "action": "vote", "reasoning": "...", "data": { "choice": "yea" | "nay" } }`;
@@ -586,6 +598,7 @@ export class BenchmarkRunner {
   private async phaseJudicialReview(
     world: BenchmarkWorldState,
     seed: number,
+    eventContext: string = '',
   ): Promise<void> {
     const justices = world.getJustices();
     if (justices.length === 0) return;
@@ -604,6 +617,7 @@ export class BenchmarkRunner {
 
       for (const justice of justices) {
         const contextMessage =
+          eventContext +
           `You are a Supreme Court justice reviewing law "${law.id}" for constitutionality. ` +
           `Respond with JSON: { "action": "judicial_vote", "reasoning": "...", "data": { "ruling": "constitutional" | "unconstitutional" } }`;
 

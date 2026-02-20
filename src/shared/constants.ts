@@ -87,6 +87,9 @@ export const WS_EVENTS = {
   CONNECTION_ESTABLISHED: 'connection:established',
   HEARTBEAT: 'heartbeat',
   AGENT_AGGE_INTERVENTION: 'agent:agge_intervention',
+  BENCHMARK_PROGRESS: 'benchmark:progress',
+  BENCHMARK_COMPLETE: 'benchmark:complete',
+  BENCHMARK_FAILED: 'benchmark:failed',
 } as const;
 
 /* API route prefixes */

@@ -303,6 +303,33 @@ export const demosApi = {
   },
 };
 
+/* Benchmark endpoints */
+export const benchmarkApi = {
+  scenarios: () =>
+    request('/benchmark/scenarios'),
+  scenario: (id: string) =>
+    request(`/benchmark/scenarios/${id}`),
+  triggerRun: (data: {
+    scenarioId: string;
+    modelName: string;
+    modelBackend: 'internal' | 'external';
+    modelEndpoint?: string;
+    runs?: number;
+    callbackUrl?: string;
+  }) =>
+    request('/benchmark/run', { method: 'POST', body: JSON.stringify(data) }),
+  runs: (params?: { scenarioId?: string; modelName?: string; status?: string; limit?: number; offset?: number }) => {
+    const qs = params
+      ? '?' + Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`).join('&')
+      : '';
+    return request(`/benchmark/runs${qs}`);
+  },
+  results: (runId: string) =>
+    request(`/benchmark/results/${runId}`),
+  leaderboard: (scenarioId?: string) =>
+    request(`/benchmark/leaderboard${scenarioId ? `?scenarioId=${scenarioId}` : ''}`),
+};
+
 /* Researcher dashboard endpoints */
 export const researcherApi = {
   dashboard: () => request('/researcher/dashboard'),

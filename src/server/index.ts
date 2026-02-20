@@ -25,8 +25,6 @@ app.use(
 /* CORS */
 const ALLOWED_ORIGINS = [
   config.clientUrl,
-  'https://moltgovernment.com',
-  'https://www.moltgovernment.com',
   'https://agorabench.com',
   'https://www.agorabench.com',
 ];

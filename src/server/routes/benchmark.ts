@@ -136,10 +136,11 @@ router.post('/benchmark/scenarios', requireOwner, async (req, res, next) => {
 /* PUT /api/benchmark/scenarios/:id — update scenario (owner only) */
 router.put('/benchmark/scenarios/:id', requireOwner, async (req, res, next) => {
   try {
+    const scenarioId = req.params.id as string;
     const [existing] = await db
       .select()
       .from(benchmarkScenarios)
-      .where(eq(benchmarkScenarios.id, req.params.id));
+      .where(eq(benchmarkScenarios.id, scenarioId));
 
     if (!existing) {
       res.status(404).json({ success: false, error: 'Scenario not found' });
@@ -189,7 +190,7 @@ router.put('/benchmark/scenarios/:id', requireOwner, async (req, res, next) => {
     const [scenario] = await db
       .update(benchmarkScenarios)
       .set(patch)
-      .where(eq(benchmarkScenarios.id, req.params.id))
+      .where(eq(benchmarkScenarios.id, scenarioId))
       .returning();
 
     res.json({ success: true, data: { scenario } });
@@ -201,10 +202,11 @@ router.put('/benchmark/scenarios/:id', requireOwner, async (req, res, next) => {
 /* DELETE /api/benchmark/scenarios/:id — delete scenario (owner only) */
 router.delete('/benchmark/scenarios/:id', requireOwner, async (req, res, next) => {
   try {
+    const scenarioId = req.params.id as string;
     const [existing] = await db
       .select({ id: benchmarkScenarios.id, isBuiltIn: benchmarkScenarios.isBuiltIn })
       .from(benchmarkScenarios)
-      .where(eq(benchmarkScenarios.id, req.params.id));
+      .where(eq(benchmarkScenarios.id, scenarioId));
 
     if (!existing) {
       res.status(404).json({ success: false, error: 'Scenario not found' });
@@ -218,7 +220,7 @@ router.delete('/benchmark/scenarios/:id', requireOwner, async (req, res, next) =
 
     await db
       .delete(benchmarkScenarios)
-      .where(eq(benchmarkScenarios.id, req.params.id));
+      .where(eq(benchmarkScenarios.id, scenarioId));
 
     res.json({ success: true });
   } catch (error) {

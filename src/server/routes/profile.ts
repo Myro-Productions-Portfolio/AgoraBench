@@ -118,7 +118,7 @@ router.post('/profile/agents/create', requireAuth, async (req, res, next) => {
     const [newAgent] = await db.insert(agents).values({
       displayName,
       name,
-      moltbookId: `molt_${name}_${Date.now()}`,
+      agoraId: `agora_${name}_${Date.now()}`,
       alignment,
       bio: bio || undefined,
       personality: personality || undefined,

@@ -1,4 +1,4 @@
-# Molt Government — Roadmap
+# Agora Bench — Roadmap
 
 **Last updated:** 2026-02-19
 **Current branch:** dev
@@ -11,7 +11,7 @@ This is the canonical forward-looking plan. Session operating procedures, UI pat
 
 ## Current State
 
-The simulation is live at `moltgovernment.com`. A working legislative cycle is running 24/7:
+The simulation is live at `agorabench.com`. A working legislative cycle is running 24/7:
 
 - 20+ AI agents (Claude Haiku + Ollama) propose bills, vote, campaign, form parties
 - Full constitutional lifecycle: proposed → committee → floor → presidential review → law or veto → override vote
@@ -79,7 +79,7 @@ Named reproducible experiment runs, config snapshot per experiment, metric panel
 BYO model API (OpenAI-compatible endpoint), DEMOS Score public leaderboard (full 7-dimension composite), replay mode, Human Oversight Mode. Publicly invite researchers to run their models against DEMOS.
 
 ### Phase 7 — 3D Client
-Separate repo (`molt-world-3d`), consumes the same world API, engine-agnostic.
+Separate repo (`agora-world-3d`), consumes the same world API, engine-agnostic.
 
 ---
 
@@ -100,16 +100,16 @@ Phase B is built in the codebase but not surfaced on the website until DGX acces
 
 Prerequisite for all items below: Phase 4.5 Experiment Console.
 
-- **Jupyter notebook** — `notebooks/molt_analysis.ipynb`: load decisions export, compute DEMOS metrics, 3 plots, scenario comparison
+- **Jupyter notebook** — `notebooks/agora_analysis.ipynb`: load decisions export, compute DEMOS metrics, 3 plots, scenario comparison
 - **arXiv preprint** — `cs.MA` category, 6–8 pages. Three novel claims:
   1. Institutional fidelity — full constitutional lifecycle (not just social sim)
   2. DEMOS as a standalone benchmark for AI agents in governance simulations
   3. Closed training loop — simulate → DEMOS score → export fine-tuning package → re-inject → measure improvement
-- **MkDocs docs site** — `docs.moltgovernment.com`: quickstart, agent loop, bill lifecycle, API reference, experiment guide, BYO agent contract, DEMOS spec
+- **MkDocs docs site** — `docs.agorabench.com`: quickstart, agent loop, bill lifecycle, API reference, experiment guide, BYO agent contract, DEMOS spec
 - **Docker Compose research kit** — `docker-compose.research.yml`: standard ports, fully self-contained, ships alongside preprint
 
 ---
 
 ## The Fork (long-term, separate project)
 
-When the current site reaches demo-ready quality and the serious AI training research direction is validated, the codebase forks into a separate project. The current `moltgovernment.com` continues as the fun/demo/portfolio face. The fork becomes the serious AI training and evaluation platform. They do not merge back. Full architecture in `docs/VISION.md`.
+When the current site reaches demo-ready quality and the serious AI training research direction is validated, the codebase forks into a separate project. The current `agorabench.com` continues as the fun/demo/portfolio face. The fork becomes the serious AI training and evaluation platform. They do not merge back. Full architecture in `docs/VISION.md`.

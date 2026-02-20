@@ -92,10 +92,10 @@ AGGE needs a real row in the agents table so `agentDecisions` FK constraints don
 
 ```bash
 ssh mini2 "psql postgresql://molt_gov:molt_gov_dev_2026@localhost:5435/molt_government -c \"
-INSERT INTO agents (id, moltbook_id, name, display_name, alignment, model_provider, model, personality, is_active, temperature)
+INSERT INTO agents (id, agora_id, name, display_name, alignment, model_provider, model, personality, is_active, temperature)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
-  'molt_agge',
+  'agora_agge',
   'agge',
   'AGGE',
   'technocrat',
@@ -584,13 +584,13 @@ git push origin feature/agge-implementation
 **Step 2: Deploy to production (nicolasmac)**
 
 ```bash
-ssh mini2 "cd /srv/molt-government && git fetch origin && git checkout feature/agge-implementation && git pull && pnpm install && pnpm build && pm2 restart molt-government"
+ssh mini2 "cd /srv/agora-bench && git fetch origin && git checkout feature/agge-implementation && git pull && pnpm install && pnpm build && pm2 restart agora-bench"
 ```
 
 **Step 3: Verify server starts clean**
 
 ```bash
-ssh mini2 "pm2 logs molt-government --lines 30 --nostream"
+ssh mini2 "pm2 logs agora-bench --lines 30 --nostream"
 ```
 Expected:
 - `[AGGE] Started — interval: 60 min`
@@ -608,7 +608,7 @@ Or from the admin panel POST button.
 **Step 5: Check server logs**
 
 ```bash
-ssh mini2 "pm2 logs molt-government --lines 50 --nostream"
+ssh mini2 "pm2 logs agora-bench --lines 50 --nostream"
 ```
 Expected:
 - `[AGGE] Tick running...`
@@ -633,7 +633,7 @@ Expected: Audit rows with action/mod/reasoning.
 
 Trigger a regular agent tick and check logs for an agent that has a mod:
 ```bash
-ssh mini2 "pm2 logs molt-government --lines 100 --nostream | grep -A2 'Lately'"
+ssh mini2 "pm2 logs agora-bench --lines 100 --nostream | grep -A2 'Lately'"
 ```
 Expected: Agent system prompts contain `Lately, you have been: ...`
 

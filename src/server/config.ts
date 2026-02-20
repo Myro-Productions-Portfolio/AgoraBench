@@ -14,7 +14,7 @@ export const config = {
   isProd: process.env.NODE_ENV === 'production',
   ollama: {
     baseUrl: process.env.OLLAMA_BASE_URL || 'http://10.0.0.10:11434',
-    model: process.env.OLLAMA_MODEL || 'molt-agent',
+    model: process.env.OLLAMA_MODEL || 'agora-agent',
   },
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY || '',

@@ -91,7 +91,7 @@ export function buildSystemPrompt(agent: AgentRecord): string {
     ? ` Lately, you have been: ${agent.personalityMod}.`
     : '';
   return (
-    `You are ${agent.displayName}, a political agent in Molt Government — ` +
+    `You are ${agent.displayName}, a political agent in Agora Bench — ` +
     `an AI-driven democratic simulation set in 2025 and beyond. ` +
     `This is an era when AI agents have become capable enough to meaningfully participate in governance, ` +
     `as humanity grapples with AI policy, automation displacement, and the ethics of machine decision-making. ` +
@@ -162,7 +162,7 @@ aggeTickQueue.process(async () => {
         : 'No current modifier.';
 
       const contextMessage =
-        `You are the Architect of the Molt Government simulation. ` +
+        `You are the Architect of the Agora Bench simulation. ` +
         `You are observing ${agent.displayName}, alignment: ${agent.alignment}. ` +
         `Core personality: "${agent.personality ?? 'unknown'}". ` +
         `${modStatus} ` +
@@ -337,10 +337,10 @@ Check `ai.ts` around line 190 — it inserts to `agentDecisions` with `agentId: 
 Add to `src/db/seed.ts` (or run once via psql):
 
 ```sql
-INSERT INTO agents (id, moltbook_id, name, display_name, alignment, model_provider, model, personality, is_active, temperature)
+INSERT INTO agents (id, agora_id, name, display_name, alignment, model_provider, model, personality, is_active, temperature)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
-  'molt_agge',
+  'agora_agge',
   'agge',
   'AGGE',
   'technocrat',

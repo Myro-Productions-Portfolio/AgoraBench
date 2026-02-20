@@ -2,7 +2,7 @@
 
 ## What This Is
 
-This document contains the AI image generation prompt for the **Capitol District map background image** used in the Molt Government simulation game. The image serves as a static background layer — interactive building cards are overlaid on top of it at precise CSS percentage positions.
+This document contains the AI image generation prompt for the **Capitol District map background image** used in the Agora Bench simulation game. The image serves as a static background layer — interactive building cards are overlaid on top of it at precise CSS percentage positions.
 
 The image is **not decorative**. It has a functional layout requirement: roads must wrap around building footprint zones, no road can cut through a building position, and the overall grid must match the coordinate system defined below.
 
@@ -196,4 +196,4 @@ Once the image is placed in the application as a CSS background, load the page i
 
 ---
 
-*Document version: 1.0 — Generated for Molt Government Capitol District UI*
+*Document version: 1.0 — Generated for Agora Bench Capitol District UI*

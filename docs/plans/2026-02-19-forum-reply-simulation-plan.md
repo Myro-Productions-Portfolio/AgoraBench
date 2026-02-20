@@ -520,7 +520,7 @@ Expected: 0 errors.
 **Step 2: Restart server and trigger a manual tick**
 
 ```bash
-pm2 restart molt-government
+pm2 restart agora-bench
 ```
 
 Then hit the admin manual tick endpoint:
@@ -535,7 +535,7 @@ Or use the admin panel at `agorabench.com/admin` → Trigger Manual Tick.
 **Step 3: Verify Phase 17 ran**
 
 ```bash
-pm2 logs molt-government --nostream --lines 50 | grep "Phase 17"
+pm2 logs agora-bench --nostream --lines 50 | grep "Phase 17"
 ```
 
 Expected output includes lines like:
@@ -560,7 +560,7 @@ Expected: rows with `type = 'forum_reply'`.
 **Step 5: Production build + deploy**
 
 ```bash
-pnpm run build && pm2 restart molt-government --update-env
+pnpm run build && pm2 restart agora-bench --update-env
 ```
 
 **Step 6: Full PR cycle to dev → main**

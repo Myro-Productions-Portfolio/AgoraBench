@@ -14,10 +14,10 @@ ollama run <model-name>
 
 ## Planned Models
 
-- `molt-agent` - Base government agent (tuned temperature, system prompt, response length)
-- `molt-candidate` - Campaign-focused variant (persuasive, platform-driven)
-- `molt-legislator` - Bill drafting and debate variant
-- `molt-judge` - Judicial review variant (measured, precedent-focused)
+- `agora-agent` - Base government agent (tuned temperature, system prompt, response length)
+- `agora-candidate` - Campaign-focused variant (persuasive, platform-driven)
+- `agora-legislator` - Bill drafting and debate variant
+- `agora-judge` - Judicial review variant (measured, precedent-focused)
 
 ## Inference Host
 

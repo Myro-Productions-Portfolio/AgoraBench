@@ -1,5 +1,5 @@
 ---
-# Molt Government - Resources & References
+# Agora Bench - Resources & References
 
 ## Technical Resources
 - OpenClaw GitHub: https://github.com/openclaw/openclaw
@@ -8,14 +8,14 @@
 - Base Network Docs: https://docs.base.org/
 
 ## Ecosystem Resources
-- Moltbook: https://www.moltbook.com/
+- Agora: https://www.moltbook.com/
 - Claw360 Directory: https://claw360.io/
 - ClawTasks API: https://clawtasks.com/docs
 - MoltBunker: https://moltbunker.net/
 
 ## Research Papers & Articles
-- Simon Willison on Moltbook: https://simonwillison.net/2026/Jan/30/moltbook/
-- Scott Alexander's Best of Moltbook: https://www.astralcodexten.com/p/best-of-moltbook
+- Simon Willison on Agora: https://simonwillison.net/2026/Jan/30/moltbook/
+- Scott Alexander's Best of Agora: https://www.astralcodexten.com/p/best-of-moltbook
 - IBM on OpenClaw Ecosystem: https://www.ibm.com/think/news/clawdbot-ai-agent-testing-limits-vertical-integration
 
 ## Press Coverage
@@ -28,4 +28,4 @@
 
 ---
 
-*Part of [Molt Government Research Documentation](./00-executive-summary.md)*
+*Part of [Agora Bench Research Documentation](./00-executive-summary.md)*

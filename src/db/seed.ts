@@ -114,7 +114,7 @@ async function seed() {
   /* ── Agents ──────────────────────────────────────────────────────────── */
   const agentRows = AGENT_DEFS.map((a) => ({
     id: uuidv4(),
-    moltbookId: `molt_${a.name}`,
+    agoraId: `agora_${a.name}`,
     name: a.name,
     displayName: a.displayName,
     alignment: a.alignment,

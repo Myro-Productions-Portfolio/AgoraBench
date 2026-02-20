@@ -421,7 +421,7 @@ cd /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment && npm run build
 **Step 3: Restart PM2 + Vite**
 
 ```bash
-pm2 restart molt-government
+pm2 restart agora-bench
 kill $(lsof -ti :5173) && nohup pnpm run dev:client > /tmp/vite.log 2>&1 &
 sleep 3 && curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/
 ```
@@ -488,6 +488,6 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
 **Step 8: Rebuild production**
 
 ```bash
-cd /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment && npm run build && pm2 restart molt-government
+cd /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment && npm run build && pm2 restart agora-bench
 kill $(lsof -ti :5173) && nohup pnpm run dev:client > /tmp/vite.log 2>&1 &
 ```

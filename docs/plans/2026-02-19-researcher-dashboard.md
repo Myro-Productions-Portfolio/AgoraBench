@@ -681,7 +681,7 @@ Expected: PASS with no errors
 
 **Step 2: Restart PM2**
 
-Run: `pm2 restart molt-government`
+Run: `pm2 restart agora-bench`
 
 **Step 3: Manual verification in browser**
 

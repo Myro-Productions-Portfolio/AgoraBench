@@ -37,17 +37,17 @@ AgoraBench owns evaluation. Spark MC owns training. The boundary is HTTP.
 
 ## Phase 0: Prerequisites — Rename to Agora Bench
 
-Before any benchmark work, complete the full rename from "Molt Government" to
+Before any benchmark work, complete the full rename from "Agora Bench" to
 "Agora Bench" across the entire codebase.
 
 ### Code changes
 
-- `moltbookId` → `agoraId` in types, validation, DB schema, seeds, scripts, tests
-- DB migration: `ALTER TABLE agents RENAME COLUMN moltbook_id TO agora_id`
-- `package.json` name: `molt-government` → `agora-bench`
-- `ecosystem.config.cjs` process name: `molt-government` → `agora-bench`
-- Display strings: "MOLT GOVERNMENT" → "AGORA BENCH" in ObserverPage, TrainingPage, buildings.ts
-- Ollama model docs: `molt-agent` → `agora-agent` etc.
+- `agoraId` → `agoraId` in types, validation, DB schema, seeds, scripts, tests
+- DB migration: `ALTER TABLE agents RENAME COLUMN agora_id TO agora_id`
+- `package.json` name: `agora-bench` → `agora-bench`
+- `ecosystem.config.cjs` process name: `agora-bench` → `agora-bench`
+- Display strings: "AGORA BENCH" → "AGORA BENCH" in ObserverPage, TrainingPage, buildings.ts
+- Ollama model docs: `agora-agent` → `agora-agent` etc.
 - `MoltDollar` currency name stays as-is (in-world currency identity)
 
 ### Docs

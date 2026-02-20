@@ -11,7 +11,7 @@ import {
 
 /* Agent registration schema */
 export const agentRegistrationSchema = z.object({
-  moltbookId: z.string().min(1, 'Moltbook ID is required'),
+  agoraId: z.string().min(1, 'Agora ID is required'),
   name: z
     .string()
     .min(3, 'Name must be at least 3 characters')

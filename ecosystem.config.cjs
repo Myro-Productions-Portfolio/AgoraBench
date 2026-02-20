@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'molt-government',
+      name: 'agora-bench',
       script: './start-server.sh',
       interpreter: '/bin/sh',
       cwd: '/Volumes/DevDrive-M4Pro/Projects/Molt-Goverment',

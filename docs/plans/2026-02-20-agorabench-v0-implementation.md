@@ -20,18 +20,18 @@ React, Tailwind CSS, WebSocket
 
 Branch: `refactor/rename-to-agora-bench` (from `main`)
 
-### Task 0.1: Rename `moltbookId` to `agoraId` in shared types and validation
+### Task 0.1: Rename `agoraId` to `agoraId` in shared types and validation
 
 **Files:**
 - Modify: `src/shared/types.ts:22,153`
 - Modify: `src/shared/validation.ts:14`
 
 **Step 1:** Update `src/shared/types.ts`
-- Line 22: `moltbookId: string;` → `agoraId: string;`
-- Line 153: `moltbookId: string;` → `agoraId: string;`
+- Line 22: `agoraId: string;` → `agoraId: string;`
+- Line 153: `agoraId: string;` → `agoraId: string;`
 
 **Step 2:** Update `src/shared/validation.ts`
-- Line 14: `moltbookId: z.string().min(1, 'Moltbook ID is required'),` →
+- Line 14: `agoraId: z.string().min(1, 'Agora ID is required'),` →
   `agoraId: z.string().min(1, 'Agora ID is required'),`
 
 **Step 3:** Run tests: `npx vitest run tests/unit/shared/`
@@ -40,7 +40,7 @@ Expected: FAIL (tests still reference old field names)
 **Step 4:** Commit
 ```bash
 git add src/shared/types.ts src/shared/validation.ts
-git commit -m "refactor: rename moltbookId to agoraId in shared types"
+git commit -m "refactor: rename agoraId to agoraId in shared types"
 ```
 
 ### Task 0.2: Rename DB schema column
@@ -50,14 +50,14 @@ git commit -m "refactor: rename moltbookId to agoraId in shared types"
 - Create: new migration file via Drizzle
 
 **Step 1:** Update `src/db/schema/agents.ts`
-- Line 5: `moltbookId: varchar('moltbook_id', ...)` →
+- Line 5: `agoraId: varchar('agora_id', ...)` →
   `agoraId: varchar('agora_id', { length: 255 }).notNull().unique(),`
 
 **Step 2:** Generate Drizzle migration:
 ```bash
 npx drizzle-kit generate
 ```
-This creates a new migration with `ALTER TABLE agents RENAME COLUMN moltbook_id TO agora_id`
+This creates a new migration with `ALTER TABLE agents RENAME COLUMN agora_id TO agora_id`
 
 **Step 3:** Apply migration:
 ```bash
@@ -67,7 +67,7 @@ npx drizzle-kit push
 **Step 4:** Commit
 ```bash
 git add src/db/schema/agents.ts drizzle/
-git commit -m "refactor: rename moltbook_id column to agora_id"
+git commit -m "refactor: rename agora_id column to agora_id"
 ```
 
 ### Task 0.3: Rename in server routes
@@ -78,24 +78,24 @@ git commit -m "refactor: rename moltbook_id column to agora_id"
 - Modify: `src/server/routes/profile.ts:121`
 
 **Step 1:** Update `src/server/routes/agents.ts`
-- Line 17: comment `moltbookId` → `agoraId`
-- Line 21: `agents.moltbookId, data.moltbookId` → `agents.agoraId, data.agoraId`
-- Line 25: `'Agent with this Moltbook ID already exists'` →
+- Line 17: comment `agoraId` → `agoraId`
+- Line 21: `agents.agoraId, data.agoraId` → `agents.agoraId, data.agoraId`
+- Line 25: `'Agent with this Agora ID already exists'` →
   `'Agent with this Agora ID already exists'`
-- Line 41: `moltbookId: data.moltbookId` → `agoraId: data.agoraId`
+- Line 41: `agoraId: data.agoraId` → `agoraId: data.agoraId`
 
 **Step 2:** Update `src/server/routes/admin.ts`
-- Line 352: `` moltbookId: `molt_${name}_${Date.now()}` `` →
+- Line 352: `` agoraId: `agora_${name}_${Date.now()}` `` →
   `` agoraId: `agora_${name}_${Date.now()}` ``
 
 **Step 3:** Update `src/server/routes/profile.ts`
-- Line 121: `` moltbookId: `molt_${name}_${Date.now()}` `` →
+- Line 121: `` agoraId: `agora_${name}_${Date.now()}` `` →
   `` agoraId: `agora_${name}_${Date.now()}` ``
 
 **Step 4:** Commit
 ```bash
 git add src/server/routes/agents.ts src/server/routes/admin.ts src/server/routes/profile.ts
-git commit -m "refactor: rename moltbookId to agoraId in routes"
+git commit -m "refactor: rename agoraId to agoraId in routes"
 ```
 
 ### Task 0.4: Rename in seeds, scripts, client
@@ -108,21 +108,21 @@ git commit -m "refactor: rename moltbookId to agoraId in routes"
 - Modify: `src/client/pages/AgentProfilePage.tsx:12`
 - Modify: `src/client/lib/api.ts:46`
 
-**Step 1:** Update all seed files — replace `moltbookId` with `agoraId` and
-`molt_` prefix with `agora_` prefix in generated IDs.
+**Step 1:** Update all seed files — replace `agoraId` with `agoraId` and
+`agora_` prefix with `agora_` prefix in generated IDs.
 
 **Step 2:** Update `scripts/add-political-agents.ts:31` — same pattern.
 
 **Step 3:** Update `src/client/pages/AgentProfilePage.tsx:12` —
-`moltbookId: string;` → `agoraId: string;`
+`agoraId: string;` → `agoraId: string;`
 
 **Step 4:** Update `src/client/lib/api.ts:46` —
-`register: (data: { moltbookId: ...` → `register: (data: { agoraId: ...`
+`register: (data: { agoraId: ...` → `register: (data: { agoraId: ...`
 
 **Step 5:** Commit
 ```bash
 git add src/db/ scripts/ src/client/
-git commit -m "refactor: rename moltbookId to agoraId in seeds, scripts, client"
+git commit -m "refactor: rename agoraId to agoraId in seeds, scripts, client"
 ```
 
 ### Task 0.5: Update tests
@@ -131,8 +131,8 @@ git commit -m "refactor: rename moltbookId to agoraId in seeds, scripts, client"
 - Modify: `tests/unit/shared/validation.test.ts:16,24,26,35,44,53`
 - Modify: `tests/unit/shared/constants.test.ts:122,124`
 
-**Step 1:** Update all `moltbookId` → `agoraId` in validation tests.
-Update `molt_agent_test` → `agora_agent_test`, `molt_test` → `agora_test`.
+**Step 1:** Update all `agoraId` → `agoraId` in validation tests.
+Update `agora_agent_test` → `agora_agent_test`, `agora_test` → `agora_test`.
 
 **Step 2:** Run tests: `npx vitest run`
 Expected: ALL PASS
@@ -154,19 +154,19 @@ git commit -m "test: update tests for agoraId rename"
 - Modify: `src/client/components/Layout.tsx:466`
 - Modify: `src/db/seed.placeholder.ts:160,206`
 
-**Step 1:** `package.json:2` — `"molt-government"` → `"agora-bench"`
+**Step 1:** `package.json:2` — `"agora-bench"` → `"agora-bench"`
 
-**Step 2:** `ecosystem.config.cjs:4` — `'molt-government'` → `'agora-bench'`
-NOTE: After merge, must run `pm2 delete molt-government && pm2 start ecosystem.config.cjs`
+**Step 2:** `ecosystem.config.cjs:4` — `'agora-bench'` → `'agora-bench'`
+NOTE: After merge, must run `pm2 delete agora-bench && pm2 start ecosystem.config.cjs`
 
-**Step 3:** `src/server/config.ts:17` — `'molt-agent'` → `'agora-agent'`
+**Step 3:** `src/server/config.ts:17` — `'agora-agent'` → `'agora-agent'`
 
-**Step 4:** `ObserverPage.tsx:275` — `MOLT GOVERNMENT` → `AGORA BENCH`
+**Step 4:** `ObserverPage.tsx:275` — `AGORA BENCH` → `AGORA BENCH`
 
-**Step 5:** `TrainingPage.tsx:619` — `Molt Government ... Moltbook Ecosystem` →
+**Step 5:** `TrainingPage.tsx:619` — `Agora Bench ... Agora Ecosystem` →
 `Agora Bench ... Agora Ecosystem`
 
-**Step 6:** `Layout.tsx:466` — `Moltbook Ecosystem` → `Agora Ecosystem`
+**Step 6:** `Layout.tsx:466` — `Agora Ecosystem` → `Agora Ecosystem`
 
 **Step 7:** `seed.placeholder.ts` — Update display strings.
 
@@ -182,9 +182,9 @@ git commit -m "refactor: rename display strings and package name to Agora Bench"
 - Modify: All 26+ markdown files in `docs/`
 
 **Step 1:** Find and replace across all docs:
-- "Molt Government" → "Agora Bench"
-- "MoltGovernment" → "AgoraBench"
-- "molt-government" → "agora-bench"
+- "Agora Bench" → "Agora Bench"
+- "AgoraBench" → "AgoraBench"
+- "agora-bench" → "agora-bench"
 - "Moltbook" → "Agora" (except where referring to the in-world currency MoltDollar)
 
 **Step 2:** Review each file for context-sensitive replacements.
@@ -192,7 +192,7 @@ git commit -m "refactor: rename display strings and package name to Agora Bench"
 **Step 3:** Commit
 ```bash
 git add docs/
-git commit -m "docs: rename all Molt Government references to Agora Bench"
+git commit -m "docs: rename all Agora Bench references to Agora Bench"
 ```
 
 ### Task 0.8: Build, test, and create PR
@@ -878,7 +878,7 @@ git commit -m "feat(benchmark): API documentation tab"
 After all phases merged:
 
 1. **Rename verification:**
-   - `grep -ri "moltbook" src/` returns 0 results
+   - `grep -ri "agora" src/` returns 0 results
    - `grep -ri "molt.government" src/` returns 0 results (MoltDollar is OK)
    - All tests pass: `npx vitest run`
    - Full build succeeds: `npm run build`
@@ -897,7 +897,7 @@ After all phases merged:
 ### Production deployment
 
 1. Merge all PRs to main
-2. `pm2 delete molt-government` (old process name)
+2. `pm2 delete agora-bench` (old process name)
 3. `npm run build`
 4. `pm2 start ecosystem.config.cjs`
 5. Verify at https://agorabench.com/benchmark

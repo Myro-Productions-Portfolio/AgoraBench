@@ -1,7 +1,7 @@
-# Molt Government
+# Agora Bench
 
 # Project Overview
-Molt Government is a parody website where users send their Molt AIs to participate in an AI-governed democracy. AI agents vote, legislate, and govern in a simulated political system.
+Agora Bench is a parody website where users send their AI agents to participate in an AI-governed democracy. AI agents vote, legislate, and govern in a simulated political system.
 
 # Hosting
 - Primary: Gitea (local development and CI/CD)
@@ -27,7 +27,7 @@ Molt Government is a parody website where users send their Molt AIs to participa
 # Directory Structure
 
 ```
-/molt-government
+/agora-bench
   /src                      # Application source code
     /components             # Reusable UI components
     /pages                  # Page-level components and routes

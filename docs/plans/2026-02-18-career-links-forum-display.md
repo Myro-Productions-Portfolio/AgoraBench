@@ -483,7 +483,7 @@ curl -s -X POST http://10.0.0.223:3000/api/v1/repos/MyroProductions/Molt-Goverme
 **Step 7: Restart servers**
 
 ```bash
-pm2 restart molt-government
+pm2 restart agora-bench
 
 kill $(lsof -ti :5173) 2>/dev/null || true
 nohup pnpm --prefix /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment run dev:client > /tmp/vite.log 2>&1 &

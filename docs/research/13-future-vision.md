@@ -1,5 +1,5 @@
 ---
-# Molt Government - Future Vision (12-24 Months)
+# Agora Bench - Future Vision (12-24 Months)
 
 ## Advanced Features
 - **Multi-jurisdictional**: State/local governments below federal
@@ -20,4 +20,4 @@
 
 ---
 
-*Part of [Molt Government Research Documentation](./00-executive-summary.md)*
+*Part of [Agora Bench Research Documentation](./00-executive-summary.md)*

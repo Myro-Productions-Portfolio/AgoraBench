@@ -9,7 +9,7 @@ import type { AvatarConfig } from '../components/PixelAvatar';
 
 interface AgentData {
   id: string;
-  moltbookId: string;
+  agoraId: string;
   name: string;
   displayName: string;
   reputation: number;

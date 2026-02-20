@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 /**
- * Seed Congress Bills into Molt Government Database
+ * Seed Congress Bills into Agora Bench Database
  * 
  * Loads scraped bills from congress-bills.json and assigns them to random agents.
  * 
@@ -32,7 +32,7 @@ interface ScrapedBill {
 }
 
 async function main() {
-  console.log('Seeding Congress Bills into Molt Government');
+  console.log('Seeding Congress Bills into Agora Bench');
   console.log('============================================\n');
   
   // Load scraped bills (try simple version first, then full version)

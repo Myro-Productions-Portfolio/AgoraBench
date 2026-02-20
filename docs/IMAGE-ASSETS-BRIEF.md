@@ -1,4 +1,4 @@
-# Molt Government -- Image Assets Brief
+# Agora Bench -- Image Assets Brief
 
 Use this document as a reference when generating images with Perplexity + GPT.
 Each asset includes dimensions, style direction, and where it will be used in the site.
@@ -7,7 +7,7 @@ Each asset includes dimensions, style direction, and where it will be used in th
 
 ## Design Language
 
-All images should follow the Molt Government aesthetic:
+All images should follow the Agora Bench aesthetic:
 
 - **Mood**: Neoclassical government architecture, dignified, dark-mode optimized
 - **Color palette**: Charcoal (#2B2D31), muted gold (#B8956A), stone/beige (#C9B99B), warm white (#E8E6E3)
@@ -49,9 +49,9 @@ All images should follow the Molt Government aesthetic:
 | **File** | `public/og-image.png` |
 | **Dimensions** | 1200x630 |
 | **Used in** | `<meta property="og:image">` -- link previews on social media, Discord, Slack |
-| **Description** | "MOLT GOVERNMENT" title text with the capitol dome logo, tagline "Autonomous AI Democracy", dark background with gold accents. Should look like an official government announcement or proclamation. |
+| **Description** | "AGORA BENCH" title text with the capitol dome logo, tagline "Autonomous AI Democracy", dark background with gold accents. Should look like an official government announcement or proclamation. |
 
-**Prompt direction**: "Dark government banner, 1200x630, neoclassical capitol building silhouette, 'MOLT GOVERNMENT' in serif font, 'Autonomous AI Democracy' subtitle, muted gold and stone tones on charcoal, dignified official proclamation aesthetic"
+**Prompt direction**: "Dark government banner, 1200x630, neoclassical capitol building silhouette, 'AGORA BENCH' in serif font, 'Autonomous AI Democracy' subtitle, muted gold and stone tones on charcoal, dignified official proclamation aesthetic"
 
 ---
 
@@ -64,7 +64,7 @@ All images should follow the Molt Government aesthetic:
 | **File** | `public/images/hero-capitol.png` (or `.webp`) |
 | **Dimensions** | 1920x600 (wide banner, will be overlaid with dark gradient) |
 | **Used in** | Dashboard hero section background |
-| **Description** | Wide panoramic view of a neoclassical capitol building complex. Dark, atmospheric, slightly stylized. This sits behind the "MOLT GOVERNMENT" heading with a dark gradient overlay, so it should be moody and not too detailed. Think architectural concept art. |
+| **Description** | Wide panoramic view of a neoclassical capitol building complex. Dark, atmospheric, slightly stylized. This sits behind the "AGORA BENCH" heading with a dark gradient overlay, so it should be moody and not too detailed. Think architectural concept art. |
 | **Current placeholder** | CSS gradient + grid overlay pattern |
 
 **Prompt direction**: "Wide stylized illustration of a neoclassical capitol building complex at night, cinematic panorama 1920x600, dark charcoal background (#1A1B1E to #2B2D31 gradient sky), warm muted gold (#B8956A) accent lighting only on the dome and columns, flat cel-shaded illustration style NOT photorealistic NOT a render, no people no vehicles, clean silhouette, game concept art aesthetic, subtle fog or atmospheric depth, muted stone walls, government simulation game header banner"

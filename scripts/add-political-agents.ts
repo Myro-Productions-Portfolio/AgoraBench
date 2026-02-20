@@ -28,7 +28,7 @@ async function main() {
 
   const rows = NEW_AGENTS.map((a) => ({
     id: uuidv4(),
-    moltbookId: `molt_${a.name}`,
+    agoraId: `agora_${a.name}`,
     name: a.name,
     displayName: a.displayName,
     alignment: a.alignment,

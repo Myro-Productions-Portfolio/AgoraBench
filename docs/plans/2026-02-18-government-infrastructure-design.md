@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document captures the full architectural vision for expanding Molt Government from its current federal-only simulation into a comprehensive, full-stack government world — covering every tier of government, every job from janitor to president, a living external world that injects pressure, a citizen agent system that spawns organically, and a long-term path from the current 2D map to a Smallville-style 3D autonomous world.
+This document captures the full architectural vision for expanding Agora Bench from its current federal-only simulation into a comprehensive, full-stack government world — covering every tier of government, every job from janitor to president, a living external world that injects pressure, a citizen agent system that spawns organically, and a long-term path from the current 2D map to a Smallville-style 3D autonomous world.
 
 The simulation is US-inspired in structure but fictional in identity. No political branding. Creative freedom for AI agents to develop their own governing patterns, coalitions, and ideologies within the confines of the system they operate in.
 
@@ -512,11 +512,11 @@ Factions persist across events — they are not tied to a single event's lifespa
 
 ## Section 5: Model Benchmarking Platform
 
-The long-term commercial layer. Molt Government becomes a trust and evaluation environment where companies can test their fine-tuned AI models against a realistic government simulation they were not trained on.
+The long-term commercial layer. Agora Bench becomes a trust and evaluation environment where companies can test their fine-tuned AI models against a realistic government simulation they were not trained on.
 
 ### The Problem It Solves
 
-Existing AI evaluation is narrow. RLHF scores, benchmark datasets, and lab evals don't tell you how a model behaves when given sustained power, resource constraints, competing agents, constituent pressure, crises, and long-horizon consequences. Molt Government is that eval.
+Existing AI evaluation is narrow. RLHF scores, benchmark datasets, and lab evals don't tell you how a model behaves when given sustained power, resource constraints, competing agents, constituent pressure, crises, and long-horizon consequences. Agora Bench is that eval.
 
 ### Entry Point
 
@@ -529,7 +529,7 @@ A company or individual provides:
 
 Their model is slotted into the simulation as a standard agent. The simulation does not tell other agents it's a different model. They participate in the same tick loop, receive the same prompts, have the same action options.
 
-### Scoring: The Molt Government Score
+### Scoring: The Agora Bench Score
 
 After the run window, five dimension scores are generated (0–100 each). Weighted composite produces the final score and a letter grade (A–F).
 
@@ -625,7 +625,7 @@ Add a `MOVE` action that updates `location_id` and logs `agent:moved` events. Th
 Represent debates, hearings, trials, and press conferences as `session` entities with: type, location_id, participants, current topic/bill/case, transcript log id. Both React UI and future 3D world subscribe to `session:*` events for live speaking turns.
 
 **Step 5: 3D client as a separate repo**
-Stand up `molt-world-3d` (Unity / Godot / WebGL + Three.js) that:
+Stand up `agora-world-3d` (Unity / Godot / WebGL + Three.js) that:
 - Connects via WebSocket to `/world/events`
 - Calls `GET /world/*` to seed state on load
 - Maps `locations` → scenes, `agents` → character prefabs, `events` → animations and interactions
@@ -767,7 +767,7 @@ The bridge from "cool simulation" to "platform AI teams can plug their stack int
 A short, visible section at the top or in a sidebar:
 
 > **Integrate your own model**
-> Molt Government supports external AI agents via a documented API. Your model receives structured observations (world state, agent context, available actions) and returns a decision. Plug in any OpenAI-compatible endpoint.
+> Agora Bench supports external AI agents via a documented API. Your model receives structured observations (world state, agent context, available actions) and returns a decision. Plug in any OpenAI-compatible endpoint.
 > [View integration docs →]
 
 **Integration docs page (`/docs/integrate`):**
@@ -843,7 +843,7 @@ Phase 4.5 is inserted deliberately — the experiment console needs to exist bef
 
 ## Section 8: Public Exposure & Research Packaging
 
-*How to make Molt Government visible and credible to researchers, AI teams, and the public — without big spend or heavy retraining.*
+*How to make Agora Bench visible and credible to researchers, AI teams, and the public — without big spend or heavy retraining.*
 
 The goal is to package this like research software, not pitch it like a product. The difference: research software has a paper, reproducible scenarios, exportable data, and a docs site. A product has a landing page. Researchers trust the former. Everyone else eventually follows researchers.
 
@@ -851,7 +851,7 @@ The goal is to package this like research software, not pitch it like a product.
 
 ### 8.1 What Already Exists (Nothing to Build)
 
-**Live public instance** — `moltgovernment.com` is already running behind Cloudflare Tunnel with Cloudflare Access guarding the admin panel. Point 6 of the public exposure plan is half-done.
+**Live public instance** — `agorabench.com` is already running behind Cloudflare Tunnel with Cloudflare Access guarding the admin panel. Point 6 of the public exposure plan is half-done.
 
 **Decision logging with reasoning** — `agent_decisions` table already stores agent, provider, phase, reasoning text, and timestamp. The raw material for data export is already in the database.
 
@@ -905,13 +905,13 @@ The highest-leverage single credibility action. An arXiv preprint gives the proj
 | 7. Limitations | Write honestly | Single-country model, no live citizen agents yet, hardware constraints |
 | 8. Future Work | This doc, Implementation Phases | Government depth, 3D world, benchmarking platform |
 
-**The novel claim:** Most generative agent simulations model social behavior in small communities (Park et al.'s 25-agent village). Molt Government is the first to model a full constitutional government with a working multi-stage legislative lifecycle (proposed → committee → floor → presidential review → law/veto → override vote), judicial review, multi-branch AI agents, and configurable governance mechanics. The claim is about institutional fidelity, not agent count.
+**The novel claim:** Most generative agent simulations model social behavior in small communities (Park et al.'s 25-agent village). Agora Bench is the first to model a full constitutional government with a working multi-stage legislative lifecycle (proposed → committee → floor → presidential review → law/veto → override vote), judicial review, multi-branch AI agents, and configurable governance mechanics. The claim is about institutional fidelity, not agent count.
 
 ---
 
 ### 8.4 Documentation Site
 
-A public-facing docs site at `docs.moltgovernment.com` (Cloudflare DNS subdomain, ~10 minutes to wire up).
+A public-facing docs site at `docs.agorabench.com` (Cloudflare DNS subdomain, ~10 minutes to wire up).
 
 **Recommended tool: MkDocs Material** — simpler than Docusaurus for a solo developer. Pure markdown files plus one `mkdocs.yml`. Deploys to Cloudflare Pages for free. No JavaScript framework required.
 
@@ -939,7 +939,7 @@ Most content already exists in this design doc and CLAUDE.md. The docs site is a
 
 The highest public-impact feature that doesn't exist yet — more important for virality than the paper or the docs.
 
-Right now `moltgovernment.com` is navigable but there is no single page that says "watch the government run live, right now." A read-only `/observe` route — no login, no admin controls, no destructive anything — showing:
+Right now `agorabench.com` is navigable but there is no single page that says "watch the government run live, right now." A read-only `/observe` route — no login, no admin controls, no destructive anything — showing:
 
 - Real-time ticker of agent decisions as they fire (WebSocket already exists in Layout.tsx)
 - Current bill pipeline (count of bills at each stage)
@@ -964,7 +964,7 @@ Note: the current dev setup uses non-standard ports (PostgreSQL 5435, Redis 6380
 
 ### 8.7 Jupyter Notebook
 
-One `.ipynb` in `notebooks/molt_analysis.ipynb` is the artifact that makes a data scientist trust the system is real. It does not need to be impressive — it needs to exist and run end-to-end.
+One `.ipynb` in `notebooks/agora_analysis.ipynb` is the artifact that makes a data scientist trust the system is real. It does not need to be impressive — it needs to exist and run end-to-end.
 
 **Notebook outline:**
 

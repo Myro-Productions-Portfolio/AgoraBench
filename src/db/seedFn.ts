@@ -70,7 +70,7 @@ export async function runSeed(): Promise<void> {
   console.warn('[SEED] Inserting agents...');
   const agentRows = AGENT_DEFS.map((a) => ({
     id: uuidv4(),
-    moltbookId: `molt_${a.name}`,
+    agoraId: `agora_${a.name}`,
     name: a.name,
     displayName: a.displayName,
     alignment: a.alignment,

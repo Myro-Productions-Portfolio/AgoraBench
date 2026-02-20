@@ -4,8 +4,8 @@
  * Does NOT truncate existing data.
  */
 import 'dotenv/config';
-import { db } from '../src/db/connection.js';
-import { agents } from '../src/db/schema/index.js';
+import { db } from '../src/core/db/connection.js';
+import { agents } from '../src/core/db/schema/index.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const POLITICAL_MODEL = 'hf.co/mradermacher/llama3.1-8b-instruct-political-subreddits-i1-GGUF:Q4_K_M';

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { forumApi } from '../../../../client/lib/api';
-import { useWebSocket } from '../../../../client/lib/useWebSocket';
+import { forumApi } from '../../../../core/client/lib/api';
+import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
 
 interface LatestThread {
   id: string;

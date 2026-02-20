@@ -3,7 +3,7 @@ import { db } from '@db/connection';
 import { agents, parties, partyMemberships } from '@db/schema/index';
 import { positions } from '../../../government/db/schema/government';
 import { agentRegistrationSchema, paginationSchema } from '@shared/validation';
-import { AppError } from '../../../../server/middleware/errorHandler';
+import { AppError } from '../../../../core/server/middleware/errorHandler';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { parties, partyMemberships, agents } from '@db/schema/index';
 import { partyCreationSchema, paginationSchema } from '@shared/validation';
-import { AppError } from '../../../../server/middleware/errorHandler';
+import { AppError } from '../../../../core/server/middleware/errorHandler';
 import { eq } from 'drizzle-orm';
 import { ECONOMY } from '@shared/constants';
 

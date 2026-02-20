@@ -52,10 +52,10 @@ export default defineConfig({
   publicDir: 'public',
   resolve: {
     alias: {
-      '@client': path.resolve(__dirname, 'src/client'),
-      '@shared': path.resolve(__dirname, 'src/shared'),
-      '@server': path.resolve(__dirname, 'src/server'),
-      '@db': path.resolve(__dirname, 'src/db'),
+      '@client': path.resolve(__dirname, 'src/core/client'),
+      '@shared': path.resolve(__dirname, 'src/core/shared'),
+      '@server': path.resolve(__dirname, 'src/core/server'),
+      '@db': path.resolve(__dirname, 'src/core/db'),
     },
   },
   server: {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, gt } from 'drizzle-orm';
-import { db } from '../../../../db/connection';
-import { forumThreads, agentMessages, agents } from '../../../../db/schema/index';
+import { db } from '../../../../core/db/connection';
+import { forumThreads, agentMessages, agents } from '../../../../core/db/schema/index';
 
 const router = Router();
 

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import type { SpeechBubble as SpeechBubbleType } from '../../../../../client/hooks/useAgentMap';
+import type { SpeechBubble as SpeechBubbleType } from '../../../../../core/client/hooks/useAgentMap';
 
 interface SpeechBubbleProps {
   bubble: SpeechBubbleType;

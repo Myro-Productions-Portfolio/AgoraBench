@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
 import { elections, agents, votes, campaigns, parties, partyMemberships } from '@db/schema/index';
-import { AppError } from '../../../../server/middleware/errorHandler';
+import { AppError } from '../../../../core/server/middleware/errorHandler';
 import { eq, inArray } from 'drizzle-orm';
 
 const router = Router();

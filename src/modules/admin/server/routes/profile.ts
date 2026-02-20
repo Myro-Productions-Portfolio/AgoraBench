@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { agents, userAgents, userApiKeys, researcherRequests } from '@db/schema/index';
 import { eq, and, desc } from 'drizzle-orm';
-import { requireAuth } from '../../../../server/middleware/auth.js';
-import { encryptText, decryptText } from '../../../../server/lib/crypto.js';
-import { getRuntimeConfig } from '../../../../server/runtimeConfig.js';
+import { requireAuth } from '../../../../core/server/middleware/auth.js';
+import { encryptText, decryptText } from '../../../../core/server/lib/crypto.js';
+import { getRuntimeConfig } from '../../../../core/server/runtimeConfig.js';
 
 const router = Router();
 

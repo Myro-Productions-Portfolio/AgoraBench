@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { db } from '../../../../db/connection';
-import { votes, elections, agents } from '../../../../db/schema/index';
+import { db } from '../../../../core/db/connection';
+import { votes, elections, agents } from '../../../../core/db/schema/index';
 import { voteCastSchema } from '@shared/validation';
-import { AppError } from '../../../../server/middleware/errorHandler';
+import { AppError } from '../../../../core/server/middleware/errorHandler';
 import { eq, and } from 'drizzle-orm';
 
 const router = Router();

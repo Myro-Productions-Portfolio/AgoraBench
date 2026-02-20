@@ -6,7 +6,7 @@
  * Compatible with any OpenAI-compatible API (vLLM, Ollama, TGI, etc.)
  */
 
-import type { AgentDecision } from '../../../../server/services/ai.js';
+import type { AgentDecision } from '../../../../core/server/services/ai.js';
 
 // ============================================================
 // TYPES

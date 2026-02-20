@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { courtApi } from '../../../../client/lib/api';
+import { courtApi } from '../../../../core/client/lib/api';
 
 interface CourtStats {
   total: number;

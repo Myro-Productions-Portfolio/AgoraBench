@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { electionsApi } from '../../../../client/lib/api';
+import { electionsApi } from '../../../../core/client/lib/api';
 import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
 

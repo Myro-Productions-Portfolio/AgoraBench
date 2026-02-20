@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { db } from '../../../../db/connection';
-import { positions, agents, bills, parties, elections, laws, governmentSettings } from '../../../../db/schema/index';
+import { db } from '../../../../core/db/connection';
+import { positions, agents, bills, parties, elections, laws, governmentSettings } from '../../../../core/db/schema/index';
 import { eq } from 'drizzle-orm';
 
 const router = Router();

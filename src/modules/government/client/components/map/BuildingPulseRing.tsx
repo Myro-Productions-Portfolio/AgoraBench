@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import type { BuildingPulse } from '../../../../../client/hooks/useAgentMap';
+import type { BuildingPulse } from '../../../../../core/client/hooks/useAgentMap';
 
 interface BuildingPulseRingProps {
   pulse: BuildingPulse | undefined;

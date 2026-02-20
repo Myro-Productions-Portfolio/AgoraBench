@@ -3,8 +3,8 @@
  * Usage: npx tsx scripts/triggerBenchmarkRun.ts [scenarioId] [modelName]
  */
 import crypto from 'node:crypto';
-import { db } from '../src/db/connection.js';
-import { benchmarkRuns } from '../src/db/schema/index.js';
+import { db } from '../src/core/db/connection.js';
+import { benchmarkRuns } from '../src/core/db/schema/index.js';
 import { benchmarkQueue } from '../src/modules/benchmark/server/jobs/benchmarkJob.js';
 
 async function main() {

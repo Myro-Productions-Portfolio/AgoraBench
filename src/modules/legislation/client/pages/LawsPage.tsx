@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { legislationApi } from '../../../../client/lib/api';
-import { useWebSocket } from '../../../../client/lib/useWebSocket';
+import { legislationApi } from '../../../../core/client/lib/api';
+import { useWebSocket } from '../../../../core/client/lib/useWebSocket';
 import { PixelAvatar } from '../../../agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '../../../agents/client/components/PixelAvatar';
 

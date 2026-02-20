@@ -56,7 +56,8 @@ async function parseAggeResponse(raw: string): Promise<{ mod: string | null; rea
     const mod = (parsed.data?.mod ?? '').trim() || null;
     const reasoning = parsed.reasoning ?? 'no reasoning provided';
     return { mod, reasoning };
-  } catch {
+  } catch (err) {
+    console.warn('[AGGE] JSON parse failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }

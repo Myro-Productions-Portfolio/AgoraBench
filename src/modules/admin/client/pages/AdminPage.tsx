@@ -411,7 +411,7 @@ export function AdminPage() {
       const requests = (r.data as ResearcherRequest[] | undefined) ?? [];
       setResearcherRequests(requests);
       setPendingCount(requests.filter((req) => req.status === 'pending').length);
-    } catch { /* silent */ }
+    } catch (err) { console.error('[ADMIN] fetchResearcherRequests failed:', err); }
   }, []);
 
   const fetchStatus = useCallback(async () => {
@@ -420,7 +420,7 @@ export function AdminPage() {
       const data = res.data as { simulation: SimulationStatus; decisions: DecisionStats };
       setSimStatus(data.simulation);
       setDecisionStats(data.decisions);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchStatus failed:', err); }
   }, []);
 
   const fetchDecisions = useCallback(async () => {
@@ -429,7 +429,7 @@ export function AdminPage() {
       if (res.data && Array.isArray(res.data)) {
         setDecisions(res.data as Decision[]);
       }
-    } catch { /* ignore */ } finally {
+    } catch (err) { console.error('[ADMIN] fetchDecisions failed:', err); } finally {
       setLoading(false);
     }
   }, []);
@@ -438,21 +438,21 @@ export function AdminPage() {
     try {
       const res = await adminApi.getConfig();
       setSimConfig(res.data as RuntimeConfig);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchConfig failed:', err); }
   }, []);
 
   const fetchEconomy = useCallback(async () => {
     try {
       const res = await adminApi.getEconomy();
       setEconomySettings(res.data as EconomySettings);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchEconomy failed:', err); }
   }, []);
 
   const fetchAgents = useCallback(async () => {
     try {
       const res = await adminApi.getAgents();
       setAgentList(res.data as AgentRow[]);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchAgents failed:', err); }
   }, []);
 
   const fetchAvatarAgents = useCallback(async () => {
@@ -461,28 +461,28 @@ export function AdminPage() {
       if (res.data && Array.isArray(res.data)) {
         setAvatarAgents(res.data as AvatarAgentRow[]);
       }
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchAvatarAgents failed:', err); }
   }, []);
 
   const fetchProviders = useCallback(async () => {
     try {
       const res = await providersApi.list();
       setProviders(res.data as ProviderRow[]);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchProviders failed:', err); }
   }, []);
 
   const fetchUsers = useCallback(async () => {
     try {
       const res = await adminApi.getUsers();
       setUserList(res.data as typeof userList);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchUsers failed:', err); }
   }, []);
 
   const fetchExportCounts = useCallback(async () => {
     try {
       const res = await adminApi.exportCounts();
       setExportCounts(res.data as Record<string, number>);
-    } catch { /* ignore */ }
+    } catch (err) { console.error('[ADMIN] fetchExportCounts failed:', err); }
   }, []);
 
   useEffect(() => {
@@ -564,7 +564,8 @@ export function AdminPage() {
       const res = await adminApi.setConfig(patch as Record<string, unknown>);
       setSimConfig(res.data as RuntimeConfig);
       flash('Settings saved');
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] saveConfig failed:', err);
       flash('Failed to save settings');
     } finally {
       setSavingConfig(false);
@@ -577,7 +578,8 @@ export function AdminPage() {
       const res = await adminApi.setEconomy(patch);
       setEconomySettings(res.data as EconomySettings);
       flash('Economy settings saved');
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] saveEconomy failed:', err);
       flash('Failed to save economy settings');
     } finally {
       setSavingConfig(false);
@@ -615,7 +617,8 @@ export function AdminPage() {
       flash(`${name} provider saved`);
       setProviderKeyInputs((prev) => ({ ...prev, [name]: '' }));
       void fetchProviders();
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] providerSave failed:', err);
       flash(`Failed to save ${name} provider`);
     } finally {
       setProviderSaving(null);
@@ -627,7 +630,8 @@ export function AdminPage() {
     try {
       const res = await providersApi.test(name);
       setProviderTestResults((prev) => ({ ...prev, [name]: res.data as { success: boolean; latencyMs: number; error?: string } }));
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] providerTest failed:', err);
       setProviderTestResults((prev) => ({ ...prev, [name]: { success: false, latencyMs: 0, error: 'Request failed' } }));
     } finally {
       setProviderTesting(null);
@@ -639,7 +643,8 @@ export function AdminPage() {
       await providersApi.clear(name);
       flash(`${name} key cleared`);
       void fetchProviders();
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] providerClear failed:', err);
       flash(`Failed to clear ${name} key`);
     }
   };
@@ -662,7 +667,7 @@ export function AdminPage() {
     if (agent.avatarConfig) {
       try {
         return JSON.parse(agent.avatarConfig) as AvatarConfig;
-      } catch { /* fall through */ }
+      } catch (err) { console.warn('[ADMIN] Avatar config parse failed:', err); }
     }
     return proceduralConfig(agent.name);
   }
@@ -680,7 +685,8 @@ export function AdminPage() {
       setSaveMessage((prev) => ({ ...prev, [agentId]: 'Saved!' }));
       void fetchAvatarAgents();
       setTimeout(() => setSaveMessage((prev) => ({ ...prev, [agentId]: '' })), 2000);
-    } catch {
+    } catch (err) {
+      console.error('[ADMIN] saveAvatar failed:', err);
       setSaveMessage((prev) => ({ ...prev, [agentId]: 'Save failed' }));
       setTimeout(() => setSaveMessage((prev) => ({ ...prev, [agentId]: '' })), 3000);
     } finally {
@@ -1823,7 +1829,7 @@ export function AdminPage() {
                                 await adminApi.setUserRole(u.id, newRole);
                                 setUserList((prev) => prev.map((x) => x.id === u.id ? { ...x, role: newRole } : x));
                                 flash(`${u.username || u.id} is now ${newRole}`);
-                              } catch { flash('Failed to update role'); }
+                              } catch (err) { console.error('[ADMIN] setUserRole failed:', err); flash('Failed to update role'); }
                               finally { setUserRoleSaving(null); }
                             }}
                             className="text-xs px-3 py-1 rounded border border-border hover:bg-surface-2 transition-colors disabled:opacity-50"

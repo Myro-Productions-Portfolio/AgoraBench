@@ -56,7 +56,7 @@ const ROLE_META: Record<string, { label: string; color: string }> = {
 
 function parseAvatarConfig(raw: string | null): AvatarConfig | undefined {
   if (!raw) return undefined;
-  try { return JSON.parse(raw) as AvatarConfig; } catch { return undefined; }
+  try { return JSON.parse(raw) as AvatarConfig; } catch (err) { console.warn('[PARTY] Avatar config parse failed:', err); return undefined; }
 }
 
 function fmtDate(s: string | null | undefined): string {

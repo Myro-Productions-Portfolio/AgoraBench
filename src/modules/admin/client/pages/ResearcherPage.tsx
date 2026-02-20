@@ -152,7 +152,7 @@ function scoreBarColor(score: number): string {
 function formatDate(dateStr: string): string {
   try {
     return new Date(dateStr).toLocaleDateString();
-  } catch {
+  } catch (err) { console.warn('[RESEARCHER] Date format failed:', err);
     return dateStr?.slice(0, 10) ?? '';
   }
 }
@@ -170,7 +170,7 @@ function relativeTime(dateStr: string): string {
     const diffD = Math.floor(diffH / 24);
     if (diffD < 30) return `${diffD}d ago`;
     return formatDate(dateStr);
-  } catch {
+  } catch (err) { console.warn('[RESEARCHER] Relative time failed:', err);
     return '';
   }
 }
@@ -204,8 +204,7 @@ function AgentsTab({
     try {
       await researcherApi.withdrawAgent(agent.id);
       onRefresh();
-    } catch {
-      // silently handled; refresh will show current state
+    } catch (err) { console.error('[RESEARCHER] Agent withdraw failed:', err);
     } finally {
       setWithdrawing(null);
     }
@@ -598,8 +597,7 @@ function ApiKeysTab() {
       setAddKey('');
       setAddModel('');
       await fetchKeys();
-    } catch {
-      // handled silently; keys list refresh will show state
+    } catch (err) { console.error('[RESEARCHER] API key save failed:', err);
     } finally {
       setSaving(false);
     }
@@ -611,8 +609,7 @@ function ApiKeysTab() {
     try {
       await profileApi.deleteApiKey(provider);
       await fetchKeys();
-    } catch {
-      // handled silently
+    } catch (err) { console.error('[RESEARCHER] API key delete failed:', err);
     } finally {
       setDeleting(null);
     }
@@ -799,8 +796,7 @@ function ExportsTab({ agents }: { agents: AgentRow[] }) {
         presetId: selectedPreset,
         agentFilter: selectedAgent || undefined,
       });
-    } catch {
-      // download handler manages errors internally
+    } catch (err) { console.error('[RESEARCHER] Export download failed:', err);
     } finally {
       setExporting(false);
     }

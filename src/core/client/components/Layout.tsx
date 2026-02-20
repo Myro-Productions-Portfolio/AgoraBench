@@ -259,7 +259,7 @@ export function Layout() {
           setUserRole(data.data.role);
         }
       })
-      .catch(() => setUserRole(null));
+      .catch((err) => { console.warn('[LAYOUT] Role fetch failed:', err); setUserRole(null); });
   }, [isSignedIn]);
 
   function hasActiveSubitem(item: NavItem): boolean {

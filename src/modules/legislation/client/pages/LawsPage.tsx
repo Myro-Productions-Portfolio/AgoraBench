@@ -81,7 +81,7 @@ export function LawsPage() {
           setLawItems(res.data as LawItem[]);
         }
       })
-      .catch(() => {})
+      .catch((err) => { console.error('[LAWS] Laws fetch failed:', err); })
       .finally(() => setLoading(false));
   }, []);
 

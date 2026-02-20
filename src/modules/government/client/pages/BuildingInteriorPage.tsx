@@ -125,7 +125,7 @@ function DebugOverlay({ seats, buildingColor }: DebugOverlayProps) {
     const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
     const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
     const text = `{ x: ${x}, y: ${y} }`;
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text).catch((err) => { console.warn('[BUILDING] Clipboard write failed:', err); });
     setCopied(text);
     setTimeout(() => setCopied(null), 2000);
   }, []);

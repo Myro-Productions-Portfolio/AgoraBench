@@ -92,7 +92,7 @@ export function LiveTicker({ dismissed, onDismiss }: LiveTickerProps) {
           .map(activityToTicker);
         setItems(filtered);
       }
-    }).catch(() => {});
+    }).catch((err) => { console.error('[TICKER] Activity fetch failed:', err); });
   }, []);
 
   /* Live WebSocket events — highlights only */

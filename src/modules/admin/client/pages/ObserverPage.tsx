@@ -186,7 +186,7 @@ export function ObserverPage() {
       .then((res) => {
         if (res.data) setDecisions(res.data);
       })
-      .catch(() => {});
+      .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
   }, []);
 
   // Load tick options
@@ -195,7 +195,7 @@ export function ObserverPage() {
       .then((res) => {
         if (res.data) setTicks(res.data);
       })
-      .catch(() => {});
+      .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
   }, []);
 
   // When tick selected, load that tick's decisions
@@ -205,7 +205,7 @@ export function ObserverPage() {
       .then((res) => {
         if (res.data) setDecisions(res.data);
       })
-      .catch(() => {});
+      .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
   }, [selectedTickId]);
 
   // Live WebSocket prepend (only in live mode)
@@ -219,7 +219,7 @@ export function ObserverPage() {
               setDecisions((prev) => [res.data![0], ...prev.slice(0, DECISION_FEED_MAX - 1)]);
             }
           })
-          .catch(() => {});
+          .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
       }),
     );
     return () => unsubs.forEach((fn) => fn());
@@ -242,14 +242,14 @@ export function ObserverPage() {
             bills.filter((b) => b.status === 'floor' || b.status === 'presidential_veto'),
           );
         })
-        .catch(() => {});
+        .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
 
       // Fetch recent laws
       void (legislationApi.laws() as Promise<{ data?: LawRow[] }>)
         .then((res) => {
           if (res.data) setRecentLaws(res.data.slice(0, 8));
         })
-        .catch(() => {});
+        .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
     };
 
     loadRight();
@@ -263,7 +263,7 @@ export function ObserverPage() {
       .then((res) => {
         if (res.data) setDecisions(res.data);
       })
-      .catch(() => {});
+      .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
   };
 
   return (

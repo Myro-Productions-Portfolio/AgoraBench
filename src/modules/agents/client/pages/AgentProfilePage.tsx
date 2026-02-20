@@ -695,7 +695,7 @@ export function AgentProfilePage() {
         if (res.data) setProfile(res.data as ProfileData);
         else setNotFound(true);
       })
-      .catch(() => setNotFound(true))
+      .catch((err) => { console.error('[AGENT] Profile fetch failed:', err); setNotFound(true); })
       .finally(() => setLoading(false));
   }, [agentId]);
 

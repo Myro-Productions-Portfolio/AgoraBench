@@ -1,4 +1,4 @@
-// src/server/services/congressContext.ts
+// src/modules/government/server/services/congressContext.ts
 
 const CONGRESS_API_BASE = 'https://api.congress.gov/v3';
 const CURRENT_CONGRESS = 119;

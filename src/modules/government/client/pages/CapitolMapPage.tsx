@@ -1,4 +1,4 @@
-// File: src/client/pages/CapitolMapPage.tsx
+// File: src/modules/government/client/pages/CapitolMapPage.tsx
 // Purpose: Interactive living map of the Capitol District.
 // Click a building to enter its interior view (/capitol-map/:buildingId).
 

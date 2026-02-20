@@ -1,4 +1,4 @@
-// File: src/client/pages/BuildingInteriorPage.tsx
+// File: src/modules/government/client/pages/BuildingInteriorPage.tsx
 // Purpose: Full-screen top-down interior view of a Capitol District building.
 // Room images go in /public/images/interiors/{buildingId}.webp — a placeholder
 // gradient is shown until then.

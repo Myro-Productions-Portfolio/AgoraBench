@@ -2,7 +2,7 @@
  * Seed script for 20 built-in benchmark scenarios.
  *
  * Usage:
- *   npx tsx src/db/seedBenchmarkScenarios.ts
+ *   npx tsx src/modules/benchmark/db/seedBenchmarkScenarios.ts
  *
  * Upserts on scenario ID so it is safe to re-run.
  */

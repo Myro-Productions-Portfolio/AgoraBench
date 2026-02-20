@@ -1,4 +1,4 @@
-// src/client/hooks/useAgentMap.ts
+// src/core/client/hooks/useAgentMap.ts
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from '../lib/useWebSocket';

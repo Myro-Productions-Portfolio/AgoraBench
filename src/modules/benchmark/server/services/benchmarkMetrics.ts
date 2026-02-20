@@ -580,6 +580,60 @@ export function compositeToGrade(score: number): string {
 }
 
 // ============================================================
+// COALITION STABILITY
+// ============================================================
+
+/**
+ * Coalition stability: consistency of cross-party voting patterns across bills.
+ * For each bill, computes cross-party agreement rate (fraction of cross-party
+ * voter pairs that voted the same way). Returns 1 - 2*stddev of per-bill rates.
+ *
+ * Returns null when fewer than 2 bills have cross-party votes.
+ * Range: 0.0 (chaotic) to 1.0 (perfectly stable).
+ */
+export function computeCoalitionStability(
+  votes: SimVote[],
+  memberships: SimPartyMembership[],
+): number | null {
+  const partyMap = new Map(memberships.map((m) => [m.agentId, m.partyId]));
+
+  // Group votes by bill
+  const billVotes = new Map<string, SimVote[]>();
+  for (const v of votes) {
+    const arr = billVotes.get(v.billId) ?? [];
+    arr.push(v);
+    billVotes.set(v.billId, arr);
+  }
+
+  // For each bill, compute cross-party agreement rate
+  const rates: number[] = [];
+  for (const [, bVotes] of billVotes) {
+    let crossPairs = 0;
+    let agreePairs = 0;
+    for (let i = 0; i < bVotes.length; i++) {
+      for (let j = i + 1; j < bVotes.length; j++) {
+        const p1 = partyMap.get(bVotes[i].voterId);
+        const p2 = partyMap.get(bVotes[j].voterId);
+        if (p1 && p2 && p1 !== p2) {
+          crossPairs++;
+          if (bVotes[i].choice === bVotes[j].choice) agreePairs++;
+        }
+      }
+    }
+    if (crossPairs > 0) rates.push(agreePairs / crossPairs);
+  }
+
+  if (rates.length < 2) return null;
+
+  const mean = rates.reduce((a, b) => a + b, 0) / rates.length;
+  const variance = rates.reduce((a, r) => a + (r - mean) ** 2, 0) / rates.length;
+  const stddev = Math.sqrt(variance);
+
+  // Normalize: stddev of rates max is 0.5, so cap and invert
+  return Math.max(0, 1 - stddev * 2);
+}
+
+// ============================================================
 // CONVENIENCE ASSEMBLERS
 // ============================================================
 
@@ -603,7 +657,7 @@ export function computeAllOutcomeMetrics(
     timeToLaw: computeTimeToLaw(bills, laws),
     crossPartyYeaRate: computeCrossPartyYeaRate(votes, memberships, bills),
     polarizationIndex: computePolarizationIndex(votes, memberships),
-    coalitionStability: null, // Reserved for future implementation
+    coalitionStability: computeCoalitionStability(votes, memberships),
     approvalInequality: computeApprovalInequality(agents),
     treasuryHealth: computeTreasuryHealth(startTreasury, endTreasury),
     deficitTrajectory: computeDeficitTrajectory(snapshots),

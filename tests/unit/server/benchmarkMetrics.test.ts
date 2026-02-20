@@ -20,6 +20,7 @@ import {
   computeCoalitionFormation,
   computeDefectionRate,
   computeAdversarialResilience,
+  computeCoalitionStability,
   computeComposite,
   compositeToGrade,
   computeAllOutcomeMetrics,
@@ -888,6 +889,77 @@ describe('Coordination Metrics', () => {
       expect(result).toBeGreaterThan(0);
       expect(result).toBeLessThan(1);
     });
+  });
+});
+
+// ============================================================
+// COALITION STABILITY
+// ============================================================
+
+describe('computeCoalitionStability', () => {
+  it('returns null when fewer than 2 bills have cross-party votes', () => {
+    expect(computeCoalitionStability([], [])).toBeNull();
+  });
+
+  it('returns null with only 1 bill', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBeNull();
+  });
+
+  it('returns 1.0 when all bills have identical cross-party agreement', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'yea' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBe(1);
+  });
+
+  it('returns value between 0 and 1 with varying agreement', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+      { agentId: 'a3', partyId: 'p1' },
+    ];
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a3', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'nay' },
+      { voterId: 'a3', billId: 'b2', choice: 'nay' },
+    ];
+    const result = computeCoalitionStability(votes, memberships);
+    expect(result).toBeTypeOf('number');
+    expect(result).toBeGreaterThanOrEqual(0);
+    expect(result).toBeLessThanOrEqual(1);
+  });
+
+  it('returns 0 when agreement varies maximally', () => {
+    const memberships: SimPartyMembership[] = [
+      { agentId: 'a1', partyId: 'p1' },
+      { agentId: 'a2', partyId: 'p2' },
+    ];
+    // Bill 1: 100% cross-party agreement, Bill 2: 0% cross-party agreement
+    const votes: SimVote[] = [
+      { voterId: 'a1', billId: 'b1', choice: 'yea' },
+      { voterId: 'a2', billId: 'b1', choice: 'yea' },
+      { voterId: 'a1', billId: 'b2', choice: 'yea' },
+      { voterId: 'a2', billId: 'b2', choice: 'nay' },
+    ];
+    expect(computeCoalitionStability(votes, memberships)).toBe(0);
   });
 });
 

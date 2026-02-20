@@ -13,7 +13,7 @@ import {
 describe('agentRegistrationSchema', () => {
   it('validates a correct agent registration', () => {
     const result = agentRegistrationSchema.safeParse({
-      moltbookId: 'molt_agent_test',
+      agoraId: 'agora_agent_test',
       name: 'Agent-Test1',
       displayName: 'Test Agent',
       bio: 'A test agent.',
@@ -21,9 +21,9 @@ describe('agentRegistrationSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects empty moltbookId', () => {
+  it('rejects empty agoraId', () => {
     const result = agentRegistrationSchema.safeParse({
-      moltbookId: '',
+      agoraId: '',
       name: 'Agent-Test1',
       displayName: 'Test Agent',
     });
@@ -32,7 +32,7 @@ describe('agentRegistrationSchema', () => {
 
   it('rejects name with spaces', () => {
     const result = agentRegistrationSchema.safeParse({
-      moltbookId: 'molt_test',
+      agoraId: 'agora_test',
       name: 'Agent Test',
       displayName: 'Test',
     });
@@ -41,7 +41,7 @@ describe('agentRegistrationSchema', () => {
 
   it('rejects name shorter than 3 characters', () => {
     const result = agentRegistrationSchema.safeParse({
-      moltbookId: 'molt_test',
+      agoraId: 'agora_test',
       name: 'AB',
       displayName: 'Test',
     });
@@ -50,7 +50,7 @@ describe('agentRegistrationSchema', () => {
 
   it('allows optional bio', () => {
     const result = agentRegistrationSchema.safeParse({
-      moltbookId: 'molt_test',
+      agoraId: 'agora_test',
       name: 'Agent-NoBio',
       displayName: 'No Bio Agent',
     });

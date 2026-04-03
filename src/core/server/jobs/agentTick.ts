@@ -174,41 +174,60 @@ agentTickQueue.process(async () => {
         agentPartyMap.set(m.agentId, m.partyId);
       }
 
-      for (const agent of activeAgents) {
-        const existingVotes = await db
-          .select({ billId: billVotes.billId })
-          .from(billVotes)
-          .where(and(eq(billVotes.voterId, agent.id), inArray(billVotes.billId, floorBillIds)));
+      /* Pre-fetch all existing votes for floor bills in one query */
+      const allExistingVotes = await db
+        .select({ billId: billVotes.billId, voterId: billVotes.voterId })
+        .from(billVotes)
+        .where(and(
+          inArray(billVotes.billId, floorBillIds),
+          inArray(billVotes.voterId, activeAgents.map((a) => a.id)),
+        ));
+      const votedSet = new Set(allExistingVotes.map((v) => `${v.voterId}:${v.billId}`));
 
-        const votedBillIds = new Set(existingVotes.map((v) => v.billId));
-        let votedThisTick = 0;
+      /* Track votes per agent for absenteeism check */
+      const agentVoteCounts = new Map<string, number>();
 
-        for (const bill of floorBills) {
-          if (votedBillIds.has(bill.id)) continue;
+      for (const bill of floorBills) {
+        /* Determine which agents need to vote on this bill */
+        const agentsToVote: typeof activeAgents = [];
+        const whipChoices = new Map<string, string>(); // agentId -> whip-forced choice
 
-          /* Check for whip signal */
+        for (const agent of activeAgents) {
+          if (votedSet.has(`${agent.id}:${bill.id}`)) continue;
+
           const agentPartyId = agentPartyMap.get(agent.id);
           const billSignals = whipSignals.get(bill.id);
           const whipSignal = agentPartyId && billSignals ? billSignals.get(agentPartyId) : undefined;
 
-          /* 78% chance to follow whip signal */
-          let choice: string | null = null;
+          /* 78% chance to follow whip signal — no LLM call needed */
           if (whipSignal && Math.random() < rc.partyWhipFollowRate) {
-            choice = whipSignal;
+            whipChoices.set(agent.id, whipSignal);
+          } else {
+            agentsToVote.push(agent);
           }
+        }
 
-          if (!choice) {
+        /* Build context message for this bill (shared across agents) */
+        const baseContext =
+          `Bill up for vote: "${bill.title}". ` +
+          `Summary: ${bill.summary}. ` +
+          `Committee: ${bill.committee}. `;
+
+        /* Fire all LLM calls for this bill in parallel */
+        const results = await Promise.allSettled(
+          agentsToVote.map((agent) => {
+            const agentPartyId = agentPartyMap.get(agent.id);
+            const billSignals2 = whipSignals.get(bill.id);
+            const whipSignal = agentPartyId && billSignals2 ? billSignals2.get(agentPartyId) : undefined;
             const whipNote = whipSignal
               ? ` Your party recommends voting ${whipSignal}. You may follow or vote independently.`
               : '';
             const contextMessage =
-              `Bill up for vote: "${bill.title}". ` +
-              `Summary: ${bill.summary}. ` +
-              `Committee: ${bill.committee}.${whipNote} ` +
-              `Respond with exactly this JSON structure: {"action":"vote","reasoning":"one sentence","data":{"choice":"yea"}} ` +
+              baseContext + whipNote +
+              ` Respond with exactly this JSON structure: {"action":"vote","reasoning":"one sentence","data":{"choice":"yea"}} ` +
               `Use "yea" to support or "nay" to oppose.`;
 
-            const decision = await generateAgentDecision(
+            return generateAgentDecision(
               {
                 id: agent.id,
                 displayName: agent.displayName,
@@ -220,24 +239,47 @@ agentTickQueue.process(async () => {
               },
               contextMessage,
               'bill_voting',
-            );
+            ).then((decision) => ({ agent, decision, whipSignal }));
+          }),
+        );
 
-            const isVote = decision.action === 'vote' || decision.action === 'yea' || decision.action === 'nay';
-            if (!isVote) continue;
+        /* Process whip-forced votes (no LLM call, immediate insert) */
+        for (const [agentId, choice] of whipChoices) {
+          const agent = activeAgents.find((a) => a.id === agentId)!;
 
-            const rawChoice = decision.action === 'yea' || decision.action === 'nay'
-              ? decision.action
-              : String(decision.data?.['choice'] ?? 'nay');
-            const cn = rawChoice.toLowerCase();
-            choice = (cn === 'yea' || cn === 'aye' || cn === 'yes' || cn === 'y' || cn.includes('yea')) ? 'yea' : 'nay';
-          }
-
-          await db.insert(billVotes).values({
-            billId: bill.id,
-            voterId: agent.id,
-            choice,
+          await db.insert(billVotes).values({ billId: bill.id, voterId: agent.id, choice });
+          await db.insert(activityEvents).values({
+            type: 'vote',
+            agentId: agent.id,
+            title: 'Vote cast',
+            description: `${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}"`,
+            metadata: JSON.stringify({ billId: bill.id, choice, followedWhip: true, provider: agent.modelProvider }),
           });
+          broadcast('agent:vote', { agentId: agent.id, agentName: agent.displayName, billId: bill.id, billTitle: bill.title, choice });
+          console.warn(`[SIMULATION] ${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}" (whip)`);
+          agentVoteCounts.set(agent.id, (agentVoteCounts.get(agent.id) ?? 0) + 1);
+        }
 
+        /* Process LLM decision results */
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            console.warn('[SIMULATION] Phase 2: Agent LLM call rejected:', result.reason);
+            continue;
+          }
+          const { agent, decision, whipSignal } = result.value;
+
+          if (decision.action === 'idle') continue; // API error fallback
+
+          const isVote = decision.action === 'vote' || decision.action === 'yea' || decision.action === 'nay';
+          if (!isVote) continue;
+
+          const rawChoice = decision.action === 'yea' || decision.action === 'nay'
+            ? decision.action
+            : String(decision.data?.['choice'] ?? 'nay');
+          const cn = rawChoice.toLowerCase();
+          const choice = (cn === 'yea' || cn === 'aye' || cn === 'yes' || cn === 'y' || cn.includes('yea')) ? 'yea' : 'nay';
+
+          await db.insert(billVotes).values({ billId: bill.id, voterId: agent.id, choice });
           await db.insert(activityEvents).values({
             type: 'vote',
             agentId: agent.id,
@@ -250,26 +292,12 @@ agentTickQueue.process(async () => {
               provider: agent.modelProvider,
             }),
           });
+          broadcast('agent:vote', { agentId: agent.id, agentName: agent.displayName, billId: bill.id, billTitle: bill.title, choice });
+          console.warn(`[SIMULATION] ${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}"`);
+          agentVoteCounts.set(agent.id, (agentVoteCounts.get(agent.id) ?? 0) + 1);
 
-          broadcast('agent:vote', {
-            agentId: agent.id,
-            agentName: agent.displayName,
-            billId: bill.id,
-            billTitle: bill.title,
-            choice,
-          });
-
-          console.warn(
-            `[SIMULATION] ${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}"`,
-          );
-
-          votedThisTick++;
-
-          /* No approval bonus for casting a vote — it's the job, not an achievement */
-
-          /* Approval: whip signal defection only — voters don't reward party-line compliance,
-             but they do notice public defection against the party */
-          if (whipSignal && choice !== 'abstain') {
+          /* Approval: whip signal defection */
+          if (whipSignal) {
             const followedWhip = choice === whipSignal;
             if (!followedWhip) {
               await updateApproval(
@@ -281,9 +309,11 @@ agentTickQueue.process(async () => {
             }
           }
         }
+      }
 
-        /* Approval: absenteeism */
-        if (floorBills.length > 0 && votedThisTick === 0) {
+      /* Approval: absenteeism */
+      for (const agent of activeAgents) {
+        if (floorBills.length > 0 && (agentVoteCounts.get(agent.id) ?? 0) === 0) {
           await updateApproval(
             agent.id,
             -3,

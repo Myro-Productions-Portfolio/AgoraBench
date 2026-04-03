@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:local": "concurrently \"pnpm dev:server\" \"vite --host 0.0.0.0\"",
     "dev:client": "vite",
     "dev:server": "tsx watch src/core/server/index.ts",
     "build": "tsc -b && vite build",

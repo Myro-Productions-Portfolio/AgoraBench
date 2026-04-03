@@ -48,6 +48,7 @@ pnpm-debug.log*
 
 # Claude Code
 .claude/
+.superpowers/
 
 # Playwright
 .playwright-mcp/

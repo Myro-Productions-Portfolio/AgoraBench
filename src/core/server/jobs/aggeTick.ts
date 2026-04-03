@@ -20,8 +20,12 @@ const AGGE_SYSTEM_PROMPT =
   'Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON.';
 
 async function callInferenceForAgge(contextMessage: string): Promise<string> {
-  const baseUrl = process.env.AGGE_INFERENCE_URL ?? 'http://192.168.3.20:8000';
-  const model   = process.env.AGGE_INFERENCE_MODEL ?? 'openai/gpt-oss-20b';
+  const baseUrl = process.env.AGGE_INFERENCE_URL
+    ?? process.env.OPENAI_BASE_URL
+    ?? 'http://localhost:8000';
+  const model = process.env.AGGE_INFERENCE_MODEL
+    ?? process.env.OPENAI_MODEL
+    ?? 'gpt-4o-mini';
 
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',

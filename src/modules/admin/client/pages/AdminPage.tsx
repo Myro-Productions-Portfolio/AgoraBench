@@ -451,7 +451,8 @@ export function AdminPage() {
   const fetchAgents = useCallback(async () => {
     try {
       const res = await adminApi.getAgents();
-      setAgentList(res.data as AgentRow[]);
+      const data = Array.isArray(res) ? res : (res.data ?? []);
+      setAgentList(data as AgentRow[]);
     } catch (err) { console.error('[ADMIN] fetchAgents failed:', err); }
   }, []);
 

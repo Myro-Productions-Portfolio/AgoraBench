@@ -58,6 +58,14 @@ export interface RuntimeConfig {
   maxOutputLengthTokens: number;      // default: 500
   maxBillsPerAgentPerTick: number;    // default: 1
   maxCampaignSpeechesPerTick: number; // default: 1
+
+  /* ---- AGGE (God Agent) ---- */
+  aggeTickIntervalMs: number;
+  aggeAgentsPerTickMin: number;
+  aggeAgentsPerTickMax: number;
+  aggeTemperature: number;
+  aggeInferenceUrl: string;
+  aggeInferenceModel: string;
 }
 
 let current: RuntimeConfig = {
@@ -111,6 +119,14 @@ let current: RuntimeConfig = {
   maxOutputLengthTokens: 500,
   maxBillsPerAgentPerTick: 1,
   maxCampaignSpeechesPerTick: 1,
+
+  /* AGGE */
+  aggeTickIntervalMs: 3_600_000,
+  aggeAgentsPerTickMin: 1,
+  aggeAgentsPerTickMax: 3,
+  aggeTemperature: 1.15,
+  aggeInferenceUrl: '',
+  aggeInferenceModel: '',
 };
 
 export function getRuntimeConfig(): Readonly<RuntimeConfig> {

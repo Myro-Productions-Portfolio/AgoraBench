@@ -1,14 +1,12 @@
 import Bull from 'bull';
 import { eq, desc } from 'drizzle-orm';
 import { config } from '../config.js';
+import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
 import { agents, activityEvents, aggeInterventions } from '@db/schema/index';
 import { broadcast } from '../websocket.js';
 import { WS_EVENTS } from '@shared/constants';
 
-const AGGE_TICK_INTERVAL_MS = 60 * 60 * 1000; // 60 minutes
-const AGENTS_PER_TICK_MIN = 1;
-const AGENTS_PER_TICK_MAX = 3;
 const AGGE_AGENT_ID = '00000000-0000-0000-0000-000000000001';
 
 const aggeQueue = new Bull('agge-tick', config.redis.url);
@@ -20,12 +18,15 @@ const AGGE_SYSTEM_PROMPT =
   'Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON.';
 
 async function callInferenceForAgge(contextMessage: string): Promise<string> {
-  const baseUrl = process.env.AGGE_INFERENCE_URL
-    ?? process.env.OPENAI_BASE_URL
-    ?? 'http://localhost:8000';
-  const model = process.env.AGGE_INFERENCE_MODEL
-    ?? process.env.OPENAI_MODEL
-    ?? 'gpt-4o-mini';
+  const rc = getRuntimeConfig();
+  const baseUrl = rc.aggeInferenceUrl
+    || process.env.AGGE_INFERENCE_URL
+    || process.env.OPENAI_BASE_URL
+    || 'http://localhost:8000';
+  const model = rc.aggeInferenceModel
+    || process.env.AGGE_INFERENCE_MODEL
+    || process.env.OPENAI_MODEL
+    || 'gpt-4o-mini';
 
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: 'POST',
@@ -36,7 +37,7 @@ async function callInferenceForAgge(contextMessage: string): Promise<string> {
         { role: 'system', content: AGGE_SYSTEM_PROMPT },
         { role: 'user',   content: contextMessage },
       ],
-      temperature: 1.15,
+      temperature: rc.aggeTemperature,
       max_tokens: 2000,
     }),
   });
@@ -66,7 +67,7 @@ async function parseAggeResponse(raw: string): Promise<{ mod: string | null; rea
   }
 }
 
-async function runAggeTick(): Promise<void> {
+async function runAggeTick(count: number): Promise<void> {
   console.warn('[AGGE] Tick running...');
 
   const activeAgents = await db
@@ -79,12 +80,9 @@ async function runAggeTick(): Promise<void> {
     return;
   }
 
-  // Pick 1–3 random agents (excluding AGGE system row)
+  // Pick 1–N random agents (excluding AGGE system row), count from runtimeConfig
   const pool = activeAgents.filter((a) => a.id !== AGGE_AGENT_ID);
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  const count = AGENTS_PER_TICK_MIN + Math.floor(
-    Math.random() * (AGENTS_PER_TICK_MAX - AGENTS_PER_TICK_MIN + 1)
-  );
   const targets = shuffled.slice(0, Math.min(count, shuffled.length));
 
   for (const agent of targets) {
@@ -187,20 +185,25 @@ async function runAggeTick(): Promise<void> {
 }
 
 aggeQueue.process(async () => {
-  await runAggeTick();
+  const rc = getRuntimeConfig();
+  const count = rc.aggeAgentsPerTickMin + Math.floor(
+    Math.random() * (rc.aggeAgentsPerTickMax - rc.aggeAgentsPerTickMin + 1)
+  );
+  await runAggeTick(count);
 });
 
 export function startAggeTick(): void {
+  const rc = getRuntimeConfig();
   aggeQueue
     .add({}, {
-      repeat: { every: AGGE_TICK_INTERVAL_MS },
+      repeat: { every: rc.aggeTickIntervalMs },
       removeOnComplete: 10,
       removeOnFail: 5,
       attempts: 2,
       backoff: { type: 'exponential', delay: 10000 },
     })
     .catch((err: unknown) => console.error('[AGGE] Failed to schedule tick:', err));
-  console.warn(`[AGGE] Started — interval: ${AGGE_TICK_INTERVAL_MS / 1000 / 60} min`);
+  console.warn(`[AGGE] Started — interval: ${rc.aggeTickIntervalMs / 1000 / 60} min`);
 }
 
 export async function triggerManualAggeTick(): Promise<void> {

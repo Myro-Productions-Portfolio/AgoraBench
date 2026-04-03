@@ -16,6 +16,7 @@ import { runSeed } from '@db/seedFn';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
 import { requireOwner } from '@core/server/middleware/auth.js';
+import healthRouter from './health.js';
 
 const router = Router();
 
@@ -34,6 +35,8 @@ export function toCSV(headers: string[], rows: (string | number | boolean | null
 
 /* All /admin/* routes are owner-only */
 router.use('/admin', requireOwner);
+
+router.use(healthRouter);
 
 /* GET /api/admin/status — simulation state + decision stats */
 router.get('/admin/status', async (_req, res, next) => {

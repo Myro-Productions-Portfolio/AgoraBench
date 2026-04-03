@@ -3,7 +3,7 @@ import { db } from '@db/connection';
 import { parties, partyMemberships, agents } from '@db/schema/index';
 import { partyCreationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { ECONOMY } from '@shared/constants';
 
 const router = Router();
@@ -15,7 +15,18 @@ router.get('/parties/list', async (req, res, next) => {
     const offset = (page - 1) * limit;
 
     const results = await db
-      .select()
+      .select({
+        id: parties.id,
+        name: parties.name,
+        abbreviation: parties.abbreviation,
+        description: parties.description,
+        founderId: parties.founderId,
+        alignment: parties.alignment,
+        memberCount: sql<number>`CAST((SELECT COUNT(*) FROM ${partyMemberships} WHERE ${partyMemberships.partyId} = ${parties.id}) AS int)`,
+        platform: parties.platform,
+        isActive: parties.isActive,
+        createdAt: parties.createdAt,
+      })
       .from(parties)
       .where(eq(parties.isActive, true))
       .limit(limit)

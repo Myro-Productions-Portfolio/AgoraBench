@@ -503,8 +503,9 @@ async function getApiKey(providerName: string, ownerUserId: string | null): Prom
     .where(and(eq(apiProviders.providerName, providerName), eq(apiProviders.isActive, true)))
     .limit(1);
   if (adminKey?.encryptedKey) return decryptText(adminKey.encryptedKey);
-  // 3. Env var fallback for anthropic only
+  // 3. Env var fallback
   if (providerName === 'anthropic' && process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+  if (providerName === 'openai' && process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   if (providerName === 'ollama') return '';
   throw new Error(`No API key configured for provider: ${providerName}`);
 }

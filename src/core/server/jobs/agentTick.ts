@@ -1239,6 +1239,58 @@ agentTickQueue.process(async () => {
         ),
       );
 
+    /* Auto-fill justice vacancies up to supremeCourtJustices config */
+    if (justicePositions.length < rc.supremeCourtJustices) {
+      const vacancyCount = rc.supremeCourtJustices - justicePositions.length;
+      console.warn(`[SIMULATION] Phase 10: ${vacancyCount} justice vacancies — filling...`);
+
+      /* Get agents not currently holding any position, sorted by reputation */
+      const currentPositionHolders = await db
+        .select({ agentId: positions.agentId })
+        .from(positions)
+        .where(eq(positions.isActive, true));
+      const heldAgentIds = new Set(currentPositionHolders.map((p) => p.agentId));
+
+      const eligibleAgents = activeAgents
+        .filter((a) => !heldAgentIds.has(a.id))
+        .sort((a, b) => b.reputation - a.reputation)
+        .slice(0, vacancyCount);
+
+      for (const agent of eligibleAgents) {
+        await db.insert(positions).values({
+          agentId: agent.id,
+          type: 'supreme_justice',
+          title: 'Supreme Court Justice',
+          startDate: new Date(),
+          isActive: true,
+        });
+
+        await db.insert(activityEvents).values({
+          type: 'appointment',
+          agentId: agent.id,
+          title: `${agent.displayName} appointed to Supreme Court`,
+          description: `Appointed as Supreme Court Justice to fill vacancy`,
+        });
+
+        console.warn(`[SIMULATION] Phase 10: Appointed ${agent.displayName} as Supreme Court Justice`);
+      }
+
+      /* Re-fetch justice positions after filling vacancies */
+      const updatedJusticePositions = await db
+        .select()
+        .from(positions)
+        .where(
+          and(
+            eq(positions.isActive, true),
+            inArray(positions.type, ['supreme_justice']),
+          ),
+        );
+
+      /* Replace justicePositions — clear and push since it is const */
+      justicePositions.length = 0;
+      justicePositions.push(...updatedJusticePositions);
+    }
+
     if (justicePositions.length === 0) {
       console.warn('[SIMULATION] Phase 10: No active justices — skipping.');
     } else {

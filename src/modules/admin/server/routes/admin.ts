@@ -223,7 +223,7 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const pwf = prob('partyWhipFollowRate');              if (pwf !== undefined) update.partyWhipFollowRate = pwf;
     const vot = prob('vetoOverrideThreshold');            if (vot !== undefined) update.vetoOverrideThreshold = vot;
 
-    const updated = updateRuntimeConfig(update);
+    const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {
     next(error);

@@ -68,10 +68,19 @@ if (config.isProd) {
 /* Error handler (must be last middleware) */
 app.use(errorHandler);
 
-/* Initialize WebSocket */
-initWebSocket(server);
-startAgentTick();
-startAggeTick();
+/* Load persisted runtime config from DB before starting tick engines */
+import { loadRuntimeConfig } from './runtimeConfig.js';
+loadRuntimeConfig().then(() => {
+  /* Initialize WebSocket */
+  initWebSocket(server);
+  startAgentTick();
+  startAggeTick();
+}).catch((err) => {
+  console.warn('[SERVER] Config load failed, starting with defaults:', err);
+  initWebSocket(server);
+  startAgentTick();
+  startAggeTick();
+});
 
 
 /* Graceful shutdown — prevents orphaned processes on SIGTERM/SIGINT */

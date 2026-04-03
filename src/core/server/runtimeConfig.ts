@@ -1,9 +1,13 @@
 /**
  * Runtime configuration — adjustable without server restart via admin panel.
- * All values start from constants.ts defaults and can be changed via admin API.
+ * Persisted to DB as JSONB. On startup, loads saved overrides from DB.
+ * New config fields automatically get their defaults until explicitly set.
  */
 
 import { config } from './config.js';
+import { db } from '@db/connection';
+import { runtimeConfigStore } from '@db/schema/index';
+import { eq } from 'drizzle-orm';
 
 export type ProviderOverride = 'default' | 'anthropic' | 'openai' | 'google' | 'huggingface' | 'ollama';
 
@@ -68,7 +72,7 @@ export interface RuntimeConfig {
   aggeInferenceModel: string;
 }
 
-let current: RuntimeConfig = {
+const DEFAULTS: RuntimeConfig = {
   /* Simulation */
   tickIntervalMs: config.simulation.tickIntervalMs,
   billAdvancementDelayMs: 60_000,
@@ -129,11 +133,50 @@ let current: RuntimeConfig = {
   aggeInferenceModel: '',
 };
 
+let current: RuntimeConfig = { ...DEFAULTS };
+
 export function getRuntimeConfig(): Readonly<RuntimeConfig> {
   return current;
 }
 
-export function updateRuntimeConfig(partial: Partial<RuntimeConfig>): RuntimeConfig {
+export async function loadRuntimeConfig(): Promise<RuntimeConfig> {
+  try {
+    const [row] = await db
+      .select({ config: runtimeConfigStore.config })
+      .from(runtimeConfigStore)
+      .where(eq(runtimeConfigStore.id, 1))
+      .limit(1);
+
+    if (row?.config && typeof row.config === 'object') {
+      // Merge DB overrides over defaults — new fields get defaults automatically
+      current = { ...DEFAULTS, ...(row.config as Partial<RuntimeConfig>) };
+      console.warn('[CONFIG] Loaded runtime config from database');
+    } else {
+      current = { ...DEFAULTS };
+      console.warn('[CONFIG] No saved config found — using defaults');
+    }
+  } catch (err) {
+    console.warn('[CONFIG] Failed to load config from DB — using defaults:', err);
+    current = { ...DEFAULTS };
+  }
+  return current;
+}
+
+export async function updateRuntimeConfig(partial: Partial<RuntimeConfig>): Promise<RuntimeConfig> {
   current = { ...current, ...partial };
+
+  // Persist to DB (fire-and-forget with error logging)
+  try {
+    await db
+      .insert(runtimeConfigStore)
+      .values({ id: 1, config: current as unknown as Record<string, unknown>, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: runtimeConfigStore.id,
+        set: { config: current as unknown as Record<string, unknown>, updatedAt: new Date() },
+      });
+  } catch (err) {
+    console.warn('[CONFIG] Failed to persist config to DB:', err);
+  }
+
   return current;
 }

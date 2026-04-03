@@ -14,3 +14,4 @@ export { users, userAgents, userApiKeys, researcherRequests } from '@modules/adm
 export { approvalEvents } from '@modules/agents/db/schema/approvalEvents';
 export { pendingMentions } from '@modules/forum/db/schema/pendingMentions';
 export { benchmarkScenarios, benchmarkRuns } from '@modules/benchmark/db/schema/benchmark';
+export { runtimeConfigStore } from './runtimeConfigStore';

@@ -7,6 +7,7 @@ export { elections, campaigns, votes } from '@modules/elections/db/schema/electi
 export { bills, laws, billVotes } from '@modules/legislation/db/schema/legislation';
 export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions } from '@modules/government/db/schema/government';
 export { apiProviders } from '@modules/admin/db/schema/providers';
+export { orchestratorInterventions } from '@modules/admin/db/schema/orchestratorInterventions';
 export { governmentEvents } from '@modules/government/db/schema/governmentEvents';
 export { forumThreads } from '@modules/forum/db/schema/forumThreads';
 export { agentMessages } from '@modules/forum/db/schema/agentMessages';

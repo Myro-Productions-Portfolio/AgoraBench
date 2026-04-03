@@ -27,7 +27,7 @@ export const benchmarkRuns = pgTable('benchmark_runs', {
   modelName: text('model_name').notNull(),
   modelBackend: text('model_backend').notNull().default('internal'),
   configHash: text('config_hash').notNull(),
-  agentAssignment: jsonb('agent_assignment').default('all'),
+  agentAssignment: jsonb('agent_assignment'),
   startedAt: timestamp('started_at'),
   completedAt: timestamp('completed_at'),
   ticksCompleted: integer('ticks_completed').default(0),

@@ -23,10 +23,12 @@ app.use(
 );
 
 /* CORS */
+const extraOrigins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
 const ALLOWED_ORIGINS = [
   config.clientUrl,
   'https://agorabench.com',
   'https://www.agorabench.com',
+  ...extraOrigins,
 ];
 app.use(
   cors({

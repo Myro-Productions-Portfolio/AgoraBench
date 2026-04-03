@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions } from '@db/schema/index';
+import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions, apiProviders } from '@db/schema/index';
 import { count, eq, sql, asc, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -266,6 +266,27 @@ router.post('/admin/economy', async (req, res, next) => {
     }
 
     res.json({ success: true, data: row });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/admin/providers — list configured AI providers */
+router.get('/admin/providers', async (_req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: apiProviders.id,
+        providerName: apiProviders.providerName,
+        isActive: apiProviders.isActive,
+        ollamaBaseUrl: apiProviders.ollamaBaseUrl,
+        hasKey: sql<boolean>`${apiProviders.encryptedKey} IS NOT NULL`,
+        updatedAt: apiProviders.updatedAt,
+      })
+      .from(apiProviders)
+      .orderBy(apiProviders.providerName);
+
+    res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
   }

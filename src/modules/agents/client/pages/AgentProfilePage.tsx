@@ -89,6 +89,28 @@ interface ForumPostData {
   createdAt: string;
 }
 
+interface MemorySummary {
+  summary: string;
+  createdAt: string;
+}
+
+interface RelationshipData {
+  targetAgentId: string;
+  targetName: string;
+  targetAlignment: string | null;
+  voteAlignment: number;
+  sentiment: number;
+}
+
+interface PolicyPositionData {
+  id: string;
+  agentId: string;
+  category: string;
+  supportCount: number;
+  opposeCount: number;
+  updatedAt: string;
+}
+
 interface Stats {
   totalBillsSponsored: number;
   billsEnactedToLaw: number;
@@ -127,10 +149,13 @@ interface ProfileData {
   latestStatement: { reasoning: string; phase: string; createdAt: string } | null;
   recentForumPosts: ForumPostData[];
   recentApprovalEvents: ApprovalEvent[];
+  memorySummaries: MemorySummary[];
+  relationships: RelationshipData[];
+  policyPositions: PolicyPositionData[];
   stats: Stats;
 }
 
-type Tab = 'overview' | 'voting' | 'legislation' | 'career' | 'forum';
+type Tab = 'overview' | 'voting' | 'legislation' | 'career' | 'forum' | 'memory';
 
 /* ── Config maps ─────────────────────────────────────────────────────────── */
 
@@ -666,6 +691,171 @@ function ForumTab({ posts }: { posts: ForumPostData[] }) {
   );
 }
 
+/* ── Tab: Memory & Relationships ─────────────────────────────────────────── */
+
+function MemoryTab({
+  memorySummaries,
+  relationships,
+  policyPositions,
+}: {
+  memorySummaries: MemorySummary[];
+  relationships: RelationshipData[];
+  policyPositions: PolicyPositionData[];
+}) {
+  const allies = relationships
+    .filter((r) => r.voteAlignment > 0.5)
+    .sort((a, b) => b.voteAlignment - a.voteAlignment);
+  const opponents = relationships
+    .filter((r) => r.voteAlignment <= 0.5)
+    .sort((a, b) => a.voteAlignment - b.voteAlignment);
+
+  return (
+    <div className="space-y-6">
+      {/* Memory Summaries */}
+      <div className="card p-5">
+        <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">Memory Summaries</h4>
+        {memorySummaries.length === 0 ? (
+          <p className="text-sm text-text-muted italic py-2">
+            No memory summaries yet — agent needs 25+ decisions.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {memorySummaries.map((mem, idx) => (
+              <div key={idx} className="border-b border-border/40 last:border-0 pb-3 last:pb-0">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm text-text-secondary leading-relaxed flex-1">{mem.summary}</p>
+                  <span className="text-xs text-text-muted shrink-0 whitespace-nowrap">
+                    {relativeTime(mem.createdAt)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Relationships */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Allies */}
+        <div className="card p-5">
+          <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">
+            Allies
+            {allies.length > 0 && <span className="ml-2 font-mono opacity-60">{allies.length}</span>}
+          </h4>
+          {allies.length === 0 ? (
+            <p className="text-sm text-text-muted italic py-2">No allies established yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {allies.map((r) => {
+                const pct = Math.round(r.voteAlignment * 100);
+                const alignClass = r.targetAlignment
+                  ? (ALIGNMENT_COLORS[r.targetAlignment.toLowerCase()] ?? 'text-text-muted bg-border/10 border-border/30')
+                  : '';
+                return (
+                  <Link
+                    key={r.targetAgentId}
+                    to={`/agents/${r.targetAgentId}`}
+                    className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-white/[0.03] transition-colors"
+                  >
+                    <span className="text-sm font-medium flex-1 truncate">{r.targetName}</span>
+                    {r.targetAlignment && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border capitalize tracking-wide ${alignClass}`}>
+                        {r.targetAlignment}
+                      </span>
+                    )}
+                    <div className="w-24 h-2 rounded-full bg-black/30 overflow-hidden shrink-0">
+                      <div className="h-full rounded-full bg-green-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="text-xs font-mono text-green-400 w-10 text-right shrink-0">{pct}%</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Opponents */}
+        <div className="card p-5">
+          <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">
+            Opponents
+            {opponents.length > 0 && <span className="ml-2 font-mono opacity-60">{opponents.length}</span>}
+          </h4>
+          {opponents.length === 0 ? (
+            <p className="text-sm text-text-muted italic py-2">No opponents established yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {opponents.map((r) => {
+                const pct = Math.round(r.voteAlignment * 100);
+                const alignClass = r.targetAlignment
+                  ? (ALIGNMENT_COLORS[r.targetAlignment.toLowerCase()] ?? 'text-text-muted bg-border/10 border-border/30')
+                  : '';
+                return (
+                  <Link
+                    key={r.targetAgentId}
+                    to={`/agents/${r.targetAgentId}`}
+                    className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-white/[0.03] transition-colors"
+                  >
+                    <span className="text-sm font-medium flex-1 truncate">{r.targetName}</span>
+                    {r.targetAlignment && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border capitalize tracking-wide ${alignClass}`}>
+                        {r.targetAlignment}
+                      </span>
+                    )}
+                    <div className="w-24 h-2 rounded-full bg-black/30 overflow-hidden shrink-0">
+                      <div className="h-full rounded-full bg-red-500" style={{ width: `${100 - pct}%` }} />
+                    </div>
+                    <span className="text-xs font-mono text-red-400 w-10 text-right shrink-0">{pct}%</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Policy Positions */}
+      <div className="card p-5">
+        <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">Policy Positions</h4>
+        {policyPositions.length === 0 ? (
+          <p className="text-sm text-text-muted italic py-2">No policy positions recorded yet.</p>
+        ) : (
+          <div className="space-y-1">
+            {/* Header */}
+            <div className="flex items-center gap-3 px-2 py-1 text-[10px] uppercase tracking-widest text-text-muted">
+              <span className="flex-1">Category</span>
+              <span className="w-16 text-center">Support</span>
+              <span className="w-16 text-center">Oppose</span>
+              <span className="w-20 text-center">Stance</span>
+              <span className="w-32">Ratio</span>
+            </div>
+            {policyPositions.map((pp) => {
+              const total = pp.supportCount + pp.opposeCount;
+              const supportPct = total > 0 ? Math.round((pp.supportCount / total) * 100) : 50;
+              const stance = pp.supportCount >= pp.opposeCount ? 'Support' : 'Oppose';
+              const stanceColor = stance === 'Support' ? 'text-green-400' : 'text-red-400';
+              return (
+                <div
+                  key={pp.id}
+                  className="flex items-center gap-3 py-2 px-2 rounded hover:bg-white/[0.03] transition-colors border-b border-border/20 last:border-0"
+                >
+                  <span className="text-sm capitalize flex-1 truncate">{pp.category}</span>
+                  <span className="text-xs font-mono text-green-400 w-16 text-center">{pp.supportCount}</span>
+                  <span className="text-xs font-mono text-red-400 w-16 text-center">{pp.opposeCount}</span>
+                  <span className={`text-xs font-medium w-20 text-center ${stanceColor}`}>{stance}</span>
+                  <div className="w-32 h-2.5 rounded-full bg-black/30 overflow-hidden flex shrink-0">
+                    <div className="h-full bg-green-500" style={{ width: `${supportPct}%` }} />
+                    <div className="h-full bg-red-500" style={{ width: `${100 - supportPct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main page ───────────────────────────────────────────────────────────── */
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -674,6 +864,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'legislation', label: 'Legislation' },
   { id: 'career', label: 'Career' },
   { id: 'forum', label: 'Forum' },
+  { id: 'memory', label: 'Memory & Relations' },
 ];
 
 export function AgentProfilePage() {
@@ -729,7 +920,7 @@ export function AgentProfilePage() {
     );
   }
 
-  const { agent, party, partyRole, positions, sponsoredBills, billVotes, campaigns, recentForumPosts, stats } = profile;
+  const { agent, party, partyRole, positions, sponsoredBills, billVotes, campaigns, recentForumPosts, memorySummaries, relationships, policyPositions, stats } = profile;
 
   let avatarConfig: AvatarConfig | undefined;
   if (agent.avatarConfig) {
@@ -867,6 +1058,13 @@ export function AgentProfilePage() {
       {activeTab === 'legislation' && <LegislationTab bills={sponsoredBills} stats={stats} />}
       {activeTab === 'career' && <CareerTab positions={positions} campaigns={campaigns} agentId={agentId ?? ''} />}
       {activeTab === 'forum' && <ForumTab posts={recentForumPosts} />}
+      {activeTab === 'memory' && (
+        <MemoryTab
+          memorySummaries={memorySummaries}
+          relationships={relationships}
+          policyPositions={policyPositions}
+        />
+      )}
     </div>
   );
 }

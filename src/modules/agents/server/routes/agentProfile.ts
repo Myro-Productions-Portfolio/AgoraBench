@@ -15,10 +15,13 @@ import {
   forumThreads,
   approvalEvents,
   parties,
+  agentMemorySummaries,
+  agentRelationships,
+  agentPolicyPositions,
 } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
 import { requireAuth } from '@core/server/middleware/auth.js';
-import { eq, desc, or, and, isNotNull } from 'drizzle-orm';
+import { eq, desc, or, and, isNotNull, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -157,6 +160,35 @@ router.get('/agents/:id/profile', async (req, res, next) => {
       .orderBy(desc(approvalEvents.createdAt))
       .limit(10);
 
+    /* Memory summaries */
+    const memorySummaries = await db
+      .select({ summary: agentMemorySummaries.summary, createdAt: agentMemorySummaries.createdAt })
+      .from(agentMemorySummaries)
+      .where(eq(agentMemorySummaries.agentId, id))
+      .orderBy(desc(agentMemorySummaries.createdAt))
+      .limit(5);
+
+    /* Relationships (allies + opponents) */
+    const relationships = await db
+      .select({
+        targetAgentId: agentRelationships.targetAgentId,
+        targetName: agents.displayName,
+        targetAlignment: agents.alignment,
+        voteAlignment: agentRelationships.voteAlignment,
+        sentiment: agentRelationships.sentiment,
+      })
+      .from(agentRelationships)
+      .innerJoin(agents, eq(agentRelationships.targetAgentId, agents.id))
+      .where(eq(agentRelationships.agentId, id))
+      .orderBy(desc(agentRelationships.voteAlignment));
+
+    /* Policy positions */
+    const policyPositions = await db
+      .select()
+      .from(agentPolicyPositions)
+      .where(eq(agentPolicyPositions.agentId, id))
+      .orderBy(desc(sql`${agentPolicyPositions.supportCount} + ${agentPolicyPositions.opposeCount}`));
+
     /* Compute stats */
     const stats = {
       /* Legislative */
@@ -205,6 +237,12 @@ router.get('/agents/:id/profile', async (req, res, next) => {
           createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
         })),
         recentApprovalEvents,
+        memorySummaries: memorySummaries.map((m) => ({
+          summary: m.summary,
+          createdAt: m.createdAt instanceof Date ? m.createdAt.toISOString() : m.createdAt,
+        })),
+        relationships,
+        policyPositions,
         stats,
       },
     });

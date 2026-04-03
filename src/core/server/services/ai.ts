@@ -403,7 +403,7 @@ async function getApiKey(providerName: string, ownerUserId: string | null): Prom
 function getDefaultModel(provider: string): string {
   switch (provider) {
     case 'anthropic': return config.anthropic.model;
-    case 'openai': return 'gpt-4o-mini';
+    case 'openai': return process.env.OPENAI_MODEL || 'gpt-4o-mini';
     case 'google': return 'gemini-2.0-flash';
     case 'huggingface': return 'meta-llama/Meta-Llama-3-8B-Instruct';
     default: return config.ollama.model;
@@ -459,7 +459,10 @@ async function callOllama(contextMessage: string, systemPrompt: string, maxToken
 }
 
 async function callOpenAI(apiKey: string, model: string, systemPrompt: string, contextMessage: string, maxTokens: number): Promise<string> {
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({
+    apiKey,
+    baseURL: process.env.OPENAI_BASE_URL || undefined,
+  });
   const response = await client.chat.completions.create({
     model,
     max_tokens: maxTokens,

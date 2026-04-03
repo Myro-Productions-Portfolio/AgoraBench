@@ -179,6 +179,9 @@ export const forumApi = {
 /* Health check */
 export const healthApi = {
   check: () => request('/health'),
+  ticks: (limit = 20) => request(`/admin/health/ticks?limit=${limit}`),
+  latency: (limit = 100) => request(`/admin/health/latency?limit=${limit}`),
+  errors: (hours = 24) => request(`/admin/health/errors?hours=${hours}`),
 };
 
 /* Admin endpoints */

@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, bills, laws } from '@db/schema/index';
-import { eq, and, desc, gt, inArray } from 'drizzle-orm';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions } from '@db/schema/index';
+import { eq, and, desc, gt, inArray, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { HfInference } from '@huggingface/inference';
@@ -30,7 +30,7 @@ export interface AgentDecision {
 // Short-term memory cache: agentId → { block: string; ts: number }
 const memoryCache = new Map<string, { block: string; ts: number }>();
 const MEMORY_TTL_MS = 60_000; // 1 minute — one per tick window per agent
-const MEMORY_DEPTH = 5; // last N successful decisions
+const MEMORY_DEPTH = 25; // last N successful decisions
 
 // Canonical action expected for each simulation phase
 const PHASE_ACTION_MAP: Record<string, string> = {
@@ -126,6 +126,15 @@ async function buildMemoryBlock(agentId: string): Promise<string> {
   const cached = memoryCache.get(agentId);
   if (cached && Date.now() - cached.ts < MEMORY_TTL_MS) return cached.block;
 
+  /* Fetch latest summary */
+  const [latestSummary] = await db
+    .select({ summary: agentMemorySummaries.summary })
+    .from(agentMemorySummaries)
+    .where(eq(agentMemorySummaries.agentId, agentId))
+    .orderBy(desc(agentMemorySummaries.createdAt))
+    .limit(1);
+
+  /* Fetch last 5 raw decisions (most recent, for detail) */
   const rows = await db
     .select({
       phase: agentDecisions.phase,
@@ -136,24 +145,28 @@ async function buildMemoryBlock(agentId: string): Promise<string> {
     .from(agentDecisions)
     .where(and(eq(agentDecisions.agentId, agentId), eq(agentDecisions.success, true)))
     .orderBy(desc(agentDecisions.createdAt))
-    .limit(MEMORY_DEPTH);
+    .limit(5);
 
-  if (rows.length === 0) {
-    memoryCache.set(agentId, { block: '', ts: Date.now() });
-    return '';
+  const parts: string[] = [];
+
+  if (latestSummary?.summary) {
+    parts.push(`Summary of earlier decisions: ${latestSummary.summary}`);
   }
 
-  const lines = rows.reverse().map((r) => {
-    const when = r.createdAt
-      ? new Date(r.createdAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
-      : 'unknown time';
-    const phase = r.phase ?? 'general';
-    const action = r.parsedAction ?? 'idle';
-    const reasoning = (r.parsedReasoning ?? '').slice(0, 120);
-    return `- [${when}] phase=${phase} action=${action}: "${reasoning}"`;
-  });
+  if (rows.length > 0) {
+    const lines = rows.reverse().map((r) => {
+      const when = r.createdAt
+        ? new Date(r.createdAt).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
+        : 'unknown time';
+      const phase = r.phase ?? 'general';
+      const action = r.parsedAction ?? 'idle';
+      const reasoning = (r.parsedReasoning ?? '').slice(0, 120);
+      return `- [${when}] phase=${phase} action=${action}: "${reasoning}"`;
+    });
+    parts.push(lines.join('\n'));
+  }
 
-  const block = lines.join('\n');
+  const block = parts.join('\n\n');
   memoryCache.set(agentId, { block, ts: Date.now() });
   return block;
 }
@@ -219,6 +232,85 @@ async function buildForumContextBlock(): Promise<string> {
   const block = threadBlocks.join('\n\n');
   forumContextCache = { block, ts: Date.now() };
   return block;
+}
+
+async function buildRelationshipBlock(agentId: string): Promise<string> {
+  const relationships = await db
+    .select({
+      targetAgentId: agentRelationships.targetAgentId,
+      voteAlignment: agentRelationships.voteAlignment,
+      targetName: agents.displayName,
+    })
+    .from(agentRelationships)
+    .innerJoin(agents, eq(agentRelationships.targetAgentId, agents.id))
+    .where(eq(agentRelationships.agentId, agentId))
+    .orderBy(desc(agentRelationships.voteAlignment));
+
+  if (relationships.length === 0) return '';
+
+  const allies = relationships.slice(0, 3);
+  const opponents = relationships.slice(-3).reverse();
+
+  const allyLines = allies
+    .filter((r) => r.voteAlignment > 0.5)
+    .map((r) => `  ${r.targetName}: ${Math.round(r.voteAlignment * 100)}% vote alignment`);
+
+  const opponentLines = opponents
+    .filter((r) => r.voteAlignment < 0.5)
+    .map((r) => `  ${r.targetName}: ${Math.round(r.voteAlignment * 100)}% vote alignment`);
+
+  const parts: string[] = [];
+  if (allyLines.length > 0) parts.push(`Allies:\n${allyLines.join('\n')}`);
+  if (opponentLines.length > 0) parts.push(`Opponents:\n${opponentLines.join('\n')}`);
+  return parts.join('\n');
+}
+
+async function buildPolicyPositionBlock(agentId: string): Promise<string> {
+  const positions = await db
+    .select()
+    .from(agentPolicyPositions)
+    .where(eq(agentPolicyPositions.agentId, agentId))
+    .orderBy(desc(sql`${agentPolicyPositions.supportCount} + ${agentPolicyPositions.opposeCount}`))
+    .limit(5);
+
+  if (positions.length === 0) return '';
+
+  const lines = positions.map((p) => {
+    const total = p.supportCount + p.opposeCount;
+    if (total === 0) return null;
+    const stance = p.supportCount > p.opposeCount ? 'supported' : 'opposed';
+    const majority = Math.max(p.supportCount, p.opposeCount);
+    return `  ${p.category}: ${stance} ${majority}/${total} bills`;
+  }).filter(Boolean);
+
+  return lines.length > 0 ? `Your voting record by policy area:\n${lines.join('\n')}` : '';
+}
+
+async function buildElectionMemoryBlock(agentId: string): Promise<string> {
+  const pastElections = await db
+    .select({
+      positionType: elections.positionType,
+      winnerId: elections.winnerId,
+      winnerName: agents.displayName,
+      certifiedDate: elections.certifiedDate,
+    })
+    .from(elections)
+    .leftJoin(agents, eq(elections.winnerId, agents.id))
+    .innerJoin(campaigns, and(eq(campaigns.electionId, elections.id), eq(campaigns.agentId, agentId)))
+    .where(eq(elections.status, 'certified'))
+    .orderBy(desc(elections.certifiedDate))
+    .limit(3);
+
+  if (pastElections.length === 0) return '';
+
+  const lines = pastElections.map((e) => {
+    const won = e.winnerId === agentId;
+    return won
+      ? `  Won ${e.positionType} election`
+      : `  Lost ${e.positionType} election to ${e.winnerName ?? 'unknown'}`;
+  });
+
+  return `Election history:\n${lines.join('\n')}`;
 }
 
 // Simulation state cache: shared, 10-minute TTL (one per tick window is fine)
@@ -353,7 +445,15 @@ const ALIGNMENT_PROFILES: Record<string, string> = {
     `Vote yes only when a bill clearly expands freedom or reduces government overreach.`,
 };
 
-function buildSystemPrompt(agent: AgentRecord, memory?: string, forumContext?: string, congressContext?: string): string {
+function buildSystemPrompt(
+  agent: AgentRecord,
+  memory?: string,
+  forumContext?: string,
+  congressContext?: string,
+  relationshipContext?: string,
+  policyContext?: string,
+  electionContext?: string,
+): string {
   const alignment = agent.alignment ?? 'centrist';
   const personality = agent.personality ?? 'A thoughtful political agent.';
   const modLine = agent.personalityMod    ? ` Lately, you have been: ${agent.personalityMod}.`    : '';
@@ -377,6 +477,15 @@ function buildSystemPrompt(agent: AgentRecord, memory?: string, forumContext?: s
       : '') +
     (congressContext
       ? `\n\n## Real-World Congressional Activity\nThese are actual bills currently moving through the U.S. Congress. Use this to ground your positions in real-world political context:\n${congressContext}`
+      : '') +
+    (relationshipContext
+      ? `\n\n## Your Relationships\nBased on your voting record and interactions with other officials:\n${relationshipContext}`
+      : '') +
+    (policyContext
+      ? `\n\n## Your Policy Record\n${policyContext}`
+      : '') +
+    (electionContext
+      ? `\n\n## ${electionContext}`
       : '')
   );
 }
@@ -520,16 +629,22 @@ export async function generateAgentDecision(
 ): Promise<AgentDecision> {
   const rc = getRuntimeConfig();
   const provider = agent.modelProvider ?? 'ollama';
-  const [memory, forumContext, congressContext] = await Promise.all([
+  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext] = await Promise.all([
     buildMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildForumContextBlock().catch((err) => { console.warn('[AI] Forum context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildCongressContextBlock().catch((err) => { console.warn('[AI] Congress context failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildRelationshipBlock(agent.id).catch((err) => { console.warn('[AI] Relationship block failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildPolicyPositionBlock(agent.id).catch((err) => { console.warn('[AI] Policy position block failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildElectionMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Election memory block failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
   const systemPrompt = buildSystemPrompt(
     agent,
     memory || undefined,
     forumContext || undefined,
     congressContext || undefined,
+    relationshipContext || undefined,
+    policyContext || undefined,
+    electionContext || undefined,
   );
   const start = Date.now();
 

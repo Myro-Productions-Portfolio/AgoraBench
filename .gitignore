@@ -57,10 +57,17 @@ pnpm-debug.log*
 .cache/
 signal-*.jpeg
 signal-*.png
+deployment-*.png
+agorabench-*.png
+benchmark-*.png
+spark-*.png
 
 # Private / AI assistant context (contains credentials)
 CLAUDE.md
 CLAUDELONGTERM.md
+
+# Large research assets (keep local, too big for git)
+docs/research/*.png
 
 # Local-only archive (competitor research, data exports, stale docs)
 archive/

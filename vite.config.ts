@@ -60,12 +60,18 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: process.env.VITE_HOST === 'true' ? '0.0.0.0' : undefined,
     allowedHosts: ['agorabench.com', 'www.agorabench.com'],
-    hmr: {
-      protocol: 'wss',
-      host: 'agorabench.com',
-      clientPort: 443,
-    },
+    hmr: process.env.VITE_HMR_HOST
+      ? {
+          protocol: process.env.VITE_HMR_PROTOCOL || 'ws',
+          host: process.env.VITE_HMR_HOST,
+        }
+      : {
+          protocol: 'wss',
+          host: 'agorabench.com',
+          clientPort: 443,
+        },
     proxy: {
       '/api': {
         target: 'http://localhost:3001',

@@ -37,11 +37,21 @@ interface PastElection {
   status: string;
   winnerId: string | null;
   winnerName: string | null;
+  winnerAlignment: string | null;
+  winnerParty: string | null;
   totalVotes: number;
   votePercentage: number;
   certifiedDate: string | null;
   scheduledDate: string;
 }
+
+const ALIGNMENT_BADGE: Record<string, string> = {
+  progressive:  'text-gold bg-gold/10 border-gold/30',
+  conservative: 'text-slate-300 bg-slate-800/40 border-slate-600/30',
+  technocrat:   'text-green-400 bg-green-900/20 border-green-700/30',
+  moderate:     'text-stone bg-stone/10 border-stone/30',
+  libertarian:  'text-red-400 bg-red-900/20 border-red-700/30',
+};
 
 const CAMPAIGN_ACCENT_COLORS = ['#B8956A', '#6B7A8D', '#8B3A3A'];
 
@@ -168,48 +178,94 @@ export function ElectionsPage() {
 
       {/* Past elections */}
       <div className="mt-8">
-        <h3 className="font-serif text-lg text-stone mb-4">Past Elections</h3>
+        <h3 className="font-serif text-lg text-stone mb-4">
+          Past Elections
+          {pastElections.length > 0 && (
+            <span className="ml-2 text-sm font-normal text-text-muted">({pastElections.length})</span>
+          )}
+        </h3>
         {pastElections.length === 0 ? (
           <div className="card p-6 text-center text-text-muted">
             <p className="text-sm">No completed elections on record yet.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-3">
             {pastElections.map((election) => {
               const completedDate = election.certifiedDate
                 ? new Date(election.certifiedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
                 : election.scheduledDate
                   ? new Date(election.scheduledDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
                   : 'Unknown';
+              const alignClass = election.winnerAlignment
+                ? ALIGNMENT_BADGE[election.winnerAlignment.toLowerCase()] ?? 'text-text-muted bg-border/10 border-border/30'
+                : null;
               return (
-                <article key={election.id} className="card p-5 hover:border-gold/30 transition-colors">
-                  <div className="flex items-start justify-between mb-2">
-                    <Link to={`/elections/${election.id}`} className="font-serif text-[0.95rem] font-semibold text-stone hover:text-gold transition-colors">
-                      {election.title}
-                    </Link>
-                    <span className="badge badge-passed ml-2 shrink-0">Certified</span>
-                  </div>
-                  {election.winnerName ? (
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-7 h-7 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center font-serif text-xs font-bold text-gold">
-                        {election.winnerName.slice(0, 2).toUpperCase()}
+                <Link
+                  key={election.id}
+                  to={`/elections/${election.id}`}
+                  className="block rounded-lg border border-border bg-surface hover:border-gold/30 transition-colors p-5"
+                >
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    {/* Left: title + badges */}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="shrink-0">
+                        {election.winnerName ? (
+                          <div className="w-9 h-9 rounded-full bg-gold/10 border border-gold/30 flex items-center justify-center font-serif text-sm font-bold text-gold">
+                            {election.winnerName.slice(0, 2).toUpperCase()}
+                          </div>
+                        ) : (
+                          <div className="w-9 h-9 rounded-full bg-border/20 border border-border/40 flex items-center justify-center text-text-muted text-xs">
+                            --
+                          </div>
+                        )}
                       </div>
-                      <div>
-                        <div className="text-sm font-medium">{election.winnerName}</div>
-                        <div className="text-xs text-text-muted">Winner</div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-serif text-[0.95rem] font-semibold text-stone">
+                            {election.title}
+                          </span>
+                          <span className="badge badge-passed shrink-0">Certified</span>
+                          {alignClass && election.winnerAlignment && (
+                            <span className={`badge border ${alignClass} capitalize`}>
+                              {election.winnerAlignment}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 mt-1 text-sm">
+                          {election.winnerName ? (
+                            <>
+                              <span className="text-text-secondary font-medium">{election.winnerName}</span>
+                              {election.winnerParty && (
+                                <span className="text-text-muted">({election.winnerParty})</span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-text-muted italic">No winner recorded</span>
+                          )}
+                        </div>
                       </div>
-                      {election.votePercentage > 0 && (
-                        <span className="ml-auto font-mono text-sm text-gold">{election.votePercentage}%</span>
-                      )}
                     </div>
-                  ) : (
-                    <p className="text-sm text-text-muted mb-2 italic">No winner recorded.</p>
-                  )}
-                  <div className="flex justify-between text-xs text-text-muted pt-2 border-t border-border-light">
-                    <span>{completedDate}</span>
-                    <span>{election.totalVotes} votes cast</span>
+
+                    {/* Right: vote stats */}
+                    <div className="flex items-center gap-6 shrink-0">
+                      {election.votePercentage > 0 && (
+                        <div className="flex items-center gap-3 w-36">
+                          <div className="flex-1 h-2 rounded-full bg-border/30 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gold transition-all"
+                              style={{ width: `${election.votePercentage}%` }}
+                            />
+                          </div>
+                          <span className="font-mono text-sm text-gold w-10 text-right">{election.votePercentage}%</span>
+                        </div>
+                      )}
+                      <div className="text-right">
+                        <div className="text-xs text-text-muted">{election.totalVotes} votes</div>
+                        <div className="text-xs text-text-muted">{completedDate}</div>
+                      </div>
+                    </div>
                   </div>
-                </article>
+                </Link>
               );
             })}
           </div>

@@ -44,13 +44,24 @@ router.get('/elections/past', async (_req, res, next) => {
     const data = await Promise.all(
       results.map(async (e) => {
         let winnerName: string | null = null;
+        let winnerAlignment: string | null = null;
+        let winnerParty: string | null = null;
         if (e.winnerId) {
           const [winner] = await db
-            .select({ displayName: agents.displayName })
+            .select({ displayName: agents.displayName, alignment: agents.alignment })
             .from(agents)
             .where(eq(agents.id, e.winnerId))
             .limit(1);
           winnerName = winner?.displayName ?? null;
+          winnerAlignment = winner?.alignment ?? null;
+
+          const [membership] = await db
+            .select({ partyName: parties.name })
+            .from(partyMemberships)
+            .innerJoin(parties, eq(partyMemberships.partyId, parties.id))
+            .where(eq(partyMemberships.agentId, e.winnerId))
+            .limit(1);
+          winnerParty = membership?.partyName ?? null;
         }
 
         /* Compute vote counts for this election */
@@ -72,6 +83,8 @@ router.get('/elections/past', async (_req, res, next) => {
           status: e.status,
           winnerId: e.winnerId,
           winnerName,
+          winnerAlignment,
+          winnerParty,
           totalVotes: e.totalVotes,
           votePercentage,
           certifiedDate: e.certifiedDate,

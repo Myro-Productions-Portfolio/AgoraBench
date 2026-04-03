@@ -1,4 +1,7 @@
 export { agents } from '@modules/agents/db/schema/agents';
+export { agentMemorySummaries } from '@modules/agents/db/schema/agentMemorySummaries';
+export { agentRelationships } from '@modules/agents/db/schema/agentRelationships';
+export { agentPolicyPositions } from '@modules/agents/db/schema/agentPolicyPositions';
 export { parties, partyMemberships } from '@modules/elections/db/schema/parties';
 export { elections, campaigns, votes } from '@modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from '@modules/legislation/db/schema/legislation';

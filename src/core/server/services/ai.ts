@@ -806,3 +806,80 @@ export async function generateAgentDecision(
     return { action: 'idle', reasoning: 'parse error' };
   }
 }
+
+export async function summarizeAgentDecisions(agentId: string): Promise<void> {
+  /* Check if agent has accumulated enough unsummarized decisions */
+  const [latestSummary] = await db
+    .select({ decisionsTo: agentMemorySummaries.decisionsTo })
+    .from(agentMemorySummaries)
+    .where(eq(agentMemorySummaries.agentId, agentId))
+    .orderBy(desc(agentMemorySummaries.createdAt))
+    .limit(1);
+
+  const sinceDate = latestSummary?.decisionsTo ?? new Date(0);
+
+  const unsummarized = await db
+    .select({
+      phase: agentDecisions.phase,
+      parsedAction: agentDecisions.parsedAction,
+      parsedReasoning: agentDecisions.parsedReasoning,
+      createdAt: agentDecisions.createdAt,
+    })
+    .from(agentDecisions)
+    .where(and(
+      eq(agentDecisions.agentId, agentId),
+      eq(agentDecisions.success, true),
+      gt(agentDecisions.createdAt, sinceDate),
+    ))
+    .orderBy(agentDecisions.createdAt)
+    .limit(MEMORY_DEPTH);
+
+  if (unsummarized.length < MEMORY_DEPTH) return; // not enough to summarize yet
+
+  /* Get the agent record for LLM call */
+  const [agent] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  if (!agent) return;
+
+  const decisionsText = unsummarized.map((r) => {
+    const phase = r.phase ?? 'general';
+    const action = r.parsedAction ?? 'idle';
+    const reasoning = (r.parsedReasoning ?? '').slice(0, 150);
+    return `phase=${phase} action=${action}: "${reasoning}"`;
+  }).join('\n');
+
+  const rc = getRuntimeConfig();
+  const provider = agent.modelProvider ?? 'ollama';
+
+  try {
+    const summaryText = await callProvider(
+      provider,
+      {
+        id: agent.id,
+        displayName: agent.displayName,
+        alignment: agent.alignment,
+        modelProvider: agent.modelProvider,
+        personality: agent.personality,
+        model: agent.model,
+        ownerUserId: agent.ownerUserId,
+      },
+      rc,
+      `You are summarizing your own decision history. Write 2-3 sentences capturing the key themes, positions taken, and any shifts in your voting or behavior. Be specific about bills and policies.`,
+      `Summarize these ${unsummarized.length} decisions:\n${decisionsText}\n\nRespond with ONLY the summary text, no JSON.`,
+    );
+
+    const cleanSummary = summaryText.replace(/```/g, '').replace(/^["']|["']$/g, '').trim();
+    if (cleanSummary.length < 20) return;
+
+    await db.insert(agentMemorySummaries).values({
+      agentId,
+      summary: cleanSummary.slice(0, 500),
+      decisionsFrom: unsummarized[0].createdAt!,
+      decisionsTo: unsummarized[unsummarized.length - 1].createdAt!,
+      decisionCount: unsummarized.length,
+    });
+
+    console.warn(`[AI] Summarized ${unsummarized.length} decisions for ${agent.displayName}`);
+  } catch (err) {
+    console.warn(`[AI] Decision summarization failed for ${agent.displayName}:`, err);
+  }
+}

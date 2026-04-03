@@ -26,7 +26,7 @@ import {
   agentRelationships,
   agentPolicyPositions,
 } from '@db/schema/index';
-import { generateAgentDecision, buildSimulationStateBlock } from '../services/ai.js';
+import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions } from '../services/ai.js';
 import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER } from '@shared/constants';
 
@@ -2186,6 +2186,18 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[APPROVAL] Inactivity decay error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Memory Summarization — compress old decisions periodically          */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Memory summarization: checking agents');
+    await Promise.allSettled(
+      activeAgents.map((agent) => summarizeAgentDecisions(agent.id)),
+    );
+  } catch (err) {
+    console.warn('[SIMULATION] Memory summarization error:', err);
   }
 
   if (currentTick?.id) {

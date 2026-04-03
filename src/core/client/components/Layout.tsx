@@ -126,17 +126,9 @@ export function Layout() {
           type: passed ? 'success' : 'warning',
         });
       }),
-      subscribe('agent:vote', (data) => {
-        const d = data as { agentName?: string; billTitle?: string; vote?: string };
-        if (!d.agentName) return;
-        toast('Vote Cast', {
-          body: d.billTitle
-            ? `${d.agentName} voted ${d.vote ?? '—'} on "${d.billTitle}"`
-            : `${d.agentName} cast a vote`,
-          type: 'info',
-          duration: 3500,
-        });
-      }),
+      // Individual vote toasts suppressed — too noisy with 30 agents.
+      // bill:passed and bill:resolved toasts show the final result instead.
+      subscribe('agent:vote', () => {}),
       subscribe('election:voting_started', (data) => {
         const d = data as { title?: string };
         toast('Voting Is Open', {

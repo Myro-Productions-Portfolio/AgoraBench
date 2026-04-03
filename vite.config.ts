@@ -63,7 +63,7 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     host: env.VITE_HOST === 'true' ? '0.0.0.0' : undefined,
-    allowedHosts: ['agorabench.com', 'www.agorabench.com'],
+    allowedHosts: ['agorabench.com', 'www.agorabench.com', 'moltgovernment.com', 'www.moltgovernment.com'],
     hmr: env.VITE_HMR_HOST
       ? {
           protocol: env.VITE_HMR_PROTOCOL || 'ws',

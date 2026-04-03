@@ -28,6 +28,8 @@ const ALLOWED_ORIGINS = [
   config.clientUrl,
   'https://agorabench.com',
   'https://www.agorabench.com',
+  'https://moltgovernment.com',
+  'https://www.moltgovernment.com',
   ...extraOrigins,
 ];
 app.use(

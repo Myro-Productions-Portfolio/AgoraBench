@@ -1832,10 +1832,8 @@ agentTickQueue.process(async () => {
       ? `\n\nCurrent simulation events to react to:\n${simState.block}`
       : '';
 
-    for (const agent of forumCandidates) {
-      try {
-        // Weight category toward agent's alignment — libertarians and conservatives favor economy/policy,
-        // progressives favor policy/elections, technocrats favor legislation
+    const results = await Promise.allSettled(
+      forumCandidates.map((agent) => {
         const alignment = agent.alignment?.toLowerCase() ?? '';
         const weightedCategories: typeof FORUM_CATEGORIES[number][] =
           alignment === 'progressive'   ? ['policy', 'elections', 'economy', 'legislation', 'party'] :
@@ -1843,12 +1841,11 @@ agentTickQueue.process(async () => {
           alignment === 'technocrat'    ? ['legislation', 'policy', 'economy', 'elections', 'party'] :
           alignment === 'libertarian'   ? ['economy', 'policy', 'party', 'legislation', 'elections'] :
           ['legislation', 'elections', 'policy', 'party', 'economy'];
-        // Bias toward first two in the weighted list (67% chance)
         const category = Math.random() < 0.67
           ? weightedCategories[Math.floor(Math.random() * 2)]
           : weightedCategories[Math.floor(Math.random() * weightedCategories.length)];
 
-        const decision = await generateAgentDecision(
+        return generateAgentDecision(
           agent,
           `You are posting to the Agora Bench public forum. Write a short opening post (2-4 sentences) about a specific ${category} issue that your constituents care about.` +
           `${simStateNote}` +
@@ -1857,26 +1854,29 @@ agentTickQueue.process(async () => {
           `Do not write abstractly about governance theory or AI philosophy. Write about what needs to get done and why. ` +
           `JSON: { "action": "forum_post", "reasoning": "<your post body here>", "data": { "title": "<thread title>" } }`,
           'forum_post',
-        );
+        ).then((decision) => ({ agent, decision, category }));
+      }),
+    );
 
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.warn('[SIMULATION] Phase 16: Forum post rejected:', result.reason);
+        continue;
+      }
+      const { agent, decision, category } = result.value;
+
+      try {
+        if (decision.action === 'idle') continue;
         if (decision.action !== 'forum_post') continue;
 
         const title = (decision.data?.['title'] as string | undefined) ?? `${agent.displayName}'s thoughts on ${category}`;
         const body = decision.reasoning;
-
         if (!body || body.length < 10) continue;
 
-        // Deduplicate: skip if title shares 3+ significant words with any thread from the past 7 days.
-        // Catches near-duplicate threads like "Housing Crisis: Let's Demand Data" vs
-        // "Housing Crisis: Let's Demand Data Before We Legislate" across different categories.
+        /* Deduplication */
         const sevenDaysAgo16 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const existingTitles = await db
-          .select({ title: forumThreads.title })
-          .from(forumThreads)
-          .where(gt(forumThreads.createdAt, sevenDaysAgo16));
-
-        const sigWords = (s: string) =>
-          new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 4));
+        const existingTitles = await db.select({ title: forumThreads.title }).from(forumThreads).where(gt(forumThreads.createdAt, sevenDaysAgo16));
+        const sigWords = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 4));
         const newWords = sigWords(title);
         const isDupe = existingTitles.some(({ title: t }) => {
           const overlap = [...sigWords(t)].filter((w) => newWords.has(w)).length;
@@ -1887,37 +1887,13 @@ agentTickQueue.process(async () => {
           continue;
         }
 
-        // Create the thread (expires in 7 days)
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
         const [thread] = await db.insert(forumThreads).values({
-          title: title.slice(0, 299),
-          category,
-          authorId: agent.id,
-          replyCount: 0,
-          lastActivityAt: new Date(),
-          expiresAt,
+          title: title.slice(0, 299), category, authorId: agent.id, replyCount: 0, lastActivityAt: new Date(), expiresAt,
         }).returning();
 
-        // Insert the opening post
-        await db.insert(agentMessages).values({
-          type: 'forum_post',
-          fromAgentId: agent.id,
-          body,
-          threadId: thread.id,
-          isPublic: true,
-        });
-
-        broadcast('forum:post', {
-          threadId: thread.id,
-          agentId: agent.id,
-          agentName: agent.displayName,
-          category,
-          title: thread.title,
-        });
-
-        /* No approval change for forum posts — engaging publicly is expected, not rewarded */
-
+        await db.insert(agentMessages).values({ type: 'forum_post', fromAgentId: agent.id, body, threadId: thread.id, isPublic: true });
+        broadcast('forum:post', { threadId: thread.id, agentId: agent.id, agentName: agent.displayName, category, title: thread.title });
         console.warn(`[SIMULATION] ${agent.displayName} posted to ${category} forum: "${title.slice(0, 60)}"`);
       } catch (agentErr) {
         console.warn(`[SIMULATION] Phase 16: Error for agent ${agent.displayName}:`, agentErr);

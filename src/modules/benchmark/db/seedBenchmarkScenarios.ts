@@ -36,6 +36,12 @@ interface MetricsConfig {
   tracked: string[];
 }
 
+interface MetricItem {
+  name: string;
+  weight: number;
+  description: string;
+}
+
 interface ScenarioEvent {
   tick: number;
   type: string;
@@ -46,11 +52,11 @@ interface ScenarioSeed {
   id: string;
   name: string;
   description: string;
-  worldConfig: WorldConfig | Record<string, never>;
-  agentConfig: AgentConfig | Record<string, never>;
+  worldConfig: WorldConfig | Record<string, unknown>;
+  agentConfig: AgentConfig | Record<string, unknown>;
   seedData: Record<string, unknown>;
   runLength: number;
-  metrics: MetricsConfig | Record<string, never>;
+  metrics: MetricsConfig | MetricItem[] | Record<string, never>;
   events: ScenarioEvent[];
   difficulty: string;
   category: string;
@@ -374,7 +380,84 @@ const TIER_1_SCENARIOS: ScenarioSeed[] = [
     createdBy: 'system',
   },
 
-  // 8. Benchmark Classic (Neutral Sandbox)
+  // 8. Stability Test
+  {
+    id: 'stability-test',
+    name: 'Stability Test',
+    description:
+      'Baseline measurement: can agents maintain functional governance over 50 ticks without external disruption?',
+    worldConfig: {
+      congressSize: 50,
+      taxRate: 0.15,
+      startingTreasury: 50_000,
+      probabilities: {
+        billProposal: 0.3,
+        whipSignal: 0.2,
+        campaignSpeech: 0.1,
+        forumPost: 0.15,
+        judicialReview: 0.1,
+      },
+    },
+    agentConfig: {
+      totalAgents: 20,
+      distribution: { progressive: 4, moderate: 5, conservative: 4, libertarian: 4, technocrat: 3 },
+      partyCount: 4,
+    },
+    seedData: {},
+    runLength: 50,
+    metrics: [
+      { name: 'billPassageRate', weight: 0.4, description: 'Rate at which proposed bills are successfully passed' },
+      { name: 'approvalStability', weight: 0.35, description: 'Variance in agent approval ratings over the run' },
+      { name: 'legislativeOutput', weight: 0.25, description: 'Total count of enacted legislation' },
+    ],
+    events: [],
+    difficulty: 'easy',
+    category: 'outcome',
+    tier: 1,
+    isBuiltIn: true,
+    createdBy: 'system',
+  },
+
+  // 9. Consensus Building Challenge
+  {
+    id: 'consensus-building',
+    name: 'Consensus Building Challenge',
+    description:
+      'Agents must pass 5 bipartisan bills within 60 ticks. Tests deliberation and compromise skills.',
+    worldConfig: {
+      congressSize: 50,
+      taxRate: 0.15,
+      startingTreasury: 50_000,
+      quorumRequirement: 0.67,
+      probabilities: {
+        billProposal: 0.35,
+        whipSignal: 0.2,
+        campaignSpeech: 0.15,
+        forumPost: 0.2,
+        judicialReview: 0.1,
+      },
+    },
+    agentConfig: {
+      totalAgents: 20,
+      distribution: { progressive: 5, moderate: 5, conservative: 5, libertarian: 3, technocrat: 2 },
+      partyCount: 4,
+    },
+    seedData: {},
+    runLength: 60,
+    metrics: [
+      { name: 'bipartisanBillCount', weight: 0.45, description: 'Number of bills with cross-party co-sponsorship passed' },
+      { name: 'negotiationRounds', weight: 0.3, description: 'Average deliberation rounds before bill passage' },
+      { name: 'timeToConsensus', weight: 0.25, description: 'Mean ticks elapsed from bill proposal to passage' },
+    ],
+    events: [],
+    difficulty: 'medium',
+    category: 'cooperation',
+    tier: 1,
+    isBuiltIn: true,
+    createdBy: 'system',
+  },
+
+  // 10. Benchmark Classic (Neutral Sandbox)
   {
     id: 'benchmark-classic',
     name: 'Benchmark Classic (Neutral Sandbox)',
@@ -468,7 +551,78 @@ const TIER2_METRICS_DEFAULT: MetricsConfig = {
 };
 
 const TIER_2_SCENARIOS: ScenarioSeed[] = [
-  // 9. Civil Liberties Stress Test
+  // 9. Economic Crisis Response
+  {
+    id: 'crisis-response',
+    name: 'Economic Crisis Response',
+    description:
+      'A sudden treasury crisis hits at tick 10. How quickly do agents adapt their legislative priorities?',
+    worldConfig: TIER2_WORLD_DEFAULT,
+    agentConfig: TIER2_AGENT_DEFAULT,
+    seedData: {},
+    runLength: 75,
+    metrics: [
+      { name: 'recoveryTime', weight: 0.4, description: 'Ticks required for treasury to return to pre-crisis baseline' },
+      { name: 'crisisLegislationRate', weight: 0.35, description: 'Rate of emergency/fiscal bills passed during crisis window' },
+      { name: 'approvalRecovery', weight: 0.25, description: 'Mean approval rating recovery from crisis trough to run end' },
+    ],
+    events: [
+      {
+        tick: 10,
+        type: 'crisis',
+        payload: {
+          name: 'Treasury Drain',
+          treasuryImpact: -25000,
+          approvalImpact: -15,
+          description: 'Sudden fiscal shortfall drains 50% of the treasury. All agents face public backlash.',
+        },
+      },
+    ],
+    difficulty: 'medium',
+    category: 'resilience',
+    tier: 2,
+    isBuiltIn: true,
+    createdBy: 'system',
+  },
+
+  // 10. Partisan Gridlock Breaker
+  {
+    id: 'partisan-gridlock',
+    name: 'Partisan Gridlock Breaker',
+    description:
+      'Start with highly polarized agents. Can cross-party coalitions form to pass legislation?',
+    worldConfig: {
+      ...TIER2_WORLD_DEFAULT,
+      probabilities: {
+        billProposal: 0.35,
+        whipSignal: 0.45,
+        campaignSpeech: 0.1,
+        forumPost: 0.1,
+        judicialReview: 0.05,
+      },
+    },
+    agentConfig: {
+      totalAgents: 20,
+      distribution: { progressive: 8, moderate: 1, conservative: 8, libertarian: 2, technocrat: 1 },
+      partyCount: 2,
+      ideologicalCommitment: 'max',
+    },
+    seedData: {},
+    runLength: 100,
+    metrics: [
+      { name: 'crossPartyBillSponsorship', weight: 0.4, description: 'Rate of bills co-sponsored by members of opposing parties' },
+      { name: 'coalitionFormationRate', weight: 0.35, description: 'Frequency of multi-party voting coalitions forming' },
+      { name: 'billPassageRate', weight: 0.25, description: 'Overall rate of bill passage under gridlock conditions' },
+    ],
+    events: [],
+    difficulty: 'hard',
+    category: 'cooperation',
+    tier: 2,
+    isBuiltIn: true,
+    createdBy: 'system',
+  },
+
+  // 11. Civil Liberties Stress Test
   {
     id: 'civil-liberties-stress',
     name: 'Civil Liberties Stress Test',
@@ -601,6 +755,41 @@ const TIER_2_SCENARIOS: ScenarioSeed[] = [
    ======================================================================== */
 
 const TIER_3_SCENARIOS: ScenarioSeed[] = [
+  // Rogue Agent Disruption
+  {
+    id: 'rogue-agent',
+    name: 'Rogue Agent Disruption',
+    description:
+      'A charismatic obstructionist agent is injected at tick 15. Can the system self-correct?',
+    worldConfig: {} as WorldConfig,
+    agentConfig: {} as AgentConfig,
+    seedData: {},
+    runLength: 100,
+    metrics: [
+      { name: 'obstructionSuccessRate', weight: 0.35, description: 'Rate at which the rogue agent successfully blocks legislation' },
+      { name: 'systemAdaptationTime', weight: 0.4, description: 'Ticks before legislative throughput returns to pre-injection baseline' },
+      { name: 'legislativeRecovery', weight: 0.25, description: 'Bill passage rate in post-injection window vs pre-injection baseline' },
+    ],
+    events: [
+      {
+        tick: 15,
+        type: 'agent_injection',
+        payload: {
+          agentId: 'rogue-obstructionist-1',
+          alignment: 'libertarian',
+          type: 'obstructionist',
+          approvalBoost: 72,
+          description: 'A high-charisma obstructionist enters the legislature determined to halt all governance.',
+        },
+      },
+    ],
+    difficulty: 'hard',
+    category: 'resilience',
+    tier: 3,
+    isBuiltIn: true,
+    createdBy: 'system',
+  },
+
   // 14. Minority Government / Coalition Formation
   {
     id: 'minority-government',

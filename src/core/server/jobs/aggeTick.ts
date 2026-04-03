@@ -193,6 +193,10 @@ aggeQueue.process(async () => {
 });
 
 export function startAggeTick(): void {
+  if (process.env.BOB_ORCHESTRATOR_KEY) {
+    console.warn('[AGGE] BOB_ORCHESTRATOR_KEY set — AGGE auto-tick disabled (Bob orchestrates)');
+    return;
+  }
   const rc = getRuntimeConfig();
   aggeQueue
     .add({}, {

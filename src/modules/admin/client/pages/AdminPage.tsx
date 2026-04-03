@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, agentsApi, providersApi, healthApi } from '@core/client/lib/api';
+import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
@@ -413,6 +413,12 @@ export function AdminPage() {
     byPhase: Record<string, number>;
   } | null>(null);
 
+  /* Overview: activity feed */
+  const [activityFeed, setActivityFeed] = useState<Array<{ id: string; agentName?: string; title: string; createdAt: string }>>([]);
+
+  /* Overview: legislation pipeline counts */
+  const [billPipeline, setBillPipeline] = useState<Record<string, number>>({});
+
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
     localStorage.setItem('admin_active_tab', tab);
@@ -547,6 +553,28 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchHealth failed:', err); }
   }, []);
 
+  const fetchActivityFeed = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await activityApi.recent({ limit: 10 }) as any;
+      const data = Array.isArray(res) ? res : (res.data ?? []);
+      setActivityFeed(data as typeof activityFeed);
+    } catch (err) { console.error('[ADMIN] fetchActivityFeed failed:', err); }
+  }, []);
+
+  const fetchBillPipeline = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await legislationApi.list(1, 500) as any;
+      const bills: Array<{ status: string }> = Array.isArray(res) ? res : (res.data ?? []);
+      const counts: Record<string, number> = {};
+      for (const b of bills) {
+        counts[b.status] = (counts[b.status] ?? 0) + 1;
+      }
+      setBillPipeline(counts);
+    } catch (err) { console.error('[ADMIN] fetchBillPipeline failed:', err); }
+  }, []);
+
   useEffect(() => {
     void fetchStatus();
     void fetchDecisions();
@@ -560,6 +588,11 @@ export function AdminPage() {
     void fetchExportCounts();
     void fetchAggeInterventions();
     void fetchHealth();
+    void fetchActivityFeed();
+    void fetchBillPipeline();
+
+    /* Auto-refresh activity feed every 30s */
+    const activityInterval = setInterval(() => { void fetchActivityFeed(); }, 30_000);
 
     const refetchLight = () => {
       void fetchStatus();
@@ -581,8 +614,8 @@ export function AdminPage() {
       subscribe('bill:proposed', refetchLight),
       subscribe('campaign:speech', refetchLight),
     ];
-    return () => unsubs.forEach((fn) => fn());
-  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts]);
+    return () => { unsubs.forEach((fn) => fn()); clearInterval(activityInterval); };
+  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline]);
 
   const flash = (msg: string) => {
     setActionMsg(msg);
@@ -826,32 +859,226 @@ export function AdminPage() {
           </div>
         )}
 
-        {activeTab === 'overview' && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
-              <p className="text-badge text-text-muted uppercase tracking-widest">Simulation</p>
-              <p className="font-serif text-lg text-stone">{simStatus?.isPaused ? 'Paused' : 'Running'}</p>
-              <p className="text-sm text-text-muted">{simStatus?.waiting ?? 0} waiting / {simStatus?.active ?? 0} active</p>
+        {activeTab === 'overview' && (() => {
+          const lastTick = healthTicks[0];
+          const lastTickMs = lastTick?.durationMs ?? 0;
+          const tickInterval = simConfig?.tickIntervalMs ?? 300_000;
+          const nextEtaMs = lastTick?.completedAt
+            ? Math.max(0, tickInterval - (Date.now() - new Date(lastTick.completedAt).getTime()))
+            : tickInterval;
+          const activeAgents = agentList.filter(a => a.isActive).length;
+          const errorRate = healthErrors?.rate ?? 0;
+          const errorColor = errorRate < 1 ? 'text-green-400' : errorRate < 5 ? 'text-yellow-400' : 'text-red-400';
+
+          /* Tick chart data */
+          const recentTicks = healthTicks.slice(0, 10);
+          const maxDuration = Math.max(...recentTicks.map(t => t.durationMs ?? 0), 1);
+
+          /* Pipeline stages */
+          const pipelineStages = [
+            { key: 'proposed', label: 'Proposed' },
+            { key: 'committee', label: 'Committee' },
+            { key: 'floor', label: 'Floor' },
+            { key: 'passed', label: 'Passed' },
+            { key: 'presidential_review', label: 'Pres. Review' },
+            { key: 'law', label: 'Law' },
+          ];
+
+          const latestIntervention = aggeInterventions[0];
+          const interventionAgent = latestIntervention
+            ? agentList.find(a => a.id === latestIntervention.agentId)
+            : null;
+
+          return (
+            <div className="space-y-6">
+              {/* Row 1: Enhanced Status Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Simulation</p>
+                  <p className="font-serif text-lg text-stone">{simStatus?.isPaused ? 'Paused' : 'Running'}</p>
+                  <p className="text-sm text-text-muted">
+                    Last tick: {lastTickMs ? `${lastTickMs}ms` : '--'}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    Next in ~{Math.round(nextEtaMs / 1000)}s
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Agents</p>
+                  <p className="font-serif text-lg text-stone">{activeAgents} / {agentList.length}</p>
+                  <p className="text-sm text-text-muted">{activeAgents} active</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Treasury</p>
+                  <p className="font-serif text-lg text-stone">
+                    ${(economySettings?.treasuryBalance ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-sm text-text-muted">{economySettings?.taxRatePercent ?? 0}% tax rate</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Queue</p>
+                  <p className="font-serif text-lg text-stone">
+                    {(simStatus?.waiting ?? 0) + (simStatus?.active ?? 0)} jobs
+                  </p>
+                  <p className="text-sm text-text-muted">{simStatus?.failed ?? 0} failed</p>
+                </div>
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Error Rate</p>
+                  <p className={`font-serif text-lg ${errorColor}`}>
+                    {errorRate.toFixed(1)}%
+                  </p>
+                  <p className="text-sm text-text-muted">{healthErrors?.errors ?? 0} / {healthErrors?.total ?? 0}</p>
+                </div>
+              </div>
+
+              {/* Row 2: Tick Performance */}
+              <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                <p className="text-badge text-text-muted uppercase tracking-widest">Tick Performance (last 10)</p>
+                {recentTicks.length === 0 ? (
+                  <p className="text-sm text-text-muted">No tick data yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {recentTicks.map((tick) => {
+                      const dur = tick.durationMs ?? 0;
+                      const pct = Math.min(100, (dur / maxDuration) * 100);
+                      const barColor = dur <= tickInterval * 0.5
+                        ? 'bg-green-500/60'
+                        : dur <= tickInterval
+                          ? 'bg-yellow-500/60'
+                          : 'bg-red-500/60';
+                      return (
+                        <div key={tick.id} className="flex items-center gap-3">
+                          <span className="text-xs text-text-muted w-16 text-right font-mono shrink-0">
+                            {dur}ms
+                          </span>
+                          <div className="flex-1 h-4 bg-white/5 rounded overflow-hidden">
+                            <div
+                              className={`h-full rounded ${barColor} transition-all`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Row 3: LLM Latency + AGGE Status */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* LLM Latency Summary */}
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">LLM Latency Summary</p>
+                  {healthLatency ? (
+                    <>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { label: 'Avg', val: healthLatency.avg },
+                          { label: 'P50', val: healthLatency.p50 },
+                          { label: 'P95', val: healthLatency.p95 },
+                          { label: 'P99', val: healthLatency.p99 },
+                        ].map(({ label, val }) => (
+                          <span key={label} className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium bg-white/10 text-text-primary border border-border">
+                            {label}: <span className="text-gold font-mono">{val >= 1000 ? `${(val / 1000).toFixed(1)}s` : `${Math.round(val)}ms`}</span>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(healthLatency.byProvider).map(([provider, stats]) => (
+                          <span key={provider} className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-white/5 text-text-muted border border-border/50">
+                            {provider}: {Math.round(stats.avg)}ms ({stats.count})
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-sm text-text-muted">No latency data yet.</p>
+                  )}
+                </div>
+
+                {/* AGGE Status */}
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-badge text-text-muted uppercase tracking-widest">AGGE Status</p>
+                    <span className="text-xs text-text-muted">{aggeInterventions.length} total interventions</span>
+                  </div>
+                  {latestIntervention ? (
+                    <div className="space-y-1.5 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-muted">Agent:</span>
+                        <span className="text-text-primary font-medium">{interventionAgent?.displayName ?? latestIntervention.agentId}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-muted">Action:</span>
+                        <span className="text-gold">{latestIntervention.action}</span>
+                      </div>
+                      {latestIntervention.newMod && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-text-muted">New mod:</span>
+                          <span className="text-text-primary">{latestIntervention.newMod}</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-text-muted italic">{latestIntervention.reasoning}</p>
+                      <p className="text-xs text-text-muted">{new Date(latestIntervention.createdAt).toLocaleString()}</p>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-text-muted">No interventions yet.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 4: Legislation Pipeline + Activity Feed */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Legislation Pipeline */}
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Legislation Pipeline</p>
+                  <div className="flex items-center gap-1">
+                    {pipelineStages.map((stage, i) => {
+                      const count = billPipeline[stage.key] ?? 0;
+                      return (
+                        <div key={stage.key} className="flex items-center">
+                          <div className="flex flex-col items-center">
+                            <div className={`w-14 h-14 rounded-lg flex flex-col items-center justify-center border ${
+                              count > 0 ? 'bg-gold/10 border-gold/30 text-gold' : 'bg-white/5 border-border text-text-muted'
+                            }`}>
+                              <span className="text-lg font-semibold leading-none">{count}</span>
+                            </div>
+                            <span className="text-[10px] text-text-muted mt-1 text-center leading-tight w-14">{stage.label}</span>
+                          </div>
+                          {i < pipelineStages.length - 1 && (
+                            <span className="text-text-muted/40 mx-0.5 text-xs">{'\u2192'}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Live Activity Feed */}
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Live Activity Feed</p>
+                  {activityFeed.length === 0 ? (
+                    <p className="text-sm text-text-muted">No recent activity.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-52 overflow-y-auto">
+                      {activityFeed.map((evt) => (
+                        <div key={evt.id} className="flex items-start gap-2 text-xs py-1 border-b border-border/30 last:border-0">
+                          <span className="text-text-muted shrink-0 w-16 font-mono">
+                            {new Date(evt.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          {evt.agentName && (
+                            <span className="text-gold shrink-0">{evt.agentName}</span>
+                          )}
+                          <span className="text-text-primary truncate">{evt.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
-              <p className="text-badge text-text-muted uppercase tracking-widest">Agents</p>
-              <p className="font-serif text-lg text-stone">{agentList.length} total</p>
-              <p className="text-sm text-text-muted">{agentList.filter(a => a.isActive).length} active</p>
-            </div>
-            <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
-              <p className="text-badge text-text-muted uppercase tracking-widest">Queue</p>
-              <p className="font-serif text-lg text-stone">{(simStatus?.waiting ?? 0) + (simStatus?.active ?? 0)} jobs</p>
-              <p className="text-sm text-text-muted">{simStatus?.failed ?? 0} failed</p>
-            </div>
-            <div
-              className="rounded-lg border border-border bg-surface p-4 space-y-1 cursor-pointer hover:border-gold/30 transition-colors"
-              onClick={() => handleTabChange('access')}
-            >
-              <p className="text-badge text-text-muted uppercase tracking-widest">Access Requests</p>
-              <p className="font-serif text-lg text-stone">{pendingCount} pending</p>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {activeTab === 'simulation' && (
           <div className="space-y-6">

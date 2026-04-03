@@ -23,6 +23,8 @@ import {
   approvalEvents,
   tickLog,
   pendingMentions,
+  agentRelationships,
+  agentPolicyPositions,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock } from '../services/ai.js';
 import { broadcast } from '../websocket.js';
@@ -325,6 +327,105 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 2 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 2b: Update Relationship & Policy Tracking                     */
+  /* Compute vote alignment between all agent pairs from recent votes.  */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 2b: Updating relationship and policy tracking');
+
+    /* Fetch all bill votes for alignment calculation */
+    const recentVotes = await db
+      .select({
+        voterId: billVotes.voterId,
+        billId: billVotes.billId,
+        choice: billVotes.choice,
+      })
+      .from(billVotes)
+      .where(inArray(billVotes.choice, ['yea', 'nay']));
+
+    /* Build agent-bill vote map */
+    const voteMap = new Map<string, Map<string, string>>(); // agentId -> (billId -> choice)
+    for (const v of recentVotes) {
+      if (!voteMap.has(v.voterId)) voteMap.set(v.voterId, new Map());
+      voteMap.get(v.voterId)!.set(v.billId, v.choice);
+    }
+
+    /* Compute pairwise alignment */
+    const agentIds = activeAgents.map((a) => a.id);
+    const relationshipUpserts: Array<{ agentId: string; targetAgentId: string; voteAlignment: number }> = [];
+
+    for (let i = 0; i < agentIds.length; i++) {
+      const aVotes = voteMap.get(agentIds[i]);
+      if (!aVotes) continue;
+
+      for (let j = i + 1; j < agentIds.length; j++) {
+        const bVotes = voteMap.get(agentIds[j]);
+        if (!bVotes) continue;
+
+        let agree = 0;
+        let total = 0;
+        for (const [billId, choiceA] of aVotes) {
+          const choiceB = bVotes.get(billId);
+          if (choiceB) {
+            total++;
+            if (choiceA === choiceB) agree++;
+          }
+        }
+
+        if (total >= 2) {
+          const alignment = agree / total;
+          relationshipUpserts.push({ agentId: agentIds[i], targetAgentId: agentIds[j], voteAlignment: alignment });
+          relationshipUpserts.push({ agentId: agentIds[j], targetAgentId: agentIds[i], voteAlignment: alignment });
+        }
+      }
+    }
+
+    /* Batch upsert relationships */
+    for (const rel of relationshipUpserts) {
+      await db
+        .insert(agentRelationships)
+        .values({ ...rel, sentiment: rel.voteAlignment, updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+          set: { voteAlignment: rel.voteAlignment, sentiment: rel.voteAlignment, updatedAt: new Date() },
+        });
+    }
+
+    /* Update policy positions from votes on all bills */
+    const allBillsForPolicy = await db.select({ id: bills.id, committee: bills.committee }).from(bills);
+    const billCategoryMap = new Map(allBillsForPolicy.map((b) => [b.id, b.committee]));
+
+    for (const agent of activeAgents) {
+      const agentVotes = voteMap.get(agent.id);
+      if (!agentVotes) continue;
+
+      const categoryCounts = new Map<string, { support: number; oppose: number }>();
+      for (const [billId, choice] of agentVotes) {
+        const category = billCategoryMap.get(billId);
+        if (!category) continue;
+        if (!categoryCounts.has(category)) categoryCounts.set(category, { support: 0, oppose: 0 });
+        const counts = categoryCounts.get(category)!;
+        if (choice === 'yea') counts.support++;
+        else counts.oppose++;
+      }
+
+      for (const [category, counts] of categoryCounts) {
+        await db
+          .insert(agentPolicyPositions)
+          .values({ agentId: agent.id, category, supportCount: counts.support, opposeCount: counts.oppose, updatedAt: new Date() })
+          .onConflictDoUpdate({
+            target: [agentPolicyPositions.agentId, agentPolicyPositions.category],
+            set: { supportCount: counts.support, opposeCount: counts.oppose, updatedAt: new Date() },
+          });
+      }
+    }
+
+    console.warn(`[SIMULATION] Phase 2b: Updated ${relationshipUpserts.length} relationships`);
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 2b error:', err);
   }
 
   /* ------------------------------------------------------------------ */

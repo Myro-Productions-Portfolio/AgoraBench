@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { decisionsApi, ticksApi, legislationApi, agentsApi } from '@core/client/lib/api';
 import { BillPipeline } from '@modules/legislation/client/components/BillPipeline';
@@ -23,6 +23,20 @@ interface TickRow {
   id: string;
   firedAt: string;
   completedAt: string | null;
+}
+
+interface TickSummary {
+  id: string;
+  firedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+  totalDecisions: number;
+  decisionsByPhase: Record<string, number>;
+  votesCast: number;
+  forumThreadsCreated: number;
+  forumMessages: number;
+  interventions: number;
+  eventsByType: Record<string, number>;
 }
 
 interface BillRow {
@@ -178,6 +192,215 @@ function DecisionCard({ d }: { d: DecisionRow }) {
   );
 }
 
+// -- Tick Duration Color -----------------------------------------------------
+
+function tickDurationColor(ms: number | null): string {
+  if (ms === null) return 'bg-border/40';
+  if (ms < 60_000) return 'bg-green-500';
+  if (ms < 180_000) return 'bg-yellow-500';
+  return 'bg-red-500';
+}
+
+function tickDurationLabel(ms: number | null): string {
+  if (ms === null) return '?';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+// -- Tick Breakdown ----------------------------------------------------------
+
+function TickBreakdown({ summary }: { summary: TickSummary }) {
+  const phases = Object.entries(summary.decisionsByPhase).sort(
+    ([, a], [, b]) => b - a,
+  );
+
+  const events: string[] = [];
+  if (summary.votesCast > 0) events.push(`${summary.votesCast} vote${summary.votesCast !== 1 ? 's' : ''} cast`);
+  if (summary.forumThreadsCreated > 0) events.push(`${summary.forumThreadsCreated} forum thread${summary.forumThreadsCreated !== 1 ? 's' : ''}`);
+  if (summary.forumMessages > 0) events.push(`${summary.forumMessages} forum message${summary.forumMessages !== 1 ? 's' : ''}`);
+  if (summary.interventions > 0) events.push(`${summary.interventions} AGGE intervention${summary.interventions !== 1 ? 's' : ''}`);
+
+  // Summarize activity events beyond what we already listed
+  const eventTypes = Object.entries(summary.eventsByType).filter(
+    ([type]) => !['vote', 'forum_post', 'forum_reply'].includes(type),
+  );
+  for (const [type, count] of eventTypes) {
+    events.push(`${count} ${type.replace(/_/g, ' ')}`);
+  }
+
+  return (
+    <div className="space-y-2 text-xs">
+      {/* Duration + total */}
+      <div className="flex items-center gap-3">
+        <span className="text-text-muted">
+          Duration:{' '}
+          <span className="text-text-primary font-mono">
+            {tickDurationLabel(summary.durationMs)}
+          </span>
+        </span>
+        <span className="text-text-muted">
+          Decisions:{' '}
+          <span className="text-text-primary font-mono">
+            {summary.totalDecisions}
+          </span>
+        </span>
+      </div>
+
+      {/* Phase summary */}
+      {phases.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {phases.map(([phase, count]) => (
+            <span
+              key={phase}
+              className="inline-flex items-center gap-1 rounded border border-border/30 bg-black/20 px-1.5 py-0.5"
+            >
+              <span className="text-[10px] text-text-muted uppercase tracking-wide">
+                {phase}
+              </span>
+              <span className="text-[10px] text-text-primary font-mono">
+                {count}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Key events */}
+      {events.length > 0 && (
+        <div className="text-[11px] text-text-secondary leading-relaxed">
+          {events.join(' \u00B7 ')}
+        </div>
+      )}
+
+      {events.length === 0 && phases.length === 0 && (
+        <p className="text-text-muted text-[11px]">No activity recorded in this tick</p>
+      )}
+    </div>
+  );
+}
+
+// -- Tick Timeline -----------------------------------------------------------
+
+function TickTimeline({
+  ticks,
+  selectedTickId,
+  onSelectTick,
+}: {
+  ticks: TickRow[];
+  selectedTickId: string | 'live';
+  onSelectTick: (id: string) => void;
+}) {
+  const [summary, setSummary] = useState<TickSummary | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+
+  // Compute durations for the bar segments
+  const ticksWithDuration = ticks.map((t) => ({
+    ...t,
+    durationMs:
+      t.completedAt
+        ? new Date(t.completedAt).getTime() - new Date(t.firedAt).getTime()
+        : null,
+  }));
+
+  // Find max duration for proportional widths
+  const maxDuration = Math.max(
+    ...ticksWithDuration.map((t) => t.durationMs ?? 0),
+    1,
+  );
+
+  const fetchSummary = useCallback((tickId: string) => {
+    setLoadingSummary(true);
+    setSummary(null);
+    void (ticksApi.summary(tickId) as Promise<{ data?: TickSummary }>)
+      .then((res) => {
+        if (res.data) setSummary(res.data);
+      })
+      .catch((err) => {
+        console.error('[OBSERVER] Tick summary fetch failed:', err);
+      })
+      .finally(() => setLoadingSummary(false));
+  }, []);
+
+  const handleClickTick = (tickId: string) => {
+    onSelectTick(tickId);
+    fetchSummary(tickId);
+  };
+
+  if (ticks.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-text-muted uppercase tracking-widest">
+          Tick Timeline
+        </span>
+        <span className="text-[10px] text-text-muted">
+          Last {ticks.length} ticks
+        </span>
+      </div>
+
+      {/* Timeline bar */}
+      <div className="flex items-end gap-0.5 h-8">
+        {ticksWithDuration.map((t) => {
+          const isSelected = selectedTickId === t.id;
+          const widthPct = Math.max(
+            ((t.durationMs ?? maxDuration * 0.1) / maxDuration) * 100,
+            5,
+          );
+          return (
+            <button
+              key={t.id}
+              title={`${formatTimestamp(t.firedAt)} — ${tickDurationLabel(t.durationMs)}`}
+              onClick={() => handleClickTick(t.id)}
+              className={`relative flex-shrink-0 rounded-sm transition-all cursor-pointer hover:opacity-80 ${tickDurationColor(t.durationMs)} ${
+                isSelected
+                  ? 'ring-1 ring-gold ring-offset-1 ring-offset-capitol-deep'
+                  : 'opacity-60 hover:opacity-100'
+              }`}
+              style={{
+                width: `${widthPct}%`,
+                minWidth: '20px',
+                height: isSelected ? '100%' : '70%',
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 text-[9px] text-text-muted">
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm bg-green-500" /> &lt;60s
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm bg-yellow-500" /> 60-180s
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-sm bg-red-500" /> &gt;180s
+        </span>
+      </div>
+
+      {/* Breakdown panel */}
+      {selectedTickId !== 'live' && (
+        <div className="rounded border border-border/40 bg-black/20 p-2.5">
+          {loadingSummary ? (
+            <p className="text-text-muted text-[11px] animate-pulse">
+              Loading tick summary...
+            </p>
+          ) : summary ? (
+            <TickBreakdown summary={summary} />
+          ) : (
+            <p className="text-text-muted text-[11px]">
+              Select a tick to see its breakdown
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // -- Main Page ---------------------------------------------------------------
 
 export function ObserverPage() {
@@ -202,9 +425,9 @@ export function ObserverPage() {
       .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
   }, []);
 
-  // Load tick options
+  // Load tick options (10 for the timeline)
   useEffect(() => {
-    void (ticksApi.recent(5) as Promise<{ data?: TickRow[] }>)
+    void (ticksApi.recent(10) as Promise<{ data?: TickRow[] }>)
       .then((res) => {
         if (res.data) setTicks(res.data);
       })
@@ -341,6 +564,18 @@ export function ObserverPage() {
               </button>
             )}
           </div>
+
+          {/* Tick Timeline */}
+          {ticks.length > 0 && (
+            <div className="flex-shrink-0 px-3 py-2.5 border-b border-border/40 bg-black/10">
+              <TickTimeline
+                ticks={ticks}
+                selectedTickId={selectedTickId}
+                onSelectTick={(id) => setSelectedTickId(id)}
+              />
+            </div>
+          )}
+
           {/* Feed */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {decisions.length === 0 && (

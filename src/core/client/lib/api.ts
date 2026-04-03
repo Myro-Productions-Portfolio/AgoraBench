@@ -290,6 +290,7 @@ export const decisionsApi = {
 /* Tick endpoints (public) */
 export const ticksApi = {
   recent: (limit = 5) => request(`/ticks?limit=${limit}`),
+  summary: (tickId: string) => request(`/ticks/${tickId}/summary`),
 };
 
 /* DEMOS benchmark endpoints */

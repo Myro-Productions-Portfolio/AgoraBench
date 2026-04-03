@@ -5,7 +5,7 @@ import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
 
-type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments';
+type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge';
 
 interface ResearcherRequest {
   id: string;
@@ -90,6 +90,13 @@ interface RuntimeConfig {
   maxOutputLengthTokens: number;
   maxBillsPerAgentPerTick: number;
   maxCampaignSpeechesPerTick: number;
+  /* AGGE (God Agent) */
+  aggeTickIntervalMs: number;
+  aggeAgentsPerTickMin: number;
+  aggeAgentsPerTickMax: number;
+  aggeTemperature: number;
+  aggeInferenceUrl: string;
+  aggeInferenceModel: string;
 }
 
 interface EconomySettings {
@@ -143,6 +150,7 @@ const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'users',       label: 'Users',           icon: '\u2630' },
   { id: 'database',    label: 'Database',        icon: '\u26A0' },
   { id: 'experiments', label: 'Experiments',     icon: '\u229E' },
+  { id: 'agge',        label: 'AGGE',            icon: '\u2726' },
 ];
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -380,6 +388,18 @@ export function AdminPage() {
   const [exportingDataset, setExportingDataset] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  /* AGGE state */
+  const [aggeInterventions, setAggeInterventions] = useState<Array<{
+    id: string;
+    agentId: string;
+    action: string;
+    previousMod: string | null;
+    newMod: string | null;
+    reasoning: string;
+    createdAt: string;
+  }>>([]);
+  const [aggeTriggering, setAggeTriggering] = useState(false);
+
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
     localStorage.setItem('admin_active_tab', tab);
@@ -486,6 +506,14 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchExportCounts failed:', err); }
   }, []);
 
+  const fetchAggeInterventions = useCallback(async () => {
+    try {
+      const res = await adminApi.godInterventions();
+      const data = Array.isArray(res) ? res : (res.data ?? []);
+      setAggeInterventions(data as typeof aggeInterventions);
+    } catch (err) { console.error('[ADMIN] fetchAggeInterventions failed:', err); }
+  }, []);
+
   useEffect(() => {
     void fetchStatus();
     void fetchDecisions();
@@ -497,6 +525,7 @@ export function AdminPage() {
     void fetchUsers();
     void fetchResearcherRequests();
     void fetchExportCounts();
+    void fetchAggeInterventions();
 
     const refetchLight = () => {
       void fetchStatus();
@@ -1917,6 +1946,191 @@ export function AdminPage() {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'agge' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-serif text-stone text-xl font-semibold">AGGE (God Agent)</h2>
+              <p className="text-text-muted text-sm mt-1">Configure and monitor the Autonomous Government Game Engine.</p>
+            </div>
+
+            {/* Inference Config */}
+            {simConfig && (
+              <CollapsibleSection id="agge_inference" title="Inference Config" badge={savingBadge}>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-text-secondary">Inference URL</label>
+                    <input
+                      type="text"
+                      value={simConfig.aggeInferenceUrl ?? ''}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceUrl: e.target.value } : c)}
+                      onBlur={() => void saveConfig({ aggeInferenceUrl: simConfig.aggeInferenceUrl })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
+                      placeholder="http://localhost:8000/v1"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-text-secondary">Model Name</label>
+                    <input
+                      type="text"
+                      value={simConfig.aggeInferenceModel ?? ''}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceModel: e.target.value } : c)}
+                      onBlur={() => void saveConfig({ aggeInferenceModel: simConfig.aggeInferenceModel })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
+                      placeholder="meta-llama/Llama-3.1-8B-Instruct"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Temperature</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.aggeTemperature?.toFixed(2) ?? '1.00'}</span>
+                    </div>
+                    <input
+                      type="range" min={50} max={200} step={5}
+                      value={Math.round((simConfig.aggeTemperature ?? 1) * 100)}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, aggeTemperature: parseInt(e.target.value) / 100 } : c)}
+                      onMouseUp={() => void saveConfig({ aggeTemperature: simConfig.aggeTemperature })}
+                      onTouchEnd={() => void saveConfig({ aggeTemperature: simConfig.aggeTemperature })}
+                      className="w-full accent-gold"
+                    />
+                    <p className="text-xs text-text-muted">Controls randomness of AGGE decisions (0.50 - 2.00).</p>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Timing */}
+            {simConfig && (
+              <CollapsibleSection id="agge_timing" title="Timing" badge={savingBadge}>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">AGGE Tick Interval</label>
+                      <span className="text-sm text-gold font-mono">{msToLabel(simConfig.aggeTickIntervalMs ?? 3600000)}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {([
+                        { label: '15m', ms: 900_000 },
+                        { label: '30m', ms: 1_800_000 },
+                        { label: '1h', ms: 3_600_000 },
+                        { label: '2h', ms: 7_200_000 },
+                        { label: '4h', ms: 14_400_000 },
+                      ]).map(({ label, ms }) => (
+                        <button
+                          key={ms}
+                          onClick={() => void saveConfig({ aggeTickIntervalMs: ms })}
+                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${
+                            (simConfig.aggeTickIntervalMs ?? 3600000) === ms
+                              ? 'bg-gold/20 text-gold border-gold/40'
+                              : 'bg-white/5 text-text-muted border-border hover:bg-white/10'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-text-muted">How often AGGE evaluates and intervenes in the simulation.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-text-secondary">Agents Per Tick (Min)</label>
+                      <input
+                        type="number" min={1} max={5}
+                        value={simConfig.aggeAgentsPerTickMin ?? 1}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(5, parseInt(e.target.value) || 1));
+                          setSimConfig((c) => c ? { ...c, aggeAgentsPerTickMin: v } : c);
+                        }}
+                        onBlur={() => void saveConfig({ aggeAgentsPerTickMin: simConfig.aggeAgentsPerTickMin })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-text-secondary">Agents Per Tick (Max)</label>
+                      <input
+                        type="number" min={1} max={10}
+                        value={simConfig.aggeAgentsPerTickMax ?? 3}
+                        onChange={(e) => {
+                          const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
+                          setSimConfig((c) => c ? { ...c, aggeAgentsPerTickMax: v } : c);
+                        }}
+                        onBlur={() => void saveConfig({ aggeAgentsPerTickMax: simConfig.aggeAgentsPerTickMax })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Controls */}
+            <CollapsibleSection id="agge_controls" title="Controls">
+              <div className="flex flex-wrap gap-3">
+                <AdminButton
+                  onClick={async () => {
+                    setAggeTriggering(true);
+                    try {
+                      await adminApi.godTick();
+                      flash('AGGE tick triggered');
+                      void fetchAggeInterventions();
+                    } catch (err) {
+                      console.error('[ADMIN] godTick failed:', err);
+                      flash('AGGE tick failed');
+                    } finally {
+                      setAggeTriggering(false);
+                    }
+                  }}
+                  disabled={aggeTriggering}
+                  variant="gold"
+                >
+                  {aggeTriggering ? 'Triggering...' : 'Trigger Manual AGGE Tick'}
+                </AdminButton>
+                <AdminButton onClick={() => void fetchAggeInterventions()} variant="default">
+                  Refresh Interventions
+                </AdminButton>
+              </div>
+            </CollapsibleSection>
+
+            {/* Recent Interventions */}
+            <CollapsibleSection id="agge_interventions" title={`Recent Interventions (${aggeInterventions.length})`}>
+              <div className="rounded-lg border border-border overflow-hidden">
+                {aggeInterventions.length === 0 ? (
+                  <p className="p-4 text-text-muted text-sm">No AGGE interventions recorded yet.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="border-b border-border">
+                        <tr>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">Agent</th>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">Action</th>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">Previous Mod</th>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">New Mod</th>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">Reasoning</th>
+                          <th className="text-left px-4 py-2 text-text-muted font-normal">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aggeInterventions.slice(0, 20).map((iv) => (
+                          <tr key={iv.id} className="border-b border-border/50 last:border-0">
+                            <td className="px-4 py-3 text-text-primary whitespace-nowrap">{iv.agentId.slice(0, 8)}</td>
+                            <td className="px-4 py-3 text-text-secondary">{iv.action}</td>
+                            <td className="px-4 py-3 text-text-muted">{iv.previousMod ?? '-'}</td>
+                            <td className="px-4 py-3 text-text-secondary">{iv.newMod ?? '-'}</td>
+                            <td className="px-4 py-3 text-text-muted max-w-xs truncate">{iv.reasoning}</td>
+                            <td className="px-4 py-3 text-text-muted whitespace-nowrap">
+                              {new Date(iv.createdAt).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </CollapsibleSection>
           </div>
         )}
       </div>

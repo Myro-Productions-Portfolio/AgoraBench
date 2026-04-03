@@ -214,6 +214,8 @@ export const adminApi = {
   rejectResearcherRequest: (id: string) =>
     request(`/admin/researcher-requests/${id}/reject`, { method: 'POST' }),
   exportCounts: () => request('/admin/export/counts'),
+  godTick: () => request('/admin/god/tick', { method: 'POST' }),
+  godInterventions: () => request('/admin/god/interventions'),
   downloadExport: async (dataset: string, filename: string): Promise<void> => {
     const token = _tokenProvider ? await _tokenProvider() : null;
     const res = await fetch(`/api/admin/export/${dataset}`, {

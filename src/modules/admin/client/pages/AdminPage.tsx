@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { adminApi, agentsApi, providersApi } from '@core/client/lib/api';
+import { adminApi, agentsApi, providersApi, healthApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
 
-type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge';
+type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'health';
 
 interface ResearcherRequest {
   id: string;
@@ -151,6 +151,7 @@ const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'database',    label: 'Database',        icon: '\u26A0' },
   { id: 'experiments', label: 'Experiments',     icon: '\u229E' },
   { id: 'agge',        label: 'AGGE',            icon: '\u2726' },
+  { id: 'health',      label: 'Health',          icon: '\u2661' },
 ];
 
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
@@ -400,6 +401,18 @@ export function AdminPage() {
   }>>([]);
   const [aggeTriggering, setAggeTriggering] = useState(false);
 
+  /* Health state */
+  const [healthTicks, setHealthTicks] = useState<Array<{ id: string; firedAt: string; completedAt: string; durationMs: number | null }>>([]);
+  const [healthLatency, setHealthLatency] = useState<{
+    avg: number; p50: number; p95: number; p99: number; count: number;
+    byProvider: Record<string, { avg: number; count: number }>;
+    byPhase: Record<string, { avg: number; count: number }>;
+  } | null>(null);
+  const [healthErrors, setHealthErrors] = useState<{
+    total: number; errors: number; rate: number; hours: number;
+    byPhase: Record<string, number>;
+  } | null>(null);
+
   const handleTabChange = (tab: AdminTab) => {
     setActiveTab(tab);
     localStorage.setItem('admin_active_tab', tab);
@@ -514,6 +527,26 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchAggeInterventions failed:', err); }
   }, []);
 
+  const fetchHealth = useCallback(async () => {
+    try {
+      const [ticksRes, latencyRes, errorsRes] = await Promise.all([
+        healthApi.ticks(20),
+        healthApi.latency(100),
+        healthApi.errors(24),
+      ]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tr = ticksRes as any;
+      const ticksData = Array.isArray(tr) ? tr : (tr.data ?? []);
+      setHealthTicks(ticksData as typeof healthTicks);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lr = latencyRes as any;
+      if (lr.data) setHealthLatency(lr.data as NonNullable<typeof healthLatency>);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const er = errorsRes as any;
+      if (er.data) setHealthErrors(er.data as NonNullable<typeof healthErrors>);
+    } catch (err) { console.error('[ADMIN] fetchHealth failed:', err); }
+  }, []);
+
   useEffect(() => {
     void fetchStatus();
     void fetchDecisions();
@@ -526,6 +559,7 @@ export function AdminPage() {
     void fetchResearcherRequests();
     void fetchExportCounts();
     void fetchAggeInterventions();
+    void fetchHealth();
 
     const refetchLight = () => {
       void fetchStatus();
@@ -2130,6 +2164,164 @@ export function AdminPage() {
                   </div>
                 )}
               </div>
+            </CollapsibleSection>
+          </div>
+        )}
+
+        {activeTab === 'health' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="font-serif text-stone text-xl font-semibold">Simulation Health</h2>
+              <AdminButton onClick={() => void fetchHealth()} variant="default">Refresh</AdminButton>
+            </div>
+
+            {/* Tick Timing */}
+            <CollapsibleSection id="health_ticks" title={`Tick Timing (last ${healthTicks.length})`}>
+              <p className="text-xs text-text-muted mb-2">
+                Current tick interval: <span className="text-gold font-mono">{simConfig?.tickIntervalMs ? `${simConfig.tickIntervalMs}ms` : '—'}</span>
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/50 text-text-muted text-left text-xs uppercase tracking-wider">
+                      <th className="px-4 py-2">Fired At</th>
+                      <th className="px-4 py-2">Completed At</th>
+                      <th className="px-4 py-2">Duration</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {healthTicks.length === 0 ? (
+                      <tr><td colSpan={3} className="px-4 py-6 text-center text-text-muted">No tick data yet</td></tr>
+                    ) : healthTicks.map((t) => (
+                      <tr key={t.id} className="border-b border-border/50 last:border-0">
+                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{new Date(t.firedAt).toLocaleTimeString()}</td>
+                        <td className="px-4 py-3 text-text-secondary whitespace-nowrap">{t.completedAt ? new Date(t.completedAt).toLocaleTimeString() : '—'}</td>
+                        <td className={`px-4 py-3 font-mono whitespace-nowrap ${t.durationMs != null && t.durationMs > 120000 ? 'text-red-400 font-bold' : 'text-text-primary'}`}>
+                          {t.durationMs != null ? `${t.durationMs.toLocaleString()}ms` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CollapsibleSection>
+
+            {/* LLM Latency */}
+            <CollapsibleSection id="health_latency" title="LLM Latency">
+              {healthLatency ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {(['avg', 'p50', 'p95', 'p99'] as const).map((k) => (
+                      <div key={k} className="bg-surface-secondary rounded-lg p-3">
+                        <div className="text-xs text-text-muted uppercase">{k}</div>
+                        <div className="text-lg font-mono text-gold">{Math.round(healthLatency[k])}ms</div>
+                      </div>
+                    ))}
+                    <div className="bg-surface-secondary rounded-lg p-3">
+                      <div className="text-xs text-text-muted uppercase">Decisions</div>
+                      <div className="text-lg font-mono text-text-primary">{healthLatency.count.toLocaleString()}</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* By Provider */}
+                    <div>
+                      <h4 className="text-sm text-text-muted uppercase tracking-wider mb-2">By Provider</h4>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border/50 text-text-muted text-left text-xs uppercase tracking-wider">
+                            <th className="px-3 py-2">Provider</th>
+                            <th className="px-3 py-2">Avg</th>
+                            <th className="px-3 py-2">Count</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(healthLatency.byProvider).map(([name, v]) => (
+                            <tr key={name} className="border-b border-border/50 last:border-0">
+                              <td className="px-3 py-2 text-text-primary">{name}</td>
+                              <td className="px-3 py-2 font-mono text-gold">{Math.round(v.avg)}ms</td>
+                              <td className="px-3 py-2 font-mono text-text-muted">{v.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* By Phase */}
+                    <div>
+                      <h4 className="text-sm text-text-muted uppercase tracking-wider mb-2">By Phase</h4>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border/50 text-text-muted text-left text-xs uppercase tracking-wider">
+                            <th className="px-3 py-2">Phase</th>
+                            <th className="px-3 py-2">Avg</th>
+                            <th className="px-3 py-2">Count</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(healthLatency.byPhase).map(([name, v]) => (
+                            <tr key={name} className="border-b border-border/50 last:border-0">
+                              <td className="px-3 py-2 text-text-primary">{name}</td>
+                              <td className="px-3 py-2 font-mono text-gold">{Math.round(v.avg)}ms</td>
+                              <td className="px-3 py-2 font-mono text-text-muted">{v.count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-text-muted text-sm">No latency data available</p>
+              )}
+            </CollapsibleSection>
+
+            {/* Error Rate */}
+            <CollapsibleSection id="health_errors" title="Error Rate (24h)">
+              {healthErrors ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-surface-secondary rounded-lg p-3">
+                      <div className="text-xs text-text-muted uppercase">Total Decisions</div>
+                      <div className="text-lg font-mono text-text-primary">{healthErrors.total.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-surface-secondary rounded-lg p-3">
+                      <div className="text-xs text-text-muted uppercase">Errors</div>
+                      <div className={`text-lg font-mono ${healthErrors.errors > 0 ? 'text-red-400' : 'text-green-400'}`}>{healthErrors.errors.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-surface-secondary rounded-lg p-3">
+                      <div className="text-xs text-text-muted uppercase">Error Rate</div>
+                      <div className={`text-lg font-mono ${healthErrors.rate > 5 ? 'text-red-400' : healthErrors.rate > 1 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {healthErrors.rate.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {Object.keys(healthErrors.byPhase).length > 0 && (
+                    <div>
+                      <h4 className="text-sm text-text-muted uppercase tracking-wider mb-2">Errors by Phase</h4>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-border/50 text-text-muted text-left text-xs uppercase tracking-wider">
+                            <th className="px-3 py-2">Phase</th>
+                            <th className="px-3 py-2">Errors</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(healthErrors.byPhase).map(([phase, count]) => (
+                            <tr key={phase} className="border-b border-border/50 last:border-0">
+                              <td className="px-3 py-2 text-text-primary">{phase}</td>
+                              <td className="px-3 py-2 font-mono text-red-400">{count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-text-muted text-sm">No error data available</p>
+              )}
             </CollapsibleSection>
           </div>
         )}

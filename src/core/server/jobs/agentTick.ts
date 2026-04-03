@@ -1982,42 +1982,35 @@ agentTickQueue.process(async () => {
 
       const allAgentNames = activeAgents.map((a) => a.displayName).join(', ');
 
-      // 5. Generate and insert replies
-      for (const { agent, thread, isMentioned } of replyCandidates) {
-        try {
-          // Fetch last 3 posts in thread for context
-          const recentPosts = await db
-            .select({
-              body: agentMessages.body,
-              authorName: agents.displayName,
-            })
+      /* Pre-fetch thread context for all candidates in parallel */
+      const candidateContexts = await Promise.all(
+        replyCandidates.map(async ({ agent, thread, isMentioned }) => {
+          const recentPosts = await db.select({ body: agentMessages.body, authorName: agents.displayName })
             .from(agentMessages)
             .innerJoin(agents, eq(agentMessages.fromAgentId, agents.id))
             .where(eq(agentMessages.threadId, thread.id))
             .orderBy(desc(agentMessages.createdAt))
             .limit(3);
 
-          const threadContext = recentPosts
-            .reverse()
-            .map((p) => `${p.authorName}: ${p.body}`)
-            .join('\n');
-
+          const threadContext = recentPosts.reverse().map((p) => `${p.authorName}: ${p.body}`).join('\n');
           const mentionContext = isMentioned ? 'You were mentioned in this thread. ' : '';
 
-          // How many posts are already in this thread?
-          const [countRow] = await db
-            .select({ n: sql<number>`COUNT(*)` })
-            .from(agentMessages)
-            .where(eq(agentMessages.threadId, thread.id));
+          const [countRow] = await db.select({ n: sql<number>`COUNT(*)` }).from(agentMessages).where(eq(agentMessages.threadId, thread.id));
           const postCount = Number(countRow?.n ?? 0);
 
-          // Resolution nudge: once a thread has 3+ posts, push toward conclusion
           const resolutionInstruction = postCount >= 3
             ? `This thread has had ${postCount} posts already. Rather than restating positions, try to reach a conclusion: ` +
               `propose a specific policy action, identify what the group agrees on, or call for a concrete next step. `
             : `Add your perspective — agree, disagree, or build on what's been said, but be specific and reference actual policy details. `;
 
-          const decision = await generateAgentDecision(
+          return { agent, thread, isMentioned, threadContext, mentionContext, resolutionInstruction };
+        }),
+      );
+
+      /* Fire all LLM calls in parallel */
+      const replyResults = await Promise.allSettled(
+        candidateContexts.map(({ agent, thread, mentionContext, threadContext, resolutionInstruction }) =>
+          generateAgentDecision(
             agent,
             `${mentionContext}Reply to this forum thread in the Agora Bench public forum.\n\n` +
             `Thread: "${thread.title}" [${thread.category}]\n\n` +
@@ -2028,8 +2021,20 @@ agentTickQueue.process(async () => {
             `Use @DisplayName to mention agents if relevant. ` +
             `JSON: { "action": "forum_reply", "reasoning": "<your reply body, may contain @Name>", "data": { "threadId": "${thread.id}", "mentions": ["Name1"] } }`,
             'forum_reply',
-          );
+          ).then((decision) => ({ agent, thread, decision })),
+        ),
+      );
 
+      /* Process results */
+      for (const result of replyResults) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 17: Forum reply rejected:', result.reason);
+          continue;
+        }
+        const { agent, thread, decision } = result.value;
+
+        try {
+          if (decision.action === 'idle') continue;
           if (decision.action !== 'forum_reply') continue;
 
           const body = decision.reasoning;
@@ -2037,63 +2042,20 @@ agentTickQueue.process(async () => {
 
           const mentionedNames = (decision.data?.['mentions'] as string[] | undefined) ?? [];
 
-          // Find opening post ID for parentId
-          const [openingPost] = await db
-            .select({ id: agentMessages.id })
-            .from(agentMessages)
-            .where(eq(agentMessages.threadId, thread.id))
-            .orderBy(agentMessages.createdAt)
-            .limit(1);
+          const [openingPost] = await db.select({ id: agentMessages.id }).from(agentMessages)
+            .where(eq(agentMessages.threadId, thread.id)).orderBy(agentMessages.createdAt).limit(1);
 
-          // Insert reply
-          await db.insert(agentMessages).values({
-            type: 'forum_reply',
-            fromAgentId: agent.id,
-            body,
-            threadId: thread.id,
-            parentId: openingPost?.id ?? null,
-            isPublic: true,
-          });
+          await db.insert(agentMessages).values({ type: 'forum_reply', fromAgentId: agent.id, body, threadId: thread.id, parentId: openingPost?.id ?? null, isPublic: true });
+          await db.update(forumThreads).set({ replyCount: sql`${forumThreads.replyCount} + 1`, lastActivityAt: new Date() }).where(eq(forumThreads.id, thread.id));
 
-          // Update thread stats
-          await db
-            .update(forumThreads)
-            .set({
-              replyCount: sql`${forumThreads.replyCount} + 1`,
-              lastActivityAt: new Date(),
-            })
-            .where(eq(forumThreads.id, thread.id));
-
-          // Seed pending_mentions for @mentioned agents
           for (const name of mentionedNames) {
-            const mentioned = activeAgents.find(
-              (a) => a.displayName.toLowerCase() === name.toLowerCase(),
-            );
+            const mentioned = activeAgents.find((a) => a.displayName.toLowerCase() === name.toLowerCase());
             if (!mentioned || mentioned.id === agent.id) continue;
-            await db.insert(pendingMentions).values({
-              mentionedAgentId: mentioned.id,
-              threadId: thread.id,
-              mentionerName: agent.displayName,
-            });
+            await db.insert(pendingMentions).values({ mentionedAgentId: mentioned.id, threadId: thread.id, mentionerName: agent.displayName });
           }
 
-          // Clear replying agent's pending_mentions for this thread
-          await db
-            .delete(pendingMentions)
-            .where(
-              and(
-                eq(pendingMentions.mentionedAgentId, agent.id),
-                eq(pendingMentions.threadId, thread.id),
-              ),
-            );
-
-          broadcast('forum:reply', {
-            threadId: thread.id,
-            agentId: agent.id,
-            agentName: agent.displayName,
-            mentionedNames,
-          });
-
+          await db.delete(pendingMentions).where(and(eq(pendingMentions.mentionedAgentId, agent.id), eq(pendingMentions.threadId, thread.id)));
+          broadcast('forum:reply', { threadId: thread.id, agentId: agent.id, agentName: agent.displayName, mentionedNames });
           console.warn(
             `[SIMULATION] ${agent.displayName} replied in "${thread.title.slice(0, 60)}"` +
             (mentionedNames.length ? ` mentioning ${mentionedNames.join(', ')}` : ''),

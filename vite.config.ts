@@ -1,9 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  return {
   plugins: [
     react(),
     VitePWA({
@@ -60,12 +62,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: process.env.VITE_HOST === 'true' ? '0.0.0.0' : undefined,
+    host: env.VITE_HOST === 'true' ? '0.0.0.0' : undefined,
     allowedHosts: ['agorabench.com', 'www.agorabench.com'],
-    hmr: process.env.VITE_HMR_HOST
+    hmr: env.VITE_HMR_HOST
       ? {
-          protocol: process.env.VITE_HMR_PROTOCOL || 'ws',
-          host: process.env.VITE_HMR_HOST,
+          protocol: env.VITE_HMR_PROTOCOL || 'ws',
+          host: env.VITE_HMR_HOST,
         }
       : {
           protocol: 'wss',
@@ -88,4 +90,5 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
   },
+};
 });

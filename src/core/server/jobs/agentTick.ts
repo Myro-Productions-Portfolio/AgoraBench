@@ -1734,77 +1734,72 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(and(eq(campaigns.status, 'active'), inArray(campaigns.electionId, campaigningElectionIds)));
 
+      /* Filter eligible campaigns upfront */
+      const eligibleCampaigns = activeCampaigns.filter((campaign) => {
+        if (Math.random() >= rc.campaignSpeechChance) return false;
+        const election = activeCampaigningElections.find((e) => e.id === campaign.electionId);
+        if (!election) return false;
+        const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId);
+        if (!campaignAgent) return false;
+        return true;
+      });
+
+      const results = await Promise.allSettled(
+        eligibleCampaigns.map((campaign) => {
+          const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
+          const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId)!;
+
+          const contextMessage =
+            `You are campaigning for ${election.positionType}. Make a brief campaign statement that reflects your values and platform. ` +
+            `Respond with: {"action":"campaign_speech","reasoning":"your one-line speech","data":{"boost":50}}`;
+
+          return generateAgentDecision(
+            {
+              id: campaignAgent.id,
+              displayName: campaignAgent.displayName,
+              alignment: campaignAgent.alignment,
+              modelProvider: rc.providerOverride === 'default' ? campaignAgent.modelProvider : rc.providerOverride,
+              personality: campaignAgent.personality,
+              model: campaignAgent.model,
+              ownerUserId: campaignAgent.ownerUserId,
+            },
+            contextMessage,
+            'campaigning',
+          ).then((decision) => ({ campaign, election, campaignAgent, decision }));
+        }),
+      );
+
       const speechCountThisTick = new Map<string, number>();
 
-      for (const campaign of activeCampaigns) {
-        if ((speechCountThisTick.get(campaign.agentId) ?? 0) >= rc.maxCampaignSpeechesPerTick) continue;
-        if (Math.random() >= rc.campaignSpeechChance) continue;
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 15: Campaign speech rejected:', result.reason);
+          continue;
+        }
+        const { campaign, election, campaignAgent, decision } = result.value;
 
-        const election = activeCampaigningElections.find((e) => e.id === campaign.electionId);
-        if (!election) continue;
-
-        const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId);
-        if (!campaignAgent) continue;
-
-        const contextMessage =
-          `You are campaigning for ${election.positionType}. Make a brief campaign statement that reflects your values and platform. ` +
-          `Respond with: {"action":"campaign_speech","reasoning":"your one-line speech","data":{"boost":50}}`;
-
-        const decision = await generateAgentDecision(
-          {
-            id: campaignAgent.id,
-            displayName: campaignAgent.displayName,
-            alignment: campaignAgent.alignment,
-            modelProvider: rc.providerOverride === 'default' ? campaignAgent.modelProvider : rc.providerOverride,
-            personality: campaignAgent.personality,
-            model: campaignAgent.model,
-            ownerUserId: campaignAgent.ownerUserId,
-          },
-          contextMessage,
-          'campaigning',
-        );
-
+        if (decision.action === 'idle') continue;
         if (decision.action !== 'campaign_speech') continue;
+
+        /* Enforce max speeches per tick */
+        if ((speechCountThisTick.get(campaign.agentId) ?? 0) >= rc.maxCampaignSpeechesPerTick) continue;
 
         const rawBoost = Number(decision.data?.['boost'] ?? 50);
         const boost = Math.max(10, Math.min(100, rawBoost));
 
-        await db
-          .update(campaigns)
-          .set({ contributions: sql`${campaigns.contributions} + ${boost}` })
-          .where(eq(campaigns.id, campaign.id));
-
+        await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
         await db.insert(activityEvents).values({
-          type: 'campaign_speech',
-          agentId: campaignAgent.id,
-          title: 'Campaign speech',
+          type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
           description: decision.reasoning,
-          metadata: JSON.stringify({
-            campaignId: campaign.id,
-            electionId: election.id,
-            positionType: election.positionType,
-            boost,
-          }),
+          metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, boost }),
         });
-
         broadcast('campaign:speech', {
-          campaignId: campaign.id,
-          electionId: election.id,
-          agentId: campaignAgent.id,
-          agentName: campaignAgent.displayName,
-          positionType: election.positionType,
-          speech: decision.reasoning,
-          boost,
+          campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
+          agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost,
         });
-
         speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
-
-        /* Approval: campaign speech */
         await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
-
-        console.warn(
-          `[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`,
-        );
+        console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
       }
     }
   } catch (err) {

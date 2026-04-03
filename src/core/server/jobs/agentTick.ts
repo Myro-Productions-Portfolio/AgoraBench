@@ -780,70 +780,67 @@ agentTickQueue.process(async () => {
       console.warn('[SIMULATION] Phase 7: No vetoed bills — skipping.');
     } else {
       for (const bill of vetoBills) {
-        for (const agent of activeAgents) {
-          /* Check if agent already cast override vote */
-          const existingOverride = await db
-            .select()
-            .from(billVotes)
-            .where(
-              and(
-                eq(billVotes.billId, bill.id),
-                eq(billVotes.voterId, agent.id),
-                inArray(billVotes.choice, ['override_yea', 'override_nay']),
-              ),
-            )
-            .limit(1);
-
-          if (existingOverride.length > 0) continue;
-
-          const contextMessage =
-            `The President has vetoed "${bill.title}". ` +
-            `Summary: ${bill.summary}. ` +
-            `The Legislature can override the veto with a 2/3 supermajority. ` +
-            `Vote to override the veto or sustain it. ` +
-            `Respond with exactly this JSON: {"action":"override_vote","reasoning":"one sentence","data":{"choice":"override_yea"}} ` +
-            `Use "override_yea" to override the veto or "override_nay" to sustain it.`;
-
-          const decision = await generateAgentDecision(
-            {
-              id: agent.id,
-              displayName: agent.displayName,
-              alignment: agent.alignment,
-              modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
-              personality: agent.personality,
-              model: agent.model,
-              ownerUserId: agent.ownerUserId,
-            },
-            contextMessage,
-            'veto_override',
+        /* Pre-fetch existing override votes for this bill */
+        const existingOverrides = await db
+          .select({ voterId: billVotes.voterId })
+          .from(billVotes)
+          .where(
+            and(
+              eq(billVotes.billId, bill.id),
+              inArray(billVotes.choice, ['override_yea', 'override_nay']),
+            ),
           );
+        const alreadyVoted = new Set(existingOverrides.map((v) => v.voterId));
 
-          if (decision.action === 'override_vote' && decision.data) {
-            const rawChoice = String(decision.data['choice'] ?? 'override_nay');
-            const overrideChoice = rawChoice.includes('override_yea') ? 'override_yea' : 'override_nay';
+        const agentsToVote = activeAgents.filter((a) => !alreadyVoted.has(a.id));
+        if (agentsToVote.length === 0) continue;
 
-            await db.insert(billVotes).values({
-              billId: bill.id,
-              voterId: agent.id,
-              choice: overrideChoice,
-            });
+        const contextMessage =
+          `The President has vetoed "${bill.title}". ` +
+          `Summary: ${bill.summary}. ` +
+          `The Legislature can override the veto with a 2/3 supermajority. ` +
+          `Vote to override the veto or sustain it. ` +
+          `Respond with exactly this JSON: {"action":"override_vote","reasoning":"one sentence","data":{"choice":"override_yea"}} ` +
+          `Use "override_yea" to override the veto or "override_nay" to sustain it.`;
 
-            await db.insert(activityEvents).values({
-              type: 'veto_override_attempt',
-              agentId: agent.id,
-              title: 'Veto override vote',
-              description: `${agent.displayName} voted ${overrideChoice === 'override_yea' ? 'OVERRIDE' : 'SUSTAIN'} on "${bill.title}"`,
-              metadata: JSON.stringify({
-                billId: bill.id,
-                choice: overrideChoice,
-                reasoning: decision.reasoning,
-              }),
-            });
+        const results = await Promise.allSettled(
+          agentsToVote.map((agent) =>
+            generateAgentDecision(
+              {
+                id: agent.id,
+                displayName: agent.displayName,
+                alignment: agent.alignment,
+                modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
+                personality: agent.personality,
+                model: agent.model,
+                ownerUserId: agent.ownerUserId,
+              },
+              contextMessage,
+              'veto_override',
+            ).then((decision) => ({ agent, decision })),
+          ),
+        );
 
-            console.warn(
-              `[SIMULATION] ${agent.displayName} voted ${overrideChoice} on veto of "${bill.title}"`,
-            );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            console.warn('[SIMULATION] Phase 7: Agent override vote rejected:', result.reason);
+            continue;
           }
+          const { agent, decision } = result.value;
+
+          if (decision.action === 'idle') continue;
+          if (decision.action !== 'override_vote' || !decision.data) continue;
+
+          const rawChoice = String(decision.data['choice'] ?? 'override_nay');
+          const overrideChoice = rawChoice.includes('override_yea') ? 'override_yea' : 'override_nay';
+
+          await db.insert(billVotes).values({ billId: bill.id, voterId: agent.id, choice: overrideChoice });
+          await db.insert(activityEvents).values({
+            type: 'veto_override_attempt', agentId: agent.id, title: 'Veto override vote',
+            description: `${agent.displayName} voted ${overrideChoice === 'override_yea' ? 'OVERRIDE' : 'SUSTAIN'} on "${bill.title}"`,
+            metadata: JSON.stringify({ billId: bill.id, choice: overrideChoice, reasoning: decision.reasoning }),
+          });
+          console.warn(`[SIMULATION] ${agent.displayName} voted ${overrideChoice} on veto of "${bill.title}"`);
         }
       }
     }

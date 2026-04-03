@@ -25,6 +25,45 @@ import { eq, desc, or, and, isNotNull, sql } from 'drizzle-orm';
 
 const router = Router();
 
+/* GET /api/agents/relationships/summary -- Top alliances and rivalries across all agents */
+router.get('/agents/relationships/summary', async (_req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        agentId: agentRelationships.agentId,
+        agentName: sql<string>`a1."display_name"`,
+        agentAlignment: sql<string>`a1."alignment"`,
+        targetId: agentRelationships.targetAgentId,
+        targetName: sql<string>`a2."display_name"`,
+        targetAlignment: sql<string>`a2."alignment"`,
+        voteAlignment: agentRelationships.voteAlignment,
+        sentiment: agentRelationships.sentiment,
+      })
+      .from(agentRelationships)
+      .innerJoin(sql`agents a1`, sql`a1.id = ${agentRelationships.agentId}`)
+      .innerJoin(sql`agents a2`, sql`a2.id = ${agentRelationships.targetAgentId}`);
+
+    // Deduplicate: keep only one direction per pair (higher agentId first)
+    const pairMap = new Map<string, typeof rows[number]>();
+    for (const row of rows) {
+      const key = [row.agentId, row.targetId].sort().join('|');
+      const existing = pairMap.get(key);
+      if (!existing || row.voteAlignment > existing.voteAlignment) {
+        pairMap.set(key, row);
+      }
+    }
+    const unique = Array.from(pairMap.values());
+
+    const sorted = unique.sort((a, b) => b.voteAlignment - a.voteAlignment);
+    const alliances = sorted.slice(0, 10);
+    const rivalries = sorted.slice(-10).reverse();
+
+    res.json({ success: true, data: { alliances, rivalries } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 /* GET /api/agents/:id/profile -- Comprehensive profile data in one call */
 router.get('/agents/:id/profile', async (req, res, next) => {
   try {

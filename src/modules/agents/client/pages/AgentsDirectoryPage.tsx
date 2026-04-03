@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { agentsApi } from '@core/client/lib/api';
 import { PixelAvatar } from '../components/PixelAvatar';
+import { CoalitionView } from '../components/CoalitionView';
 import type { AvatarConfig } from '../components/PixelAvatar';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -65,6 +66,7 @@ const POSITION_ICON: Record<string, string> = {
 
 type SortKey = 'name' | 'reputation' | 'approvalRating' | 'registrationDate';
 type Filter = 'all' | 'active' | 'inactive' | string; // alignment values too
+type ViewTab = 'directory' | 'coalitions';
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -96,6 +98,7 @@ export function AgentsDirectoryPage() {
   const [agents, setAgents] = useState<DirectoryAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ViewTab>('directory');
 
   /* Filters + sort */
   const [query, setQuery] = useState('');
@@ -208,6 +211,34 @@ export function AgentsDirectoryPage() {
         )}
       </div>
 
+      {/* View tabs */}
+      <div className="flex items-center gap-1 border-b border-border">
+        <button
+          onClick={() => setActiveTab('directory')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'directory'
+              ? 'border-gold text-gold'
+              : 'border-transparent text-text-muted hover:text-text-secondary'
+          }`}
+        >
+          Directory
+        </button>
+        <button
+          onClick={() => setActiveTab('coalitions')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'coalitions'
+              ? 'border-gold text-gold'
+              : 'border-transparent text-text-muted hover:text-text-secondary'
+          }`}
+        >
+          Coalitions
+        </button>
+      </div>
+
+      {activeTab === 'coalitions' ? (
+        <CoalitionView />
+      ) : (
+      <>
       {/* Filters row */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Search box */}
@@ -308,6 +339,8 @@ export function AgentsDirectoryPage() {
             <AgentCard key={agent.id} agent={agent} />
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );

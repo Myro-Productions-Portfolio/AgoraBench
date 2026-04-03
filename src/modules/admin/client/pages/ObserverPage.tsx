@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
-import { decisionsApi, ticksApi, legislationApi } from '@core/client/lib/api';
+import { decisionsApi, ticksApi, legislationApi, agentsApi } from '@core/client/lib/api';
 import { BillPipeline } from '@modules/legislation/client/components/BillPipeline';
 
 // -- Types -------------------------------------------------------------------
@@ -38,6 +38,17 @@ interface LawRow {
   billId: string;
   enactedDate: string;
   isActive: boolean;
+}
+
+interface RelationshipRow {
+  agentId: string;
+  agentName: string;
+  agentAlignment: string | null;
+  targetId: string;
+  targetName: string;
+  targetAlignment: string | null;
+  voteAlignment: number;
+  sentiment: number;
 }
 
 // -- Constants ---------------------------------------------------------------
@@ -176,6 +187,8 @@ export function ObserverPage() {
   const [billCounts, setBillCounts] = useState<Record<string, number>>({});
   const [activeVotes, setActiveVotes] = useState<BillRow[]>([]);
   const [recentLaws, setRecentLaws] = useState<LawRow[]>([]);
+  const [alliances, setAlliances] = useState<RelationshipRow[]>([]);
+  const [rivalries, setRivalries] = useState<RelationshipRow[]>([]);
   const { subscribe } = useWebSocket();
   const liveRef = useRef(selectedTickId === 'live');
   liveRef.current = selectedTickId === 'live';
@@ -250,6 +263,16 @@ export function ObserverPage() {
           if (res.data) setRecentLaws(res.data.slice(0, 8));
         })
         .catch((err) => { console.error('[OBSERVER] Data fetch failed:', err); });
+
+      // Fetch relationship summary (alliances + rivalries)
+      void (agentsApi.relationshipsSummary() as Promise<{ data?: { alliances: RelationshipRow[]; rivalries: RelationshipRow[] } }>)
+        .then((res) => {
+          if (res.data) {
+            setAlliances(res.data.alliances);
+            setRivalries(res.data.rivalries);
+          }
+        })
+        .catch((err) => { console.error('[OBSERVER] Relationships fetch failed:', err); });
     };
 
     loadRight();
@@ -407,6 +430,92 @@ export function ObserverPage() {
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* Strongest Alliances */}
+          <div className="rounded-lg border border-border bg-surface p-4">
+            <h2 className="font-serif text-sm font-semibold text-stone mb-3">
+              Strongest Alliances
+            </h2>
+            {alliances.length === 0 ? (
+              <p className="text-text-muted text-xs">No relationship data yet</p>
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto max-h-56">
+                {alliances.map((r, i) => {
+                  const a1Color =
+                    ALIGNMENT_COLORS[r.agentAlignment?.toLowerCase() ?? ''] ??
+                    'text-text-muted bg-border/10 border-border/30';
+                  const a2Color =
+                    ALIGNMENT_COLORS[r.targetAlignment?.toLowerCase() ?? ''] ??
+                    'text-text-muted bg-border/10 border-border/30';
+                  return (
+                    <div key={`alliance-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="text-text-primary truncate">{r.agentName}</span>
+                        {r.agentAlignment && (
+                          <span className={`badge border text-[9px] px-1 py-0 ${a1Color}`}>
+                            {r.agentAlignment}
+                          </span>
+                        )}
+                        <span className="text-text-muted text-[10px]">+</span>
+                        <span className="text-text-primary truncate">{r.targetName}</span>
+                        {r.targetAlignment && (
+                          <span className={`badge border text-[9px] px-1 py-0 ${a2Color}`}>
+                            {r.targetAlignment}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-green-400 font-mono flex-shrink-0 text-[10px]">
+                        {Math.round(r.voteAlignment * 100)}%
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Biggest Rivalries */}
+          <div className="rounded-lg border border-red-900/30 bg-red-950/10 p-4">
+            <h2 className="font-serif text-sm font-semibold text-red-400 mb-3">
+              Biggest Rivalries
+            </h2>
+            {rivalries.length === 0 ? (
+              <p className="text-text-muted text-xs">No relationship data yet</p>
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto max-h-56">
+                {rivalries.map((r, i) => {
+                  const a1Color =
+                    ALIGNMENT_COLORS[r.agentAlignment?.toLowerCase() ?? ''] ??
+                    'text-text-muted bg-border/10 border-border/30';
+                  const a2Color =
+                    ALIGNMENT_COLORS[r.targetAlignment?.toLowerCase() ?? ''] ??
+                    'text-text-muted bg-border/10 border-border/30';
+                  return (
+                    <div key={`rivalry-${i}`} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className="text-text-primary truncate">{r.agentName}</span>
+                        {r.agentAlignment && (
+                          <span className={`badge border text-[9px] px-1 py-0 ${a1Color}`}>
+                            {r.agentAlignment}
+                          </span>
+                        )}
+                        <span className="text-red-400 text-[10px]">vs</span>
+                        <span className="text-text-primary truncate">{r.targetName}</span>
+                        {r.targetAlignment && (
+                          <span className={`badge border text-[9px] px-1 py-0 ${a2Color}`}>
+                            {r.targetAlignment}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-red-400 font-mono flex-shrink-0 text-[10px]">
+                        {Math.round(r.voteAlignment * 100)}%
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

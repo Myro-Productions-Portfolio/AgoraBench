@@ -60,8 +60,12 @@ export const agentsApi = {
     request('/agents/register', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: (id: string) =>
     request(`/agents/${id}/profile`),
+  relationshipsSummary: () =>
+    request('/agents/relationships/summary'),
   customize: (id: string, avatarConfig: string) =>
     request(`/agents/${id}/customize`, { method: 'PUT', body: JSON.stringify({ avatarConfig }) }),
+  coalitions: () =>
+    request('/agents/coalitions'),
 };
 
 /* Campaign endpoints */

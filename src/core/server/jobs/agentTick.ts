@@ -357,46 +357,55 @@ agentTickQueue.process(async () => {
         .from(positions)
         .where(and(eq(positions.isActive, true), eq(positions.type, 'committee_chair')));
 
-      for (const bill of committeeBillsForReview) {
-        /* Find chair for this bill's committee */
-        const committeeChairPos = chairPositions.find((p) =>
-          p.title.toLowerCase().includes(bill.committee.toLowerCase()),
-        );
+      const reviewResults = await Promise.allSettled(
+        committeeBillsForReview.map((bill) => {
+          const committeeChairPos = chairPositions.find((p) =>
+            p.title.toLowerCase().includes(bill.committee.toLowerCase()),
+          );
+          if (!committeeChairPos) {
+            console.warn(`[SIMULATION] Phase 3: No chair for committee "${bill.committee}" — auto-advancing.`);
+            return Promise.resolve(null);
+          }
+          const chair = activeAgents.find((a) => a.id === committeeChairPos.agentId);
+          if (!chair) return Promise.resolve(null);
 
-        if (!committeeChairPos) {
-          console.warn(`[SIMULATION] Phase 3: No chair for committee "${bill.committee}" — auto-advancing.`);
+          const sponsor = activeAgents.find((a) => a.id === bill.sponsorId);
+          const sponsorName = sponsor?.displayName ?? 'Unknown';
+          const sponsorAlignment = sponsor?.alignment ?? 'unknown';
+
+          const contextMessage =
+            `You chair the ${bill.committee} Committee. Review this bill: "${bill.title}". ` +
+            `Summary: ${bill.summary}. Full text excerpt: ${bill.fullText.slice(0, 600)}. ` +
+            `Sponsored by ${sponsorName} (${sponsorAlignment}). ` +
+            `Options: approve as-is, amend the text, or table (kill) it. ` +
+            `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendedText":""}} ` +
+            `Use "approved", "amended", or "tabled" for decision. If amending, provide full revised text in amendedText. If not amending, leave amendedText empty.`;
+
+          return generateAgentDecision(
+            {
+              id: chair.id,
+              displayName: chair.displayName,
+              alignment: chair.alignment,
+              modelProvider: rc.providerOverride === 'default' ? chair.modelProvider : rc.providerOverride,
+              personality: chair.personality,
+              model: chair.model,
+              ownerUserId: chair.ownerUserId,
+            },
+            contextMessage,
+            'committee_review',
+          ).then((decision) => ({ bill, chair, decision }));
+        }),
+      );
+
+      /* Process results sequentially (DB writes are fast) */
+      for (const result of reviewResults) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 3: Committee review rejected:', result.reason);
           continue;
         }
-
-        const chair = activeAgents.find((a) => a.id === committeeChairPos.agentId);
-        if (!chair) continue;
-
-        /* Get sponsor info */
-        const sponsor = activeAgents.find((a) => a.id === bill.sponsorId);
-        const sponsorName = sponsor?.displayName ?? 'Unknown';
-        const sponsorAlignment = sponsor?.alignment ?? 'unknown';
-
-        const contextMessage =
-          `You chair the ${bill.committee} Committee. Review this bill: "${bill.title}". ` +
-          `Summary: ${bill.summary}. Full text excerpt: ${bill.fullText.slice(0, 600)}. ` +
-          `Sponsored by ${sponsorName} (${sponsorAlignment}). ` +
-          `Options: approve as-is, amend the text, or table (kill) it. ` +
-          `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendedText":""}} ` +
-          `Use "approved", "amended", or "tabled" for decision. If amending, provide full revised text in amendedText. If not amending, leave amendedText empty.`;
-
-        const decision = await generateAgentDecision(
-          {
-            id: chair.id,
-            displayName: chair.displayName,
-            alignment: chair.alignment,
-            modelProvider: rc.providerOverride === 'default' ? chair.modelProvider : rc.providerOverride,
-            personality: chair.personality,
-            model: chair.model,
-            ownerUserId: chair.ownerUserId,
-          },
-          contextMessage,
-          'committee_review',
-        );
+        const entry = result.value;
+        if (!entry) continue;
+        const { bill, chair, decision } = entry;
 
         if (decision.action !== 'committee_review' || !decision.data) continue;
 
@@ -404,99 +413,31 @@ agentTickQueue.process(async () => {
         const amendedText = String(decision.data['amendedText'] ?? '').trim();
 
         if (reviewDecision === 'tabled') {
-          await db
-            .update(bills)
-            .set({
-              status: 'tabled',
-              committeeDecision: 'tabled',
-              committeeChairId: chair.id,
-              lastActionAt: new Date(),
-            })
-            .where(eq(bills.id, bill.id));
-
+          await db.update(bills).set({ status: 'tabled', committeeDecision: 'tabled', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({
-            type: 'committee_review',
-            agentId: chair.id,
-            title: 'Bill tabled in committee',
+            type: 'committee_review', agentId: chair.id, title: 'Bill tabled in committee',
             description: `${chair.displayName} tabled "${bill.title}" in the ${bill.committee} Committee`,
-            metadata: JSON.stringify({
-              billId: bill.id,
-              decision: 'tabled',
-              reasoning: decision.reasoning,
-            }),
+            metadata: JSON.stringify({ billId: bill.id, decision: 'tabled', reasoning: decision.reasoning }),
           });
-
-          broadcast('bill:tabled', {
-            billId: bill.id,
-            title: bill.title,
-            chairId: chair.id,
-            chairName: chair.displayName,
-            committee: bill.committee,
-          });
-
+          broadcast('bill:tabled', { billId: bill.id, title: bill.title, chairId: chair.id, chairName: chair.displayName, committee: bill.committee });
           console.warn(`[SIMULATION] ${chair.displayName} tabled "${bill.title}" in committee`);
-
-          /* Approval: bill failed in committee */
-          await updateApproval(
-            bill.sponsorId,
-            -8,
-            'bill_failed_committee',
-            `Sponsored "${bill.title}" which was tabled in committee`,
-          );
+          await updateApproval(bill.sponsorId, -8, 'bill_failed_committee', `Sponsored "${bill.title}" which was tabled in committee`);
         } else if (reviewDecision === 'amended' && amendedText.length > 50) {
-          await db
-            .update(bills)
-            .set({
-              fullText: amendedText,
-              committeeDecision: 'amended',
-              committeeChairId: chair.id,
-              lastActionAt: new Date(),
-            })
-            .where(eq(bills.id, bill.id));
-
+          await db.update(bills).set({ fullText: amendedText, committeeDecision: 'amended', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({
-            type: 'committee_review',
-            agentId: chair.id,
-            title: 'Bill amended in committee',
+            type: 'committee_review', agentId: chair.id, title: 'Bill amended in committee',
             description: `${chair.displayName} amended "${bill.title}" in the ${bill.committee} Committee`,
-            metadata: JSON.stringify({
-              billId: bill.id,
-              decision: 'amended',
-              reasoning: decision.reasoning,
-            }),
+            metadata: JSON.stringify({ billId: bill.id, decision: 'amended', reasoning: decision.reasoning }),
           });
-
-          broadcast('bill:committee_amended', {
-            billId: bill.id,
-            title: bill.title,
-            chairId: chair.id,
-            chairName: chair.displayName,
-            committee: bill.committee,
-          });
-
+          broadcast('bill:committee_amended', { billId: bill.id, title: bill.title, chairId: chair.id, chairName: chair.displayName, committee: bill.committee });
           console.warn(`[SIMULATION] ${chair.displayName} amended "${bill.title}" in committee`);
         } else {
-          /* approved */
-          await db
-            .update(bills)
-            .set({
-              committeeDecision: 'approved',
-              committeeChairId: chair.id,
-            })
-            .where(eq(bills.id, bill.id));
-
+          await db.update(bills).set({ committeeDecision: 'approved', committeeChairId: chair.id }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({
-            type: 'committee_review',
-            agentId: chair.id,
-            title: 'Bill approved by committee',
+            type: 'committee_review', agentId: chair.id, title: 'Bill approved by committee',
             description: `${chair.displayName} approved "${bill.title}" out of the ${bill.committee} Committee`,
-            metadata: JSON.stringify({
-              billId: bill.id,
-              decision: 'approved',
-              reasoning: decision.reasoning,
-            }),
+            metadata: JSON.stringify({ billId: bill.id, decision: 'approved', reasoning: decision.reasoning }),
           });
-
           console.warn(`[SIMULATION] ${chair.displayName} approved "${bill.title}" from committee`);
         }
       }

@@ -283,6 +283,7 @@ router.get('/admin/providers', async (_req, res, next) => {
         providerName: apiProviders.providerName,
         isActive: apiProviders.isActive,
         ollamaBaseUrl: apiProviders.ollamaBaseUrl,
+        defaultModel: apiProviders.defaultModel,
         hasKey: sql<boolean>`${apiProviders.encryptedKey} IS NOT NULL`,
         updatedAt: apiProviders.updatedAt,
       })

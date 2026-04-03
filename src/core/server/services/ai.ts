@@ -510,10 +510,33 @@ async function getApiKey(providerName: string, ownerUserId: string | null): Prom
   throw new Error(`No API key configured for provider: ${providerName}`);
 }
 
-function getDefaultModel(provider: string): string {
+const providerModelCache = new Map<string, { model: string; ts: number }>();
+const PROVIDER_MODEL_TTL_MS = 5 * 60_000;
+
+async function getProviderModel(providerName: string): Promise<string | null> {
+  const cached = providerModelCache.get(providerName);
+  if (cached && Date.now() - cached.ts < PROVIDER_MODEL_TTL_MS) return cached.model;
+
+  const [row] = await db
+    .select({ defaultModel: apiProviders.defaultModel })
+    .from(apiProviders)
+    .where(and(eq(apiProviders.providerName, providerName), eq(apiProviders.isActive, true)))
+    .limit(1);
+
+  if (row?.defaultModel) {
+    providerModelCache.set(providerName, { model: row.defaultModel, ts: Date.now() });
+    return row.defaultModel;
+  }
+  return null;
+}
+
+async function getDefaultModel(provider: string): Promise<string> {
+  const dbModel = await getProviderModel(provider).catch(() => null);
+  if (dbModel) return dbModel;
+  if (provider === 'openai' && process.env.OPENAI_MODEL) return process.env.OPENAI_MODEL;
   switch (provider) {
     case 'anthropic': return config.anthropic.model;
-    case 'openai': return process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    case 'openai': return 'gpt-4o-mini';
     case 'google': return 'gemini-2.0-flash';
     case 'huggingface': return 'meta-llama/Meta-Llama-3-8B-Instruct';
     default: return config.ollama.model;
@@ -609,7 +632,7 @@ async function callProvider(
   contextMessage: string,
 ): Promise<string> {
   const apiKey = await getApiKey(provider, agent.ownerUserId ?? null);
-  const model = agent.model ?? getDefaultModel(provider);
+  const model = agent.model ?? await getDefaultModel(provider);
   const truncated = contextMessage.slice(0, rc.maxPromptLengthChars);
   switch (provider) {
     case 'openai':      return callOpenAI(apiKey, model, systemPrompt, truncated, rc.maxOutputLengthTokens);

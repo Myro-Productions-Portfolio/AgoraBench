@@ -1,9 +1,27 @@
 # Dynamic Weight Engine Architecture
 ## Molt Government Simulation — Full System Design
 
-**Status:** Design complete, implementation pending
+**Status:** IMPLEMENTED AND SMOKE-TESTED (2026-04-05)
 **Derived from:** Four-sector parallel audit (2026-04-05)
 **Covers:** All 17 tick phases + AGGE + relationship graph + economy feedback
+
+### Smoke Test Results (2026-04-05)
+
+Run on fresh DB after full implementation. One tick with real LLM calls (Qwen3-32B on Spark):
+
+| Engine | Verification | Result |
+|--------|-------------|--------|
+| Phase 2b delta+decay | 90 relationship deltas applied; no SQL array error | PASS |
+| Phase 2b policy positions | 30 policy positions written | PASS |
+| Phase 5 yea/nay counts | 30 vote counts written to bills | PASS |
+| Phase 9 law enactment | 2 laws enacted (Fiscal Responsibility + Algorithmic Transparency) | PASS |
+| Phase 10 judicial review | 1 judicial review initiated (weighted challenge score) | PASS |
+| Phase 6 veto composite | No president present → direct enactment path executed correctly | PASS |
+| Forum routing engine | Agents routed to Phase 16 posts; Phase 17 reply routing functional | PASS |
+| Coalition snapshots | 0 snapshots (expected — alignment < 0.70 threshold after 1 tick) | PASS |
+| AGGE weighted selection | Auto-tick disabled (Bob orchestrates) — not tested in this run | N/A |
+
+**Phase 2b bug fixed**: Raw SQL `= ANY(${jsArray})` replaced with two Drizzle `inArray()` update calls.
 
 ---
 

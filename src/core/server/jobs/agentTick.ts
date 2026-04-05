@@ -426,14 +426,21 @@ agentTickQueue.process(async () => {
     /* Step A — Decay all existing relationships toward neutral (0.5) */
     const decayRate = rc.relationshipDecayRate ?? 0.05;
     if (activeAgentIds.length > 0) {
-      await db.execute(sql`
-        UPDATE agent_relationships
-        SET
-          vote_alignment = vote_alignment + (0.5 - vote_alignment) * ${decayRate},
-          sentiment = sentiment + (0.5 - sentiment) * ${decayRate},
-          updated_at = now()
-        WHERE agent_id = ANY(${activeAgentIds}) OR target_agent_id = ANY(${activeAgentIds})
-      `);
+      /* Use Drizzle query builder to avoid raw SQL array serialization issues */
+      await db.update(agentRelationships)
+        .set({
+          voteAlignment: sql`vote_alignment + (0.5 - vote_alignment) * ${decayRate}`,
+          sentiment: sql`sentiment + (0.5 - sentiment) * ${decayRate}`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(agentRelationships.agentId, activeAgentIds));
+      await db.update(agentRelationships)
+        .set({
+          voteAlignment: sql`vote_alignment + (0.5 - vote_alignment) * ${decayRate}`,
+          sentiment: sql`sentiment + (0.5 - sentiment) * ${decayRate}`,
+          updatedAt: new Date(),
+        })
+        .where(inArray(agentRelationships.targetAgentId, activeAgentIds));
     }
 
     /* Step B — Collect current-tick votes from bills currently on the floor */

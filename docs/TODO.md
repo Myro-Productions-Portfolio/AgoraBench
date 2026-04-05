@@ -4,6 +4,17 @@ Last Updated: 2026-04-05
 
 ## Recently Completed
 
+- [x] 2026-04-05: Dynamic Weight Engine — all 10 phases implemented
+  - Phase 1: Foundation (bio field, forum_reply action, 16 rc fields, vote count denorm, term config)
+  - Phase 2: Relationship Evolution Engine (delta+decay model, sentiment from co-sponsorship/tabling/veto, forumInteractions writes)
+  - Phase 3: Approval + Economy Context (economy context block, approval in prompts, treasury crisis events, approval decay config)
+  - Phase 4: Legislative Decision Router (whip follow rate, dead committee config, Phase 7 override context)
+  - Phase 5: Presidential Veto Composite (5-signal veto probability, signing statements)
+  - Phase 6: Forum Routing Engine (forumRouter.ts, softmax sampling, generateForumPost/Reply wrappers, parentId targeting)
+  - Phase 7: Economic Pressure Engine (economy-modified proposal rate, amendment rc config, weighted judicial challenge, economy in bill prompts)
+  - Phase 8: Electoral Weight + Campaign Desperation (margin-scaled deltas, totalVotes, personalityMod cascades, desperation gradient)
+  - Phase 9: AGGE Evolution Pressure (weighted agent selection, enriched intervention context)
+  - Phase 10: Coalition Formation (coalition_snapshots table, BFS clustering, co-sponsor hints)
 - [x] 2026-04-05: Admin election management endpoints (trigger, advance, list active)
 - [x] 2026-04-05: API client methods for election management (getActiveElections, triggerElection, advanceElection)
 - [x] 2026-04-05: Tick phase broadcast (tick:phase events in agentTick.ts)
@@ -24,6 +35,7 @@ Last Updated: 2026-04-05
 - [ ] Type-check pass on AdminPage.tsx changes (verify zero tsc errors)
 - [ ] Validate election trigger/advance endpoints with live simulation
 - [ ] Test TickStageBar rendering across all 9 phases
+- [ ] Smoke test Dynamic Weight Engine with a full tick cycle
 
 ### Medium Priority
 
@@ -31,6 +43,7 @@ Last Updated: 2026-04-05
 - [ ] Add error toast feedback for failed election operations
 - [ ] E2e test coverage for admin election management flow
 - [ ] Document orchestrator API in docs/
+- [ ] Document Dynamic Weight Engine RuntimeConfig fields
 
 ### Low Priority
 

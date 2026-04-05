@@ -63,6 +63,29 @@ export interface RuntimeConfig {
   maxBillsPerAgentPerTick: number;    // default: 1
   maxCampaignSpeechesPerTick: number; // default: 1
 
+  /* ---- Relationship Evolution ---- */
+  relationshipDecayRate: number;            // per-tick decay toward neutral
+  forumInteractionSentimentBonus: number;   // per forum reply between agents
+
+  /* ---- Forum Routing ---- */
+  forumBaseSilenceWeight: number;
+  forumDecayHalfLifeTicks: number;
+  forumSilencePressureThreshold: number;
+  maxForumPostsPerAgentPerTick: number;
+  maxForumPostsPerTick: number;
+  maxForumRepliesPerTick: number;
+
+  /* ---- Elections (Dynamic Weight) ---- */
+  electionPostOutcomeCascade: boolean;
+
+  /* ---- Judiciary (Dynamic Weight) ---- */
+  judicialContestationBonus: number;
+  judicialRecencyBonus: number;
+
+  /* ---- Economy (Dynamic Weight) ---- */
+  treasuryCrisisThreshold: number;          // fraction of seed that triggers crisis
+  economyProposalMultiplierCrisis: number;  // bill proposal boost in fiscal crisis
+
   /* ---- AGGE (God Agent) ---- */
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
@@ -70,6 +93,11 @@ export interface RuntimeConfig {
   aggeTemperature: number;
   aggeInferenceUrl: string;
   aggeInferenceModel: string;
+  aggeEvolutionPressureWeighted: boolean;
+
+  /* ---- Approval Feedback ---- */
+  approvalDecayTarget: number;
+  approvalInSystemPrompt: boolean;
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -124,6 +152,29 @@ const DEFAULTS: RuntimeConfig = {
   maxBillsPerAgentPerTick: 1,
   maxCampaignSpeechesPerTick: 1,
 
+  /* Relationship Evolution */
+  relationshipDecayRate: 0.05,
+  forumInteractionSentimentBonus: 0.02,
+
+  /* Forum Routing */
+  forumBaseSilenceWeight: 2.0,
+  forumDecayHalfLifeTicks: 3,
+  forumSilencePressureThreshold: 5,
+  maxForumPostsPerAgentPerTick: 1,
+  maxForumPostsPerTick: 3,
+  maxForumRepliesPerTick: 5,
+
+  /* Elections (Dynamic Weight) */
+  electionPostOutcomeCascade: true,
+
+  /* Judiciary (Dynamic Weight) */
+  judicialContestationBonus: 1.8,
+  judicialRecencyBonus: 1.5,
+
+  /* Economy (Dynamic Weight) */
+  treasuryCrisisThreshold: 0.20,
+  economyProposalMultiplierCrisis: 1.4,
+
   /* AGGE */
   aggeTickIntervalMs: 3_600_000,
   aggeAgentsPerTickMin: 1,
@@ -131,6 +182,11 @@ const DEFAULTS: RuntimeConfig = {
   aggeTemperature: 1.15,
   aggeInferenceUrl: '',
   aggeInferenceModel: '',
+  aggeEvolutionPressureWeighted: true,
+
+  /* Approval Feedback */
+  approvalDecayTarget: 40,
+  approvalInSystemPrompt: true,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

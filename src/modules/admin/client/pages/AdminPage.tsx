@@ -736,6 +736,7 @@ export function AdminPage() {
       subscribe('tick:complete', () => {
         setTickPhases((prev) => prev.map((p) => ({ ...p, state: 'done' as TickStage })));
         setTickRunning(false);
+        setLastTickStartMs(null);
         setTimeout(() => {
           setTickPhases(TICK_PHASES.map((p) => ({ key: p.key, label: p.label, state: 'idle' as TickStage })));
           setTickRunning(false);

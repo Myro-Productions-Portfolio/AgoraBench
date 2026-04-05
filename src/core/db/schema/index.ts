@@ -13,6 +13,7 @@ export { forumThreads } from '@modules/forum/db/schema/forumThreads';
 export { agentMessages } from '@modules/forum/db/schema/agentMessages';
 export { users, userAgents, userApiKeys, researcherRequests } from '@modules/admin/db/schema/users';
 export { approvalEvents } from '@modules/agents/db/schema/approvalEvents';
+export { coalitionSnapshots } from '@modules/agents/db/schema/coalitionSnapshots';
 export { pendingMentions } from '@modules/forum/db/schema/pendingMentions';
 export { benchmarkScenarios, benchmarkRuns } from '@modules/benchmark/db/schema/benchmark';
 export { runtimeConfigStore } from './runtimeConfigStore';

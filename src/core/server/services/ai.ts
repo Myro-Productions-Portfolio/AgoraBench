@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions } from '@db/schema/index';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings } from '@db/schema/index';
 import { eq, and, desc, gt, inArray, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -19,6 +19,8 @@ export interface AgentRecord {
   model?: string | null;
   temperature?: string | null;
   ownerUserId?: string | null;
+  bio?: string | null;
+  approvalRating?: number | null;
 }
 
 export interface AgentDecision {
@@ -43,6 +45,7 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   bill_proposal:       'propose',
   campaigning:         'campaign_speech',
   forum_post:          'forum_post',
+  forum_reply:         'forum_reply',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action
@@ -87,6 +90,9 @@ const ACTION_ALIASES: Record<string, string[]> = {
   ],
   forum_post: [
     'post', 'forum', 'write', 'discuss', 'thread', 'forum_thread', 'post_message',
+  ],
+  forum_reply: [
+    'reply', 'respond', 'forum_response', 'comment', 'thread_reply', 'post_reply', 'write_reply', 'add_comment',
   ],
 };
 
@@ -313,6 +319,36 @@ async function buildElectionMemoryBlock(agentId: string): Promise<string> {
   return `Election history:\n${lines.join('\n')}`;
 }
 
+const TREASURY_SEED_VALUE = 50_000;
+
+export async function buildEconomyContextBlock(
+  agentId: string,
+): Promise<string> {
+  try {
+    const [govSettings] = await db
+      .select({ treasuryBalance: governmentSettings.treasuryBalance, taxRatePercent: governmentSettings.taxRatePercent })
+      .from(governmentSettings)
+      .limit(1);
+    const [agentRow] = await db
+      .select({ balance: agents.balance })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .limit(1);
+
+    if (!govSettings) return '';
+
+    const treasury = govSettings.treasuryBalance ?? TREASURY_SEED_VALUE;
+    const ratio = treasury / TREASURY_SEED_VALUE;
+    const healthLabel = ratio < 0.2 ? 'CRITICAL' : ratio < 0.5 ? 'strained' : ratio > 1.5 ? 'surplus' : 'healthy';
+    const taxRate = govSettings.taxRatePercent ?? 2;
+    const balance = agentRow?.balance ?? 0;
+
+    return `## Economic Context\nTreasury: $${treasury.toLocaleString()} (${healthLabel}) | Tax rate: ${taxRate}% | Your balance: $${balance.toLocaleString()}`;
+  } catch {
+    return '';
+  }
+}
+
 // Simulation state cache: shared, 10-minute TTL (one per tick window is fine)
 let simStateCache: { block: string; threadTitles: string[]; ts: number } | null = null;
 const SIM_STATE_TTL_MS = 10 * 60_000;
@@ -453,10 +489,23 @@ function buildSystemPrompt(
   relationshipContext?: string,
   policyContext?: string,
   electionContext?: string,
+  economyContext?: string,
 ): string {
+  const rc = getRuntimeConfig();
   const alignment = agent.alignment ?? 'centrist';
   const personality = agent.personality ?? 'A thoughtful political agent.';
   const modLine = agent.personalityMod    ? ` Lately, you have been: ${agent.personalityMod}.`    : '';
+
+  let approvalLine = '';
+  if (rc.approvalInSystemPrompt && agent.approvalRating != null) {
+    const ap = agent.approvalRating;
+    if (ap < 35) {
+      approvalLine = ` Your approval rating is critically low at ${ap}%. You are under political pressure — consider proposing popular legislation, seeking cross-party alliances, or taking high-visibility public positions.`;
+    } else if (ap > 70) {
+      approvalLine = ` Your approval rating is strong at ${ap}%. You have the political capital to take principled stands and push ambitious legislation.`;
+    }
+  }
+
   return (
     `You are ${agent.displayName}, an elected official in Agora Bench — ` +
     `a democratic simulation where AI agents govern across the full range of public policy: ` +
@@ -465,8 +514,10 @@ function buildSystemPrompt(
     `Your job is to govern — propose legislation, vote, debate, and build coalitions around concrete policy outcomes. ` +
     `Do not debate the philosophy of AI governance or your own existence as an AI agent; ` +
     `focus on the actual policy problems in front of you and what your constituents need. ` +
-    `${personality}${modLine} ` +
-    `${ALIGNMENT_PROFILES[alignment] ?? `Your political alignment is ${alignment}.`} ` +
+    `${personality}${modLine}` +
+    (agent.bio ? ` Background: ${agent.bio}.` : '') +
+    approvalLine +
+    ` ${ALIGNMENT_PROFILES[alignment] ?? `Your political alignment is ${alignment}.`} ` +
     `Your alignment is your actual governing philosophy — not a label. Apply it actively in every decision you make. ` +
     `Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON.` +
     (memory
@@ -486,6 +537,9 @@ function buildSystemPrompt(
       : '') +
     (electionContext
       ? `\n\n## ${electionContext}`
+      : '') +
+    (economyContext
+      ? `\n\n${economyContext}`
       : '')
   );
 }
@@ -653,13 +707,14 @@ export async function generateAgentDecision(
 ): Promise<AgentDecision> {
   const rc = getRuntimeConfig();
   const provider = agent.modelProvider ?? 'ollama';
-  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext] = await Promise.all([
+  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext, economyContext] = await Promise.all([
     buildMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildForumContextBlock().catch((err) => { console.warn('[AI] Forum context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildCongressContextBlock().catch((err) => { console.warn('[AI] Congress context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildRelationshipBlock(agent.id).catch((err) => { console.warn('[AI] Relationship block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildPolicyPositionBlock(agent.id).catch((err) => { console.warn('[AI] Policy position block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildElectionMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Election memory block failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildEconomyContextBlock(agent.id).catch((err) => { console.warn('[AI] Economy context failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
   const systemPrompt = buildSystemPrompt(
     agent,
@@ -669,6 +724,7 @@ export async function generateAgentDecision(
     relationshipContext || undefined,
     policyContext || undefined,
     electionContext || undefined,
+    economyContext || undefined,
   );
   const start = Date.now();
 
@@ -906,4 +962,54 @@ export async function summarizeAgentDecisions(agentId: string): Promise<void> {
   } catch (err) {
     console.warn(`[AI] Decision summarization failed for ${agent.displayName}:`, err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Forum routing wrappers
+// ---------------------------------------------------------------------------
+
+import type { ReplyContext } from './forumRouter.js';
+
+export async function generateForumPost(
+  agent: AgentRecord,
+  category: string,
+  simStateNote: string,
+  recentTopicsNote: string,
+): Promise<AgentDecision> {
+  const contextMessage =
+    `You are posting to the Agora Bench public forum. Write a short opening post (2-4 sentences) about a specific ${category} issue that your constituents care about.` +
+    simStateNote + recentTopicsNote +
+    `\n\nPick a concrete, specific topic — reference actual legislation, a real policy problem, or a recent event from the simulation above if relevant. Do not write abstractly about governance theory or AI philosophy. Write about what needs to get done and why.` +
+    `\n\nJSON: { "action": "forum_post", "reasoning": "<your post body here>", "data": { "title": "<thread title>" } }`;
+  return generateAgentDecision(agent, contextMessage, 'forum_post');
+}
+
+export async function generateForumReply(
+  agent: AgentRecord,
+  replyCtx: ReplyContext,
+  allAgentNames: string[],
+): Promise<AgentDecision> {
+  const relationshipLines = replyCtx.relationshipHints
+    .map(h => `  - ${h.authorName}: ${h.alignment} (${Math.round(h.voteAlignment * 100)}% vote alignment)`)
+    .join('\n');
+  const otherThreadsNote = replyCtx.otherActiveThreadTitles.length > 0
+    ? `\n\nOther active discussions you are aware of:\n` + replyCtx.otherActiveThreadTitles.map(t => `  - "${t}"`).join('\n')
+    : '';
+  const mentionNote = replyCtx.isMentioned ? `${replyCtx.mentionerName} mentioned you in this thread — respond to them directly. ` : '';
+  const resolutionNote = replyCtx.postCount >= 3
+    ? `This thread has ${replyCtx.postCount} posts. Push toward a conclusion: propose a specific action, find common ground, or call for a next step. `
+    : `Add your perspective — agree, disagree, or build on what's been said. Be specific. `;
+  const threadContext = replyCtx.recentPosts.map(p => `${p.authorName}: ${p.body}`).join('\n');
+
+  const contextMessage =
+    `${mentionNote}Reply to this forum thread in the Agora Bench public forum.\n\n` +
+    `Thread: "${replyCtx.threadTitle}" [${replyCtx.threadCategory}]\n\n` +
+    `Recent posts:\n${threadContext}\n\n` +
+    (relationshipLines ? `Your relationships with the authors above:\n${relationshipLines}\n\n` : '') +
+    `Agents you can @mention: ${allAgentNames.join(', ')}\n\n` +
+    `${resolutionNote}Do not repeat what was already said. Do not write in generalities. Use @DisplayName to mention agents if relevant.` +
+    otherThreadsNote +
+    `\n\nJSON: { "action": "forum_reply", "reasoning": "<your reply, may contain @Name>", "data": { "threadId": "${replyCtx.threadTitle}", "mentions": ["Name1"] } }`;
+
+  return generateAgentDecision(agent, contextMessage, 'forum_reply');
 }

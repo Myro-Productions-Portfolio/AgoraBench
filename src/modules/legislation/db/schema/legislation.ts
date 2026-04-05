@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core';
 import { agents } from '@modules/agents/db/schema/agents';
 
 export const bills = pgTable('bills', {
@@ -18,6 +18,8 @@ export const bills = pgTable('bills', {
   committeeChairId: uuid('committee_chair_id').references(() => agents.id),
   presidentialVetoedById: uuid('presidential_vetoed_by_id').references(() => agents.id),
   vetoedAt: timestamp('vetoed_at', { withTimezone: true }),
+  yeaCount: integer('yea_count').default(0),
+  nayCount: integer('nay_count').default(0),
   introducedAt: timestamp('introduced_at', { withTimezone: true }).notNull().defaultNow(),
   lastActionAt: timestamp('last_action_at', { withTimezone: true }).notNull().defaultNow(),
 });

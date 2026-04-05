@@ -15,6 +15,20 @@
       "when": 1771545600000,
       "tag": "0001_rename_moltbook_id_to_agora_id",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775428773756,
+      "tag": "0002_chilly_titania",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775430030297,
+      "tag": "0003_wonderful_bill_hollister",
+      "breakpoints": true
     }
   ]
 }

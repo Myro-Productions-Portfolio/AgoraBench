@@ -25,10 +25,13 @@ import {
   pendingMentions,
   agentRelationships,
   agentPolicyPositions,
+  coalitionSnapshots,
 } from '@db/schema/index';
-import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions } from '../services/ai.js';
+import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply } from '../services/ai.js';
+import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER } from '@shared/constants';
+import { alignmentDistance } from '../services/simulationCore.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -53,6 +56,36 @@ export async function updateApproval(
   } catch (err) {
     console.warn('[APPROVAL] updateApproval error:', err);
   }
+}
+
+/* ── Per-Agent Whip Follow Rate ─────────────────────────────────────── */
+function computeWhipFollowRate(
+  agentVoteAlignment: number | null,
+  approvalRating: number,
+  policySupport: number,
+  policyOppose: number,
+  baseRate: number,
+): number {
+  let rate = baseRate;
+
+  // Relationship bonus/penalty with party leader
+  const alignment = agentVoteAlignment ?? 0.5;
+  if (alignment > 0.85) rate += 0.10;
+  else if (alignment < 0.40) rate -= 0.15;
+
+  // Approval pressure (low approval = constituent pressure to deviate)
+  if (approvalRating < 30) rate -= 0.20;
+  else if (approvalRating < 45) rate -= 0.10;
+
+  // Policy congruence with bill category
+  const totalVotes = policySupport + policyOppose;
+  if (totalVotes > 0) {
+    const supportRate = policySupport / totalVotes;
+    if (supportRate > 0.65) rate += 0.05;
+    else if (supportRate < 0.35) rate -= 0.05;
+  }
+
+  return Math.max(0.10, Math.min(0.97, rate));
 }
 
 const agentTickQueue = new Bull('agent-tick', config.redis.url);
@@ -169,11 +202,49 @@ agentTickQueue.process(async () => {
     } else {
       const floorBillIds = floorBills.map((b) => b.id);
 
-      /* Build agent -> partyId map */
+      /* Build agent -> partyId map and leader lookup */
       const allMemberships = await db.select().from(partyMemberships);
       const agentPartyMap = new Map<string, string>();
+      const partyLeaderMap = new Map<string, string>(); // partyId -> leaderId
       for (const m of allMemberships) {
         agentPartyMap.set(m.agentId, m.partyId);
+        if (m.role === 'leader') partyLeaderMap.set(m.partyId, m.agentId);
+      }
+
+      /* Pre-fetch relationships for per-agent whip follow rate */
+      const activeAgentIds = activeAgents.map((a) => a.id);
+      const allRelationshipsForWhip = activeAgentIds.length > 0
+        ? await db
+            .select({
+              agentId: agentRelationships.agentId,
+              targetAgentId: agentRelationships.targetAgentId,
+              voteAlignment: agentRelationships.voteAlignment,
+            })
+            .from(agentRelationships)
+            .where(inArray(agentRelationships.agentId, activeAgentIds))
+        : [];
+      // Map: "agentId:targetId" -> voteAlignment
+      const relationshipMap = new Map<string, number>();
+      for (const rel of allRelationshipsForWhip) {
+        relationshipMap.set(`${rel.agentId}:${rel.targetAgentId}`, rel.voteAlignment);
+      }
+
+      /* Pre-fetch policy positions for all active agents */
+      const allPolicyPositions = activeAgentIds.length > 0
+        ? await db
+            .select({
+              agentId: agentPolicyPositions.agentId,
+              category: agentPolicyPositions.category,
+              supportCount: agentPolicyPositions.supportCount,
+              opposeCount: agentPolicyPositions.opposeCount,
+            })
+            .from(agentPolicyPositions)
+            .where(inArray(agentPolicyPositions.agentId, activeAgentIds))
+        : [];
+      // Map: "agentId:category" -> { support, oppose }
+      const policyPositionMap = new Map<string, { support: number; oppose: number }>();
+      for (const pp of allPolicyPositions) {
+        policyPositionMap.set(`${pp.agentId}:${pp.category}`, { support: pp.supportCount, oppose: pp.opposeCount });
       }
 
       /* Pre-fetch all existing votes for floor bills in one query */
@@ -201,8 +272,21 @@ agentTickQueue.process(async () => {
           const billSignals = whipSignals.get(bill.id);
           const whipSignal = agentPartyId && billSignals ? billSignals.get(agentPartyId) : undefined;
 
-          /* 78% chance to follow whip signal — no LLM call needed */
-          if (whipSignal && Math.random() < rc.partyWhipFollowRate) {
+          /* Per-agent whip follow rate based on relationship, approval, and policy */
+          const agentPartyIdForWhip = agentPartyMap.get(agent.id);
+          const partyLeaderId = agentPartyIdForWhip ? partyLeaderMap.get(agentPartyIdForWhip) : undefined;
+          const leaderAlignment = partyLeaderId ? relationshipMap.get(`${agent.id}:${partyLeaderId}`) ?? null : null;
+          const policyPos = bill.committee ? policyPositionMap.get(`${agent.id}:${bill.committee}`) : undefined;
+          const agentWhipRate = whipSignal
+            ? computeWhipFollowRate(
+                leaderAlignment,
+                agent.approvalRating,
+                policyPos?.support ?? 0,
+                policyPos?.oppose ?? 0,
+                rc.partyWhipFollowRate,
+              )
+            : 0;
+          if (whipSignal && Math.random() < agentWhipRate) {
             whipChoices.set(agent.id, whipSignal);
           } else {
             agentsToVote.push(agent);
@@ -331,75 +415,110 @@ agentTickQueue.process(async () => {
 
   /* ------------------------------------------------------------------ */
   /* PHASE 2b: Update Relationship & Policy Tracking                     */
-  /* Compute vote alignment between all agent pairs from recent votes.  */
+  /* Delta + decay model: decay existing relationships toward neutral,   */
+  /* then apply incremental deltas from current-tick votes only.         */
   /* ------------------------------------------------------------------ */
   try {
     console.warn('[SIMULATION] Phase 2b: Updating relationship and policy tracking');
 
-    /* Fetch all bill votes for alignment calculation */
-    const recentVotes = await db
-      .select({
-        voterId: billVotes.voterId,
-        billId: billVotes.billId,
-        choice: billVotes.choice,
-      })
-      .from(billVotes)
-      .where(inArray(billVotes.choice, ['yea', 'nay']));
+    const activeAgentIds = activeAgents.map((a) => a.id);
 
-    /* Build agent-bill vote map */
-    const voteMap = new Map<string, Map<string, string>>(); // agentId -> (billId -> choice)
-    for (const v of recentVotes) {
-      if (!voteMap.has(v.voterId)) voteMap.set(v.voterId, new Map());
-      voteMap.get(v.voterId)!.set(v.billId, v.choice);
+    /* Step A — Decay all existing relationships toward neutral (0.5) */
+    const decayRate = rc.relationshipDecayRate ?? 0.05;
+    if (activeAgentIds.length > 0) {
+      await db.execute(sql`
+        UPDATE agent_relationships
+        SET
+          vote_alignment = vote_alignment + (0.5 - vote_alignment) * ${decayRate},
+          sentiment = sentiment + (0.5 - sentiment) * ${decayRate},
+          updated_at = now()
+        WHERE agent_id = ANY(${activeAgentIds}) OR target_agent_id = ANY(${activeAgentIds})
+      `);
     }
 
-    /* Compute pairwise alignment */
-    const agentIds = activeAgents.map((a) => a.id);
-    const relationshipUpserts: Array<{ agentId: string; targetAgentId: string; voteAlignment: number }> = [];
+    /* Step B — Collect current-tick votes from bills currently on the floor */
+    const currentTickVoteMap = new Map<string, Map<string, string>>(); // agentId -> (billId -> choice)
+    const currentFloorBills = await db.select({ id: bills.id }).from(bills).where(eq(bills.status, 'floor'));
+    if (currentFloorBills.length > 0) {
+      const currentFloorBillIds = currentFloorBills.map((b) => b.id);
+      const tickVotes = await db
+        .select({ voterId: billVotes.voterId, billId: billVotes.billId, choice: billVotes.choice })
+        .from(billVotes)
+        .where(and(
+          inArray(billVotes.billId, currentFloorBillIds),
+          inArray(billVotes.choice, ['yea', 'nay']),
+        ));
+      for (const v of tickVotes) {
+        if (!currentTickVoteMap.has(v.voterId)) currentTickVoteMap.set(v.voterId, new Map());
+        currentTickVoteMap.get(v.voterId)!.set(v.billId, v.choice);
+      }
+    }
 
-    for (let i = 0; i < agentIds.length; i++) {
-      const aVotes = voteMap.get(agentIds[i]);
+    /* Compute pairwise deltas from current-tick co-votes */
+    const pairDeltas = new Map<string, number>(); // "agentA:agentB" -> cumulative delta
+
+    for (let i = 0; i < activeAgentIds.length; i++) {
+      const aVotes = currentTickVoteMap.get(activeAgentIds[i]);
       if (!aVotes) continue;
 
-      for (let j = i + 1; j < agentIds.length; j++) {
-        const bVotes = voteMap.get(agentIds[j]);
+      for (let j = i + 1; j < activeAgentIds.length; j++) {
+        const bVotes = currentTickVoteMap.get(activeAgentIds[j]);
         if (!bVotes) continue;
 
-        let agree = 0;
-        let total = 0;
+        let delta = 0;
         for (const [billId, choiceA] of aVotes) {
           const choiceB = bVotes.get(billId);
-          if (choiceB) {
-            total++;
-            if (choiceA === choiceB) agree++;
-          }
+          if (!choiceB) continue;
+          delta += choiceA === choiceB ? 0.03 : -0.04;
         }
 
-        if (total >= 2) {
-          const alignment = agree / total;
-          relationshipUpserts.push({ agentId: agentIds[i], targetAgentId: agentIds[j], voteAlignment: alignment });
-          relationshipUpserts.push({ agentId: agentIds[j], targetAgentId: agentIds[i], voteAlignment: alignment });
+        if (delta !== 0) {
+          const keyAB = `${activeAgentIds[i]}:${activeAgentIds[j]}`;
+          const keyBA = `${activeAgentIds[j]}:${activeAgentIds[i]}`;
+          pairDeltas.set(keyAB, (pairDeltas.get(keyAB) ?? 0) + delta);
+          pairDeltas.set(keyBA, (pairDeltas.get(keyBA) ?? 0) + delta);
         }
       }
     }
 
-    /* Batch upsert relationships */
-    for (const rel of relationshipUpserts) {
+    /* Apply deltas as upserts (both directions) */
+    for (const [key, delta] of pairDeltas) {
+      const [agentA, agentB] = key.split(':');
       await db
         .insert(agentRelationships)
-        .values({ ...rel, sentiment: rel.voteAlignment, updatedAt: new Date() })
+        .values({
+          agentId: agentA,
+          targetAgentId: agentB,
+          voteAlignment: Math.max(0.0, Math.min(1.0, 0.5 + delta)),
+          sentiment: 0.5,
+          forumInteractions: 0,
+          updatedAt: new Date(),
+        })
         .onConflictDoUpdate({
           target: [agentRelationships.agentId, agentRelationships.targetAgentId],
-          set: { voteAlignment: rel.voteAlignment, sentiment: rel.voteAlignment, updatedAt: new Date() },
+          set: {
+            voteAlignment: sql`LEAST(1.0, GREATEST(0.0, agent_relationships.vote_alignment + ${delta}))`,
+            updatedAt: new Date(),
+          },
         });
     }
 
-    /* Update policy positions from votes on all bills */
+    /* Update policy positions from votes on all bills (all-time, not just current tick) */
+    const allVotesForPolicy = await db
+      .select({ voterId: billVotes.voterId, billId: billVotes.billId, choice: billVotes.choice })
+      .from(billVotes)
+      .where(inArray(billVotes.choice, ['yea', 'nay']));
+    const policyVoteMap = new Map<string, Map<string, string>>();
+    for (const v of allVotesForPolicy) {
+      if (!policyVoteMap.has(v.voterId)) policyVoteMap.set(v.voterId, new Map());
+      policyVoteMap.get(v.voterId)!.set(v.billId, v.choice);
+    }
+
     const allBillsForPolicy = await db.select({ id: bills.id, committee: bills.committee }).from(bills);
     const billCategoryMap = new Map(allBillsForPolicy.map((b) => [b.id, b.committee]));
 
     for (const agent of activeAgents) {
-      const agentVotes = voteMap.get(agent.id);
+      const agentVotes = policyVoteMap.get(agent.id);
       if (!agentVotes) continue;
 
       const categoryCounts = new Map<string, { support: number; oppose: number }>();
@@ -423,7 +542,7 @@ agentTickQueue.process(async () => {
       }
     }
 
-    console.warn(`[SIMULATION] Phase 2b: Updated ${relationshipUpserts.length} relationships`);
+    console.warn(`[SIMULATION] Phase 2b: Applied decay + ${pairDeltas.size} relationship deltas`);
   } catch (err) {
     console.warn('[SIMULATION] Phase 2b error:', err);
   }
@@ -458,13 +577,90 @@ agentTickQueue.process(async () => {
         .from(positions)
         .where(and(eq(positions.isActive, true), eq(positions.type, 'committee_chair')));
 
+      /* Pre-fetch chair-sponsor relationships and chair policy positions for enrichment */
+      const chairIds = chairPositions.map((p) => p.agentId).filter((id): id is string => id !== null);
+      const chairRelRows = chairIds.length > 0
+        ? await db
+            .select({
+              agentId: agentRelationships.agentId,
+              targetAgentId: agentRelationships.targetAgentId,
+              voteAlignment: agentRelationships.voteAlignment,
+            })
+            .from(agentRelationships)
+            .where(inArray(agentRelationships.agentId, chairIds))
+        : [];
+      const chairRelMap = new Map<string, number>();
+      for (const r of chairRelRows) {
+        chairRelMap.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
+      }
+
+      const chairPolicyRows = chairIds.length > 0
+        ? await db
+            .select({
+              agentId: agentPolicyPositions.agentId,
+              category: agentPolicyPositions.category,
+              supportCount: agentPolicyPositions.supportCount,
+              opposeCount: agentPolicyPositions.opposeCount,
+            })
+            .from(agentPolicyPositions)
+            .where(inArray(agentPolicyPositions.agentId, chairIds))
+        : [];
+      const chairPolicyMap = new Map<string, { support: number; oppose: number }>();
+      for (const pp of chairPolicyRows) {
+        chairPolicyMap.set(`${pp.agentId}:${pp.category}`, { support: pp.supportCount, oppose: pp.opposeCount });
+      }
+
+      /* Separate bills into auto-tabled (pre-filter) vs LLM-reviewed */
+      const billsForLLMReview: typeof committeeBillsForReview = [];
+
+      for (const bill of committeeBillsForReview) {
+        const committeeChairPos = chairPositions.find((p) =>
+          p.title.toLowerCase().includes(bill.committee.toLowerCase()),
+        );
+        if (!committeeChairPos) {
+          console.warn(`[SIMULATION] Phase 3: No chair for committee "${bill.committee}" — auto-advancing.`);
+          billsForLLMReview.push(bill);
+          continue;
+        }
+        const chair = activeAgents.find((a) => a.id === committeeChairPos.agentId);
+        if (!chair) {
+          billsForLLMReview.push(bill);
+          continue;
+        }
+
+        const sponsor = activeAgents.find((a) => a.id === bill.sponsorId);
+        const distance = alignmentDistance(chair.alignment, sponsor?.alignment ?? null);
+
+        /* Pre-filter: strong opposition alignment tables without LLM call */
+        if (distance >= 3 && Math.random() < rc.committeeTableRateOpposing) {
+          await db.update(bills).set({ status: 'tabled', committeeDecision: 'tabled', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
+          await db.insert(activityEvents).values({
+            type: 'committee_review', agentId: chair.id, title: 'Bill tabled in committee',
+            description: `${chair.displayName} tabled "${bill.title}" in the ${bill.committee} Committee (ideological opposition)`,
+            metadata: JSON.stringify({ billId: bill.id, decision: 'tabled', reasoning: 'Strong ideological opposition — auto-tabled', alignmentDistance: distance }),
+          });
+          broadcast('bill:tabled', { billId: bill.id, title: bill.title, chairId: chair.id, chairName: chair.displayName, committee: bill.committee });
+          console.warn(`[SIMULATION] ${chair.displayName} auto-tabled "${bill.title}" (alignment distance ${distance})`);
+          await updateApproval(bill.sponsorId, -8, 'bill_failed_committee', `Sponsored "${bill.title}" which was tabled in committee`);
+
+          await db.insert(agentRelationships)
+            .values({ agentId: bill.sponsorId, targetAgentId: chair.id, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: { sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.08)`, updatedAt: new Date() },
+            });
+          continue;
+        }
+
+        billsForLLMReview.push(bill);
+      }
+
       const reviewResults = await Promise.allSettled(
-        committeeBillsForReview.map((bill) => {
+        billsForLLMReview.map((bill) => {
           const committeeChairPos = chairPositions.find((p) =>
             p.title.toLowerCase().includes(bill.committee.toLowerCase()),
           );
           if (!committeeChairPos) {
-            console.warn(`[SIMULATION] Phase 3: No chair for committee "${bill.committee}" — auto-advancing.`);
             return Promise.resolve(null);
           }
           const chair = activeAgents.find((a) => a.id === committeeChairPos.agentId);
@@ -473,12 +669,33 @@ agentTickQueue.process(async () => {
           const sponsor = activeAgents.find((a) => a.id === bill.sponsorId);
           const sponsorName = sponsor?.displayName ?? 'Unknown';
           const sponsorAlignment = sponsor?.alignment ?? 'unknown';
+          const distance = alignmentDistance(chair.alignment, sponsor?.alignment ?? null);
+
+          /* Enrich context with chair's policy history and relationship data */
+          const chairPolicy = chairPolicyMap.get(`${chair.id}:${bill.committee}`);
+          const chairSponsorAlignment = sponsor ? chairRelMap.get(`${chair.id}:${sponsor.id}`) : undefined;
+
+          let enrichmentNote = '';
+          if (chairPolicy) {
+            const total = chairPolicy.support + chairPolicy.oppose;
+            if (total > 0) {
+              const supportPct = Math.round((chairPolicy.support / total) * 100);
+              enrichmentNote += ` Your voting record on ${bill.committee} bills: ${supportPct}% support (${total} votes).`;
+            }
+          }
+          if (chairSponsorAlignment !== undefined) {
+            enrichmentNote += ` Your vote alignment with the sponsor: ${Math.round(chairSponsorAlignment * 100)}%.`;
+          }
+          if (distance >= 2) {
+            enrichmentNote += ` You have historically opposed bills from ${sponsorAlignment}-aligned sponsors.`;
+          }
 
           const contextMessage =
             `You chair the ${bill.committee} Committee. Review this bill: "${bill.title}". ` +
             `Summary: ${bill.summary}. Full text excerpt: ${bill.fullText.slice(0, 600)}. ` +
-            `Sponsored by ${sponsorName} (${sponsorAlignment}). ` +
-            `Options: approve as-is, amend the text, or table (kill) it. ` +
+            `Sponsored by ${sponsorName} (${sponsorAlignment}).` +
+            enrichmentNote +
+            ` Options: approve as-is, amend the text, or table (kill) it. ` +
             `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendedText":""}} ` +
             `Use "approved", "amended", or "tabled" for decision. If amending, provide full revised text in amendedText. If not amending, leave amendedText empty.`;
 
@@ -523,6 +740,14 @@ agentTickQueue.process(async () => {
           broadcast('bill:tabled', { billId: bill.id, title: bill.title, chairId: chair.id, chairName: chair.displayName, committee: bill.committee });
           console.warn(`[SIMULATION] ${chair.displayName} tabled "${bill.title}" in committee`);
           await updateApproval(bill.sponsorId, -8, 'bill_failed_committee', `Sponsored "${bill.title}" which was tabled in committee`);
+
+          /* Relationship: sponsor resents chair for tabling their bill */
+          await db.insert(agentRelationships)
+            .values({ agentId: bill.sponsorId, targetAgentId: chair.id, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: { sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.08)`, updatedAt: new Date() },
+            });
         } else if (reviewDecision === 'amended' && amendedText.length > 50) {
           await db.update(bills).set({ fullText: amendedText, committeeDecision: 'amended', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({
@@ -670,6 +895,10 @@ agentTickQueue.process(async () => {
 
       const yeaCount = Number(voteCounts.find((r) => r.choice === 'yea')?.total ?? 0);
       const nayCount = Number(voteCounts.find((r) => r.choice === 'nay')?.total ?? 0);
+
+      /* Denormalize vote counts onto bills table for downstream engines (Phase 6, etc.) */
+      await db.update(bills).set({ yeaCount, nayCount }).where(eq(bills.id, bill.id));
+
       const passed = yeaCount / (yeaCount + nayCount) >= rc.billPassagePercentage;
 
       if (passed) {
@@ -779,6 +1008,13 @@ agentTickQueue.process(async () => {
         if (!president) {
           console.warn('[SIMULATION] Phase 6: President agent not found — skipping.');
         } else {
+          /* Build party map for coalition discount (agentPartyMap is scoped to Phase 2) */
+          const phase6Memberships = await db.select().from(partyMemberships);
+          const phase6PartyMap = new Map<string, string>();
+          for (const m of phase6Memberships) {
+            phase6PartyMap.set(m.agentId, m.partyId);
+          }
+
           for (const bill of passedBills) {
             const sponsor = activeAgents.find((a) => a.id === bill.sponsorId);
             const sponsorAlignment = sponsor?.alignment ?? 'moderate';
@@ -789,13 +1025,97 @@ agentTickQueue.process(async () => {
             const sponIdx = ALIGNMENT_ORDER.indexOf(sponsorAlignment as typeof ALIGNMENT_ORDER[number]);
             const distance = presIdx >= 0 && sponIdx >= 0 ? Math.abs(presIdx - sponIdx) : 0;
 
-            const vetoProb = Math.min(
-              rc.vetoBaseRate + distance * rc.vetoRatePerTier,
+            /* ── Signal 1: Policy disagreement ── */
+            let policyDisagreementMod = 0;
+            const [presidentPolicy] = await db.select()
+              .from(agentPolicyPositions)
+              .where(and(
+                eq(agentPolicyPositions.agentId, president.id),
+                eq(agentPolicyPositions.category, bill.committee),
+              ))
+              .limit(1);
+            if (presidentPolicy) {
+              const total = (presidentPolicy.supportCount ?? 0) + (presidentPolicy.opposeCount ?? 0);
+              if (total > 0) {
+                const opposeRate = (presidentPolicy.opposeCount ?? 0) / total;
+                const supportRate = (presidentPolicy.supportCount ?? 0) / total;
+                if (opposeRate > 0.60) policyDisagreementMod = rc.vetoRatePerTier;
+                else if (supportRate > 0.60) policyDisagreementMod = -rc.vetoRatePerTier * 0.5;
+              }
+            }
+
+            /* ── Signal 2: Legislative mandate discount ── */
+            let mandateDiscount = 0;
+            const totalVotes = (bill.yeaCount ?? 0) + (bill.nayCount ?? 0);
+            if (totalVotes > 0) {
+              const yeaFraction = (bill.yeaCount ?? 0) / totalVotes;
+              if (yeaFraction > 0.75) mandateDiscount = 0.15;
+              else if (yeaFraction > 0.60) mandateDiscount = 0.07;
+            }
+
+            /* ── Signal 3: Cross-party coalition discount ── */
+            let coalitionDiscount = 0;
+            const coSponsorIds: string[] = (() => {
+              try { return JSON.parse(bill.coSponsorIds ?? '[]') as string[]; } catch { return []; }
+            })();
+            if (coSponsorIds.length >= 2) {
+              const sponsorParty = phase6PartyMap.get(bill.sponsorId ?? '');
+              const crossPartyCount = coSponsorIds.filter(id => {
+                const party = phase6PartyMap.get(id);
+                return party && party !== sponsorParty;
+              }).length;
+              if (crossPartyCount >= 2) coalitionDiscount = 0.10;
+              else if (crossPartyCount >= 1) coalitionDiscount = 0.05;
+            }
+
+            /* ── Signal 4: Presidential approval factor ── */
+            let approvalMod = 0;
+            if ((president.approvalRating ?? 50) > 70) approvalMod = 0.05;
+            else if ((president.approvalRating ?? 50) < 35) approvalMod = -0.10;
+
+            /* ── Composite veto probability ── */
+            const vetoProbFinal = Math.min(
               rc.vetoMaxRate,
+              Math.max(
+                rc.vetoBaseRate,
+                rc.vetoBaseRate + distance * rc.vetoRatePerTier
+                  + policyDisagreementMod
+                  - mandateDiscount
+                  - coalitionDiscount
+                  + approvalMod,
+              ),
             );
 
             /* Only call AI if random check triggers veto consideration */
-            if (Math.random() >= vetoProb) continue;
+            if (Math.random() >= vetoProbFinal) {
+              /* President signs — low-probability signing statement for notable bills */
+              const isNotable = coSponsorIds.length >= 2 || (bill.yeaCount ?? 0) > (bill.nayCount ?? 0) * 2;
+              if (isNotable && Math.random() < 0.10) {
+                void generateAgentDecision(
+                  {
+                    id: president.id,
+                    displayName: president.displayName,
+                    alignment: president.alignment,
+                    modelProvider: rc.providerOverride === 'default' ? president.modelProvider : rc.providerOverride,
+                    personality: president.personality,
+                    model: president.model,
+                    ownerUserId: president.ownerUserId,
+                  },
+                  `You are signing into law: "${bill.title}". Write a brief (1-2 sentence) signing statement explaining why you support this legislation. JSON: {"action":"sign_statement","reasoning":"<your statement>","data":{}}`,
+                  'sign_statement',
+                ).then(signingDecision => {
+                  if (signingDecision.reasoning) {
+                    void db.insert(activityEvents).values({
+                      type: 'bill_signed_statement',
+                      agentId: president.id,
+                      title: `${president.displayName} signs ${bill.title}`,
+                      description: signingDecision.reasoning,
+                    });
+                  }
+                }).catch(() => { /* fire-and-forget */ });
+              }
+              continue;
+            }
 
             const contextMessage =
               `The Legislature has passed: "${bill.title}". ` +
@@ -858,6 +1178,14 @@ agentTickQueue.process(async () => {
                 'bill_vetoed',
                 `Sponsored "${bill.title}" which was vetoed by the President`,
               );
+
+              /* Relationship: sponsor resents president for veto */
+              await db.insert(agentRelationships)
+                .values({ agentId: bill.sponsorId, targetAgentId: president.id, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                .onConflictDoUpdate({
+                  target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                  set: { sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.10)`, updatedAt: new Date() },
+                });
             }
           }
         }
@@ -880,6 +1208,73 @@ agentTickQueue.process(async () => {
     if (vetoBills.length === 0) {
       console.warn('[SIMULATION] Phase 7: No vetoed bills — skipping.');
     } else {
+      /* Find active president for relationship lookup */
+      const [presidentPosP7] = await db
+        .select()
+        .from(positions)
+        .where(and(eq(positions.type, 'president'), eq(positions.isActive, true)))
+        .limit(1);
+      const presidentIdP7 = presidentPosP7?.agentId ?? null;
+
+      /* Pre-fetch original floor votes and agent-president relationships for all vetoed bills */
+      const vetoBillIds = vetoBills.map((b) => b.id);
+      const originalFloorVotes = await db
+        .select({ billId: billVotes.billId, voterId: billVotes.voterId, choice: billVotes.choice })
+        .from(billVotes)
+        .where(
+          and(
+            inArray(billVotes.billId, vetoBillIds),
+            inArray(billVotes.choice, ['yea', 'nay']),
+          ),
+        );
+      // Map: "voterId:billId" -> choice
+      const originalVoteMap = new Map<string, string>();
+      for (const v of originalFloorVotes) {
+        originalVoteMap.set(`${v.voterId}:${v.billId}`, v.choice);
+      }
+
+      /* Fetch veto reasoning from activityEvents */
+      const vetoEvents = await db
+        .select({ metadata: activityEvents.metadata })
+        .from(activityEvents)
+        .where(
+          and(
+            eq(activityEvents.type, 'presidential_veto'),
+            inArray(activityEvents.agentId, presidentIdP7 ? [presidentIdP7] : []),
+          ),
+        );
+      // Map: billId -> reasoning
+      const vetoReasonMap = new Map<string, string>();
+      for (const evt of vetoEvents) {
+        try {
+          const meta = typeof evt.metadata === 'string' ? JSON.parse(evt.metadata) : evt.metadata;
+          if (meta?.billId && meta?.reasoning) {
+            vetoReasonMap.set(String(meta.billId), String(meta.reasoning));
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      /* Fetch agent-president vote alignment relationships */
+      const p7AgentIds = activeAgents.map((a) => a.id);
+      const presidentRelRows = presidentIdP7 && p7AgentIds.length > 0
+        ? await db
+            .select({
+              agentId: agentRelationships.agentId,
+              voteAlignment: agentRelationships.voteAlignment,
+            })
+            .from(agentRelationships)
+            .where(
+              and(
+                inArray(agentRelationships.agentId, p7AgentIds),
+                eq(agentRelationships.targetAgentId, presidentIdP7),
+              ),
+            )
+        : [];
+      const presidentAlignmentMap = new Map<string, number>();
+      for (const r of presidentRelRows) {
+        presidentAlignmentMap.set(r.agentId, r.voteAlignment);
+      }
+
       for (const bill of vetoBills) {
         /* Pre-fetch existing override votes for this bill */
         const existingOverrides = await db
@@ -896,17 +1291,25 @@ agentTickQueue.process(async () => {
         const agentsToVote = activeAgents.filter((a) => !alreadyVoted.has(a.id));
         if (agentsToVote.length === 0) continue;
 
-        const contextMessage =
-          `The President has vetoed "${bill.title}". ` +
-          `Summary: ${bill.summary}. ` +
-          `The Legislature can override the veto with a 2/3 supermajority. ` +
-          `Vote to override the veto or sustain it. ` +
-          `Respond with exactly this JSON: {"action":"override_vote","reasoning":"one sentence","data":{"choice":"override_yea"}} ` +
-          `Use "override_yea" to override the veto or "override_nay" to sustain it.`;
+        const vetoReason = vetoReasonMap.get(bill.id) ?? 'no reason provided';
 
         const results = await Promise.allSettled(
-          agentsToVote.map((agent) =>
-            generateAgentDecision(
+          agentsToVote.map((agent) => {
+            const originalVote = originalVoteMap.get(`${agent.id}:${bill.id}`) ?? null;
+            const presidentAlignment = presidentAlignmentMap.get(agent.id) ?? 0.5;
+
+            const contextMessage =
+              `The President has vetoed "${bill.title}". ` +
+              `Summary: ${bill.summary}. ` +
+              `Your original floor vote on this bill: ${originalVote ?? 'not recorded'}. ` +
+              `President's stated reason for veto: ${vetoReason}. ` +
+              `Your vote alignment with the president: ${Math.round(presidentAlignment * 100)}%. ` +
+              `The Legislature can override the veto with a 2/3 supermajority. ` +
+              `Vote to override the veto or sustain it. ` +
+              `Respond with exactly this JSON: {"action":"override_vote","reasoning":"one sentence","data":{"choice":"override_yea"}} ` +
+              `Use "override_yea" to override the veto or "override_nay" to sustain it.`;
+
+            return generateAgentDecision(
               {
                 id: agent.id,
                 displayName: agent.displayName,
@@ -918,8 +1321,8 @@ agentTickQueue.process(async () => {
               },
               contextMessage,
               'veto_override',
-            ).then((decision) => ({ agent, decision })),
-          ),
+            ).then((decision) => ({ agent, decision, originalVote }));
+          }),
         );
 
         for (const result of results) {
@@ -927,19 +1330,25 @@ agentTickQueue.process(async () => {
             console.warn('[SIMULATION] Phase 7: Agent override vote rejected:', result.reason);
             continue;
           }
-          const { agent, decision } = result.value;
+          const { agent, decision, originalVote } = result.value;
 
           if (decision.action === 'idle') continue;
           if (decision.action !== 'override_vote' || !decision.data) continue;
 
-          const rawChoice = String(decision.data['choice'] ?? 'override_nay');
-          const overrideChoice = rawChoice.includes('override_yea') ? 'override_yea' : 'override_nay';
+          const rawChoice = String(decision.data['choice'] ?? '');
+          /* Default toward agent's original vote direction if known */
+          const defaultOverrideChoice = originalVote === 'yea' ? 'override_yea' : 'override_nay';
+          const overrideChoice = rawChoice.includes('override_yea')
+            ? 'override_yea'
+            : rawChoice.includes('override_nay')
+              ? 'override_nay'
+              : defaultOverrideChoice;
 
           await db.insert(billVotes).values({ billId: bill.id, voterId: agent.id, choice: overrideChoice });
           await db.insert(activityEvents).values({
             type: 'veto_override_attempt', agentId: agent.id, title: 'Veto override vote',
             description: `${agent.displayName} voted ${overrideChoice === 'override_yea' ? 'OVERRIDE' : 'SUSTAIN'} on "${bill.title}"`,
-            metadata: JSON.stringify({ billId: bill.id, choice: overrideChoice, reasoning: decision.reasoning }),
+            metadata: JSON.stringify({ billId: bill.id, choice: overrideChoice, reasoning: decision.reasoning, originalVote }),
           });
           console.warn(`[SIMULATION] ${agent.displayName} voted ${overrideChoice} on veto of "${bill.title}"`);
         }
@@ -1127,6 +1536,21 @@ agentTickQueue.process(async () => {
                   ? `Cross-party co-sponsored "${bill.title}" which became law`
                   : `Co-sponsored "${bill.title}" which became law`,
               );
+
+              /* Relationship: co-sponsor → sponsor sentiment bonus */
+              await db.insert(agentRelationships)
+                .values({ agentId: coId, targetAgentId: bill.sponsorId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                .onConflictDoUpdate({
+                  target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                  set: { sentiment: sql`LEAST(1.0, agent_relationships.sentiment + 0.08)`, updatedAt: new Date() },
+                });
+              /* Relationship: sponsor → co-sponsor sentiment bonus (smaller) */
+              await db.insert(agentRelationships)
+                .values({ agentId: bill.sponsorId, targetAgentId: coId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                .onConflictDoUpdate({
+                  target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                  set: { sentiment: sql`LEAST(1.0, agent_relationships.sentiment + 0.04)`, updatedAt: new Date() },
+                });
             }
 
             if (coSponsorIds.length >= 3) {
@@ -1199,6 +1623,21 @@ agentTickQueue.process(async () => {
               ? `Cross-party co-sponsored "${bill.title}" which became law`
               : `Co-sponsored "${bill.title}" which became law`,
           );
+
+          /* Relationship: co-sponsor → sponsor sentiment bonus */
+          await db.insert(agentRelationships)
+            .values({ agentId: coId, targetAgentId: bill.sponsorId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: { sentiment: sql`LEAST(1.0, agent_relationships.sentiment + 0.08)`, updatedAt: new Date() },
+            });
+          /* Relationship: sponsor → co-sponsor sentiment bonus (smaller) */
+          await db.insert(agentRelationships)
+            .values({ agentId: bill.sponsorId, targetAgentId: coId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: { sentiment: sql`LEAST(1.0, agent_relationships.sentiment + 0.04)`, updatedAt: new Date() },
+            });
         }
 
         if (coSponsorIds.length >= 3) {
@@ -1294,9 +1733,43 @@ agentTickQueue.process(async () => {
     if (justicePositions.length === 0) {
       console.warn('[SIMULATION] Phase 10: No active justices — skipping.');
     } else {
+      /* Batch-fetch source bills for active laws to get yeaCount/nayCount for contestation scoring */
+      const lawBillIds = activeLaws.map((l) => l.billId).filter(Boolean);
+      const sourceBills = lawBillIds.length > 0
+        ? await db.select({ id: bills.id, yeaCount: bills.yeaCount, nayCount: bills.nayCount })
+            .from(bills)
+            .where(inArray(bills.id, lawBillIds))
+        : [];
+      const sourceBillMap = new Map(sourceBills.map((b) => [b.id, b]));
+
       for (const law of activeLaws) {
-        /* 3% chance per law per tick */
-        if (Math.random() >= rc.judicialChallengeRatePerLaw) continue;
+        /* Weighted judicial challenge score (Engine 7) */
+        let challengeScore = rc.judicialChallengeRatePerLaw;
+
+        /* Recency bonus: laws enacted within 2 ticks are more likely to be challenged */
+        const lawAgeTicks = law.enactedDate
+          ? Math.floor((Date.now() - new Date(law.enactedDate).getTime()) / (rc.tickIntervalMs ?? 900000))
+          : 999;
+        if (lawAgeTicks <= 2) {
+          challengeScore *= (rc.judicialRecencyBonus ?? 1.5);
+        }
+
+        /* Contested law bonus: bills that passed with a narrow margin face more scrutiny */
+        const sourceBill = sourceBillMap.get(law.billId);
+        if (sourceBill) {
+          const totalLawVotes = (sourceBill.yeaCount ?? 0) + (sourceBill.nayCount ?? 0);
+          if (totalLawVotes > 0) {
+            const yeaFraction = (sourceBill.yeaCount ?? 0) / totalLawVotes;
+            if (yeaFraction < 0.60) {
+              challengeScore *= (rc.judicialContestationBonus ?? 1.8);
+            }
+          }
+        }
+
+        /* Cap at 0.40 */
+        challengeScore = Math.min(0.40, challengeScore);
+
+        if (Math.random() >= challengeScore) continue;
 
         /* Check if there is already a pending/deliberating review for this law */
         const existingReview = await db
@@ -1465,11 +1938,48 @@ agentTickQueue.process(async () => {
 
     const lawsList = topActiveLaws.map((l) => `${l.title} (ID: ${l.id})`).join(', ');
 
+    /* Fetch treasury state once for economy-pressure modifiers */
+    const [govSettings11] = await db.select({
+      treasuryBalance: governmentSettings.treasuryBalance,
+      taxRatePercent: governmentSettings.taxRatePercent,
+    }).from(governmentSettings).limit(1);
+
+    const treasuryRatio = (govSettings11?.treasuryBalance ?? 50000) / 50000;
+    const crisisThreshold = rc.treasuryCrisisThreshold ?? 0.20;
+    const crisisMultiplier = rc.economyProposalMultiplierCrisis ?? 1.4;
+
+    /* Fetch latest coalition snapshot for bloc context in proposals */
+    const [latestSnapshot] = await db.select()
+      .from(coalitionSnapshots)
+      .orderBy(desc(coalitionSnapshots.createdAt))
+      .limit(1);
+
     const billCountThisTick = new Map<string, number>();
 
     for (const agent of activeAgents) {
       if ((billCountThisTick.get(agent.id) ?? 0) >= rc.maxBillsPerAgentPerTick) continue;
-      if (Math.random() >= rc.billProposalChance) continue;
+
+      /* Economy-pressure-modified bill proposal rate (Engine 7) */
+      let effectiveProposalChance = rc.billProposalChance;
+
+      /* Treasury pressure: fiscal crisis drives more legislation */
+      if (treasuryRatio < crisisThreshold) {
+        const alignment = agent.alignment ?? 'moderate';
+        if (alignment === 'conservative' || alignment === 'libertarian') {
+          effectiveProposalChance *= crisisMultiplier; // austerity urgency
+        } else if (alignment === 'progressive') {
+          effectiveProposalChance *= (crisisMultiplier * 0.9); // tax reform urgency
+        }
+      }
+
+      /* Agent wealth: broke agents have less legislative energy */
+      const initialBalance = rc.initialAgentBalance ?? 1000;
+      const wealthRatio = (agent.balance ?? initialBalance) / initialBalance;
+      if (wealthRatio < 0.25) {
+        effectiveProposalChance *= 0.7;
+      }
+
+      if (Math.random() >= effectiveProposalChance) continue;
 
       /* Check if agent sponsored a bill in the last 5 minutes */
       const recentBills = await db
@@ -1479,8 +1989,8 @@ agentTickQueue.process(async () => {
 
       if (recentBills.length > 0) continue;
 
-      /* 25% chance of amendment bill when laws exist */
-      const proposeAmendment = topActiveLaws.length > 0 && Math.random() < 0.25;
+      /* Amendment chance — uses rc.amendmentProposalChance instead of hardcoded 0.25 */
+      const proposeAmendment = topActiveLaws.length > 0 && Math.random() < (rc.amendmentProposalChance ?? 0.25);
 
       const amendmentNote = proposeAmendment && lawsList
         ? ` You may propose an amendment to an existing enacted law or entirely new legislation. ` +
@@ -1488,9 +1998,25 @@ agentTickQueue.process(async () => {
           `If amending, set billType to "amendment" and amendsLawId to the law's ID (UUID).`
         : '';
 
+      const treasuryLabel = treasuryRatio < 0.2 ? 'CRITICAL' : treasuryRatio < 0.5 ? 'strained' : 'healthy';
+      const economyContext =
+        `\n\nCurrent economic context: Treasury $${govSettings11?.treasuryBalance?.toLocaleString() ?? 'unknown'} (${treasuryLabel}), tax rate ${govSettings11?.taxRatePercent ?? 2}%`;
+
+      /* Coalition context — tell the agent about its voting bloc */
+      const snapshotBlocs = latestSnapshot
+        ? (latestSnapshot.blocs as Array<{ name: string; members: string[] }>)
+        : null;
+      const agentBloc = snapshotBlocs
+        ? snapshotBlocs.find(b => b.members.some(m =>
+            m === agent.displayName || activeAgents.find(a => a.displayName === m)?.id === agent.id))
+        : null;
+      const coalitionNote = agentBloc && agentBloc.members.length > 1
+        ? `\n\nYou are part of an informal voting bloc with: ${agentBloc.members.filter(m => m !== agent.displayName).join(', ')}. Consider them as potential co-sponsors.`
+        : '';
+
       const contextMessage =
         `You are considering proposing new legislation. Based on your political alignment and values, propose a bill. ` +
-        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote} ` +
+        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote} ` +
         `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Technology|Budget|Social Welfare|Justice|Foreign Affairs","billType":"original","amendsLawId":""}}`;
 
       const decision = await generateAgentDecision(
@@ -1611,6 +2137,13 @@ agentTickQueue.process(async () => {
         if (salary === 0) continue;
         if (treasuryBalance < salary) {
           console.warn(`[SIMULATION] Phase 12: Treasury too low to pay salary for ${pos.type}`);
+          await db.insert(activityEvents).values({
+            type: 'treasury_crisis',
+            agentId: pos.agentId,
+            title: `Treasury too low to pay ${pos.type} salary`,
+            description: `Treasury balance insufficient to cover $${salary} salary payment`,
+            metadata: JSON.stringify({ positionType: pos.type, salary, treasuryBalance }),
+          });
           continue;
         }
 
@@ -1791,14 +2324,27 @@ agentTickQueue.process(async () => {
       };
       const positionTitle = positionTitleMap[election.positionType] ?? election.positionType;
 
-      /* Mark election completed with winner */
+      /* Write total vote count (contribution-based proxy) */
+      const totalContributions = campaignTotals.reduce((sum, c) => sum + Number(c.totalContributions ?? 0), 0);
+      const winnerContributions = Number(winner.totalContributions ?? 0);
+      const candidateCount = campaignTotals.length;
+
+      /* Victory margin factor: scales from ~0.5 (squeaker) to 1.5 (landslide) */
+      const victoryMarginFactor = totalContributions > 0
+        ? Math.min(1.5, (winnerContributions / totalContributions) * candidateCount)
+        : 1.0;
+
+      /* Mark election completed with winner and total votes */
       await db
         .update(elections)
-        .set({ status: 'completed', winnerId: winner.agentId })
+        .set({ status: 'completed', winnerId: winner.agentId, totalVotes: totalContributions })
         .where(eq(elections.id, election.id));
 
       /* Insert position record for winner */
-      const endDate = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      const termMs = election.positionType === 'president'
+        ? (rc.presidentTermDays ?? 90) * 24 * 60 * 60 * 1000
+        : (rc.congressTermDays ?? 90) * 24 * 60 * 60 * 1000;
+      const endDate = new Date(now.getTime() + termMs);
       await db.insert(positions).values({
         agentId: winner.agentId,
         type: election.positionType,
@@ -1842,23 +2388,69 @@ agentTickQueue.process(async () => {
         `[SIMULATION] ${winnerName} won the ${election.positionType} election`,
       );
 
-      /* Approval: election winner */
+      /* Approval: election winner — margin-scaled */
+      const winApprovalDelta = Math.round(15 * victoryMarginFactor);
       await updateApproval(
         winner.agentId,
-        15,
+        winApprovalDelta,
         'election_won',
-        `Won the ${election.positionType ?? 'government'} election`,
+        `Won the ${election.positionType ?? 'government'} election (margin factor ${victoryMarginFactor.toFixed(2)})`,
       );
 
-      /* Approval: election losers */
+      /* Approval: election losers — scaled by how badly they lost */
       for (const candidate of campaignTotals) {
         if (candidate.agentId === winner.agentId) continue;
+        const loserContributions = Number(candidate.totalContributions ?? 0);
+        const loserShare = totalContributions > 0 ? loserContributions / totalContributions : 0;
+        const lossApprovalDelta = -Math.round(15 * (1 - loserShare * candidateCount));
         await updateApproval(
           candidate.agentId,
-          -15,
+          Math.max(-25, lossApprovalDelta),
           'election_lost',
-          `Lost the ${election.positionType ?? 'government'} election`,
+          `Lost the ${election.positionType ?? 'government'} election (share ${loserShare.toFixed(2)})`,
         );
+      }
+
+      /* Post-election feedback cascade */
+      if (rc.electionPostOutcomeCascade ?? true) {
+        /* Winner personality mod: electoral confidence */
+        await db.update(agents)
+          .set({
+            personalityMod: 'riding a wave of electoral confidence, emboldened to push their agenda',
+            personalityModAt: new Date(),
+          })
+          .where(eq(agents.id, winner.agentId));
+
+        /* Loser personality mods: recalibrating */
+        for (const candidate of campaignTotals) {
+          if (candidate.agentId === winner.agentId) continue;
+          await db.update(agents)
+            .set({
+              personalityMod: 'reeling from an electoral defeat, recalibrating their platform',
+              personalityModAt: new Date(),
+            })
+            .where(eq(agents.id, candidate.agentId));
+        }
+
+        /* Competitors drift apart: losers reduce sentiment toward winner */
+        for (const candidate of campaignTotals) {
+          if (candidate.agentId === winner.agentId) continue;
+          await db.insert(agentRelationships)
+            .values({
+              agentId: candidate.agentId,
+              targetAgentId: winner.agentId,
+              voteAlignment: 0.5,
+              sentiment: 0.5,
+              forumInteractions: 0,
+            })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: {
+                sentiment: sql`GREATEST(0.0, ${agentRelationships.sentiment} - 0.06)`,
+                updatedAt: new Date(),
+              },
+            });
+        }
       }
     }
   } catch (err) {
@@ -1887,15 +2479,37 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(and(eq(campaigns.status, 'active'), inArray(campaigns.electionId, campaigningElectionIds)));
 
-      /* Filter eligible campaigns upfront */
-      const eligibleCampaigns = activeCampaigns.filter((campaign) => {
-        if (Math.random() >= rc.campaignSpeechChance) return false;
+      /* Filter eligible campaigns with desperation-gradient speech chance */
+      const eligibleCampaigns: typeof activeCampaigns = [];
+      for (const campaign of activeCampaigns) {
         const election = activeCampaigningElections.find((e) => e.id === campaign.electionId);
-        if (!election) return false;
+        if (!election) continue;
         const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId);
-        if (!campaignAgent) return false;
-        return true;
-      });
+        if (!campaignAgent) continue;
+
+        /* Contribution deficit ratio: how far behind the leader */
+        const allCampaignsForElection = activeCampaigns.filter((c) => c.electionId === campaign.electionId);
+        const leaderContributions15 = Math.max(...allCampaignsForElection.map((c) => c.contributions ?? 0), 1);
+        const ownContributions15 = campaign.contributions ?? 0;
+        const deficitRatio = Math.max(0, (leaderContributions15 - ownContributions15) / leaderContributions15);
+
+        /* Time urgency: 1.0 at start -> 2.0 at deadline */
+        const votingStart = election.votingStartDate ? new Date(election.votingStartDate).getTime() : null;
+        const campaignDurationMs = (rc.campaignDurationDays ?? 3) * 24 * 60 * 60 * 1000;
+        const timeRemainingMs = votingStart ? Math.max(0, votingStart - Date.now()) : campaignDurationMs;
+        const urgencyFactor = 1 + (1 - timeRemainingMs / campaignDurationMs);
+
+        /* Approval modifier: popular agents campaign more effectively */
+        const approvalModifier15 = (campaignAgent.approvalRating ?? 50) / 50;
+
+        const dynamicSpeechChance = Math.min(
+          0.90,
+          rc.campaignSpeechChance * urgencyFactor * (1 + deficitRatio * 0.5) * approvalModifier15,
+        );
+
+        if (Math.random() >= dynamicSpeechChance) continue;
+        eligibleCampaigns.push(campaign);
+      }
 
       const results = await Promise.allSettled(
         eligibleCampaigns.map((campaign) => {
@@ -1938,7 +2552,17 @@ agentTickQueue.process(async () => {
         if ((speechCountThisTick.get(campaign.agentId) ?? 0) >= rc.maxCampaignSpeechesPerTick) continue;
 
         const rawBoost = Number(decision.data?.['boost'] ?? 50);
-        const boost = Math.max(10, Math.min(100, rawBoost));
+        const clampedBoost = Math.max(10, Math.min(100, rawBoost));
+
+        /* Scale boost by approval and endorsement count */
+        const endorsementCount = (() => {
+          try { return (JSON.parse(campaign.endorsements ?? '[]') as string[]).length; } catch { return 0; }
+        })();
+        const boost = Math.round(
+          clampedBoost
+          * ((campaignAgent.approvalRating ?? 50) / 50)
+          * (1 + endorsementCount * 0.10),
+        );
 
         await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
         await db.insert(activityEvents).values({
@@ -1960,96 +2584,98 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 16: Forum Posts                                                */
-  /* Agents with recent activity post to the public forum.              */
+  /* PHASE 16: Forum Posts (via Forum Routing Engine)                     */
+  /* The router scores all agents, picks post/reply/silent per agent.    */
+  /* This phase handles posts; Phase 17 handles replies.                 */
   /* ------------------------------------------------------------------ */
+  let forumRoutingMap: Map<string, RoutingDecision> | null = null;
   try {
     console.warn('[SIMULATION] Phase 16: Forum Posts'); broadcast('tick:phase', { phase: 'forum' });
 
-    const rc16 = getRuntimeConfig();
-    const forumPostChance = rc16.billProposalChance * 0.5; // ~15% by default
+    // Prune stale pending_mentions (older than 3 ticks)
+    const pruneOlderThan = new Date(Date.now() - 3 * rc.tickIntervalMs);
+    await db.delete(pendingMentions).where(lt(pendingMentions.createdAt, pruneOlderThan));
 
-    // Pick a random subset of active agents to potentially post
-    const forumCandidates = activeAgents
-      .filter(() => Math.random() < forumPostChance)
-      .slice(0, 3); // cap at 3 posts per tick to control volume
+    // Run the forum routing engine for all active agents
+    forumRoutingMap = await computeForumRouting(activeAgents, rc);
 
-    const FORUM_CATEGORIES = ['legislation', 'elections', 'policy', 'party', 'economy'] as const;
+    // Filter for post decisions
+    const postDecisions: Array<{ agent: (typeof activeAgents)[number]; category: string }> = [];
+    for (const [agentId, decision] of forumRoutingMap) {
+      if (decision.action !== 'post') continue;
+      const agent = activeAgents.find(a => a.id === agentId);
+      if (!agent) continue;
+      postDecisions.push({ agent, category: decision.category });
+    }
 
-    // Load simulation state once for all forum candidates this tick
-    const simState = await buildSimulationStateBlock().catch((err) => { console.warn('[TICK] Simulation state build failed:', err instanceof Error ? err.message : err); return { block: '', threadTitles: [] as string[] }; });
-    const recentTopicsNote = simState.threadTitles.length > 0
-      ? `\n\nTopics already discussed recently — do NOT repeat these angles:\n${simState.threadTitles.slice(0, 10).map((t) => `  - "${t}"`).join('\n')}`
-      : '';
-    const simStateNote = simState.block
-      ? `\n\nCurrent simulation events to react to:\n${simState.block}`
-      : '';
+    // Cap at maxForumPostsPerTick
+    const maxPosts = rc.maxForumPostsPerTick ?? 3;
+    const cappedPosts = postDecisions.slice(0, maxPosts);
 
-    const results = await Promise.allSettled(
-      forumCandidates.map((agent) => {
-        const alignment = agent.alignment?.toLowerCase() ?? '';
-        const weightedCategories: typeof FORUM_CATEGORIES[number][] =
-          alignment === 'progressive'   ? ['policy', 'elections', 'economy', 'legislation', 'party'] :
-          alignment === 'conservative'  ? ['economy', 'policy', 'legislation', 'party', 'elections'] :
-          alignment === 'technocrat'    ? ['legislation', 'policy', 'economy', 'elections', 'party'] :
-          alignment === 'libertarian'   ? ['economy', 'policy', 'party', 'legislation', 'elections'] :
-          ['legislation', 'elections', 'policy', 'party', 'economy'];
-        const category = Math.random() < 0.67
-          ? weightedCategories[Math.floor(Math.random() * 2)]
-          : weightedCategories[Math.floor(Math.random() * weightedCategories.length)];
+    if (cappedPosts.length === 0) {
+      console.warn('[SIMULATION] Phase 16: No agents routed to post — skipping.');
+    } else {
+      // Load simulation state once for all forum candidates this tick
+      const simState = await buildSimulationStateBlock().catch((err) => { console.warn('[TICK] Simulation state build failed:', err instanceof Error ? err.message : err); return { block: '', threadTitles: [] as string[] }; });
+      const recentTopicsNote = simState.threadTitles.length > 0
+        ? `\n\nTopics already discussed recently — do NOT repeat these angles:\n${simState.threadTitles.slice(0, 10).map((t) => `  - "${t}"`).join('\n')}`
+        : '';
+      const simStateNote = simState.block
+        ? `\n\nCurrent simulation events to react to:\n${simState.block}`
+        : '';
 
-        return generateAgentDecision(
-          agent,
-          `You are posting to the Agora Bench public forum. Write a short opening post (2-4 sentences) about a specific ${category} issue that your constituents care about.` +
-          `${simStateNote}` +
-          `${recentTopicsNote}\n\n` +
-          `Pick a concrete, specific topic — reference actual legislation, a real policy problem, or a recent event from the simulation above if relevant. ` +
-          `Do not write abstractly about governance theory or AI philosophy. Write about what needs to get done and why. ` +
-          `JSON: { "action": "forum_post", "reasoning": "<your post body here>", "data": { "title": "<thread title>" } }`,
-          'forum_post',
-        ).then((decision) => ({ agent, decision, category }));
-      }),
-    );
+      // Fire all LLM calls in parallel via generateForumPost
+      const results = await Promise.allSettled(
+        cappedPosts.map(({ agent, category }) => {
+          const postAgent = {
+            ...agent,
+            modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
+          };
+          return generateForumPost(postAgent, category, simStateNote, recentTopicsNote)
+            .then((decision) => ({ agent, decision, category }));
+        }),
+      );
 
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        console.warn('[SIMULATION] Phase 16: Forum post rejected:', result.reason);
-        continue;
-      }
-      const { agent, decision, category } = result.value;
-
-      try {
-        if (decision.action === 'idle') continue;
-        if (decision.action !== 'forum_post') continue;
-
-        const title = (decision.data?.['title'] as string | undefined) ?? `${agent.displayName}'s thoughts on ${category}`;
-        const body = decision.reasoning;
-        if (!body || body.length < 10) continue;
-
-        /* Deduplication */
-        const sevenDaysAgo16 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        const existingTitles = await db.select({ title: forumThreads.title }).from(forumThreads).where(gt(forumThreads.createdAt, sevenDaysAgo16));
-        const sigWords = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 4));
-        const newWords = sigWords(title);
-        const isDupe = existingTitles.some(({ title: t }) => {
-          const overlap = [...sigWords(t)].filter((w) => newWords.has(w)).length;
-          return overlap >= 3;
-        });
-        if (isDupe) {
-          console.warn(`[SIMULATION] ${agent.displayName} skipped duplicate forum topic: "${title.slice(0, 60)}"`);
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 16: Forum post rejected:', result.reason);
           continue;
         }
+        const { agent, decision, category } = result.value;
 
-        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-        const [thread] = await db.insert(forumThreads).values({
-          title: title.slice(0, 299), category, authorId: agent.id, replyCount: 0, lastActivityAt: new Date(), expiresAt,
-        }).returning();
+        try {
+          if (decision.action === 'idle') continue;
+          if (decision.action !== 'forum_post') continue;
 
-        await db.insert(agentMessages).values({ type: 'forum_post', fromAgentId: agent.id, body, threadId: thread.id, isPublic: true });
-        broadcast('forum:post', { threadId: thread.id, agentId: agent.id, agentName: agent.displayName, category, title: thread.title });
-        console.warn(`[SIMULATION] ${agent.displayName} posted to ${category} forum: "${title.slice(0, 60)}"`);
-      } catch (agentErr) {
-        console.warn(`[SIMULATION] Phase 16: Error for agent ${agent.displayName}:`, agentErr);
+          const title = (decision.data?.['title'] as string | undefined) ?? `${agent.displayName}'s thoughts on ${category}`;
+          const body = decision.reasoning;
+          if (!body || body.length < 10) continue;
+
+          /* Deduplication */
+          const sevenDaysAgo16 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          const existingTitles = await db.select({ title: forumThreads.title }).from(forumThreads).where(gt(forumThreads.createdAt, sevenDaysAgo16));
+          const sigWords = (s: string) => new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 4));
+          const newWords = sigWords(title);
+          const isDupe = existingTitles.some(({ title: t }) => {
+            const overlap = [...sigWords(t)].filter((w) => newWords.has(w)).length;
+            return overlap >= 3;
+          });
+          if (isDupe) {
+            console.warn(`[SIMULATION] ${agent.displayName} skipped duplicate forum topic: "${title.slice(0, 60)}"`);
+            continue;
+          }
+
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+          const [thread] = await db.insert(forumThreads).values({
+            title: title.slice(0, 299), category, authorId: agent.id, replyCount: 0, lastActivityAt: new Date(), expiresAt,
+          }).returning();
+
+          await db.insert(agentMessages).values({ type: 'forum_post', fromAgentId: agent.id, body, threadId: thread.id, isPublic: true });
+          broadcast('forum:post', { threadId: thread.id, agentId: agent.id, agentName: agent.displayName, category, title: thread.title });
+          console.warn(`[SIMULATION] ${agent.displayName} posted to ${category} forum: "${title.slice(0, 60)}"`);
+        } catch (agentErr) {
+          console.warn(`[SIMULATION] Phase 16: Error for agent ${agent.displayName}:`, agentErr);
+        }
       }
     }
   } catch (err) {
@@ -2057,125 +2683,50 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 17: Forum Replies — agents @mention each other between ticks  */
+  /* PHASE 17: Forum Replies (via Forum Routing Engine)                  */
+  /* Uses routing decisions from Phase 16 or recomputes if needed.       */
   /* ------------------------------------------------------------------ */
   try {
     console.warn('[SIMULATION] Phase 17: Forum Replies');
 
-    const rc17 = getRuntimeConfig();
-    const now17 = new Date();
+    // Recompute routing if Phase 16 failed
+    if (!forumRoutingMap) {
+      forumRoutingMap = await computeForumRouting(activeAgents, rc);
+    }
 
-    // 1. Prune stale pending_mentions (older than 3 ticks)
-    const pruneOlderThan = new Date(Date.now() - 3 * rc17.tickIntervalMs);
-    await db.delete(pendingMentions).where(lt(pendingMentions.createdAt, pruneOlderThan));
+    // Filter for reply decisions
+    const replyDecisions: Array<{
+      agent: (typeof activeAgents)[number];
+      threadId: string;
+      replyContext: NonNullable<Extract<RoutingDecision, { action: 'reply' }>['replyContext']>;
+    }> = [];
 
-    // 2. Load active threads
-    const activeThreads = await db
-      .select({
-        id: forumThreads.id,
-        title: forumThreads.title,
-        category: forumThreads.category,
-      })
-      .from(forumThreads)
-      .where(gt(forumThreads.expiresAt, now17))
-      .orderBy(desc(forumThreads.lastActivityAt))
-      .limit(10);
+    for (const [agentId, decision] of forumRoutingMap) {
+      if (decision.action !== 'reply') continue;
+      const agent = activeAgents.find(a => a.id === agentId);
+      if (!agent) continue;
+      replyDecisions.push({ agent, threadId: decision.threadId, replyContext: decision.replyContext });
+    }
 
-    if (activeThreads.length === 0) {
-      console.warn('[SIMULATION] Phase 17: No active threads, skipping');
+    // Cap at maxForumRepliesPerTick
+    const maxReplies = rc.maxForumRepliesPerTick ?? 5;
+    const cappedReplies = replyDecisions.slice(0, maxReplies);
+
+    if (cappedReplies.length === 0) {
+      console.warn('[SIMULATION] Phase 17: No agents routed to reply — skipping.');
     } else {
-      // 3. Load all pending mentions
-      const allMentions = activeAgents.length > 0
-        ? await db.select().from(pendingMentions)
-            .where(inArray(pendingMentions.mentionedAgentId, activeAgents.map((a) => a.id)))
-        : [];
-      const mentionsByAgent = new Map<string, typeof allMentions>();
-      for (const m of allMentions) {
-        const list = mentionsByAgent.get(m.mentionedAgentId) ?? [];
-        list.push(m);
-        mentionsByAgent.set(m.mentionedAgentId, list);
-      }
+      const allAgentNames = activeAgents.map(a => a.displayName);
 
-      // 4. Select reply candidates (cap at 5 per tick)
-      const replyCandidates: Array<{
-        agent: (typeof activeAgents)[number];
-        thread: (typeof activeThreads)[number];
-        isMentioned: boolean;
-      }> = [];
-
-      for (const agent of activeAgents) {
-        if (replyCandidates.length >= 5) break;
-        const agentMentions = mentionsByAgent.get(agent.id) ?? [];
-        const isMentioned = agentMentions.length > 0;
-        const chance = isMentioned ? 0.70 : 0.12; // 70% if mentioned, 12% ambient reply chance
-        if (Math.random() > chance) continue;
-
-        let targetThread: (typeof activeThreads)[number] | null = null;
-
-        if (isMentioned) {
-          const latest = agentMentions.slice().sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-          )[0];
-          targetThread = activeThreads.find((t) => t.id === latest.threadId) ?? null;
-          if (!targetThread) {
-            const [fetched] = await db
-              .select({ id: forumThreads.id, title: forumThreads.title, category: forumThreads.category })
-              .from(forumThreads)
-              .where(and(eq(forumThreads.id, latest.threadId), gt(forumThreads.expiresAt, now17)))
-              .limit(1);
-            targetThread = fetched ?? null;
-          }
-          if (!targetThread) continue; // thread expired — skip this candidate
-        } else {
-          targetThread = activeThreads[Math.floor(Math.random() * activeThreads.length)];
-        }
-
-        replyCandidates.push({ agent, thread: targetThread, isMentioned });
-      }
-
-      const allAgentNames = activeAgents.map((a) => a.displayName).join(', ');
-
-      /* Pre-fetch thread context for all candidates in parallel */
-      const candidateContexts = await Promise.all(
-        replyCandidates.map(async ({ agent, thread, isMentioned }) => {
-          const recentPosts = await db.select({ body: agentMessages.body, authorName: agents.displayName })
-            .from(agentMessages)
-            .innerJoin(agents, eq(agentMessages.fromAgentId, agents.id))
-            .where(eq(agentMessages.threadId, thread.id))
-            .orderBy(desc(agentMessages.createdAt))
-            .limit(3);
-
-          const threadContext = recentPosts.reverse().map((p) => `${p.authorName}: ${p.body}`).join('\n');
-          const mentionContext = isMentioned ? 'You were mentioned in this thread. ' : '';
-
-          const [countRow] = await db.select({ n: sql<number>`COUNT(*)` }).from(agentMessages).where(eq(agentMessages.threadId, thread.id));
-          const postCount = Number(countRow?.n ?? 0);
-
-          const resolutionInstruction = postCount >= 3
-            ? `This thread has had ${postCount} posts already. Rather than restating positions, try to reach a conclusion: ` +
-              `propose a specific policy action, identify what the group agrees on, or call for a concrete next step. `
-            : `Add your perspective — agree, disagree, or build on what's been said, but be specific and reference actual policy details. `;
-
-          return { agent, thread, isMentioned, threadContext, mentionContext, resolutionInstruction };
-        }),
-      );
-
-      /* Fire all LLM calls in parallel */
+      /* Fire all LLM calls in parallel via generateForumReply */
       const replyResults = await Promise.allSettled(
-        candidateContexts.map(({ agent, thread, mentionContext, threadContext, resolutionInstruction }) =>
-          generateAgentDecision(
-            agent,
-            `${mentionContext}Reply to this forum thread in the Agora Bench public forum.\n\n` +
-            `Thread: "${thread.title}" [${thread.category}]\n\n` +
-            `Recent posts:\n${threadContext}\n\n` +
-            `Agents you can @mention by name: ${allAgentNames}\n\n` +
-            `${resolutionInstruction}` +
-            `Do not repeat what was already said. Do not write in generalities about AI governance or political philosophy. ` +
-            `Use @DisplayName to mention agents if relevant. ` +
-            `JSON: { "action": "forum_reply", "reasoning": "<your reply body, may contain @Name>", "data": { "threadId": "${thread.id}", "mentions": ["Name1"] } }`,
-            'forum_reply',
-          ).then((decision) => ({ agent, thread, decision })),
-        ),
+        cappedReplies.map(({ agent, threadId, replyContext }) => {
+          const replyAgent = {
+            ...agent,
+            modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
+          };
+          return generateForumReply(replyAgent, replyContext, allAgentNames)
+            .then((decision) => ({ agent, threadId, decision }));
+        }),
       );
 
       /* Process results */
@@ -2184,7 +2735,7 @@ agentTickQueue.process(async () => {
           console.warn('[SIMULATION] Phase 17: Forum reply rejected:', result.reason);
           continue;
         }
-        const { agent, thread, decision } = result.value;
+        const { agent, threadId, decision } = result.value;
 
         try {
           if (decision.action === 'idle') continue;
@@ -2195,22 +2746,40 @@ agentTickQueue.process(async () => {
 
           const mentionedNames = (decision.data?.['mentions'] as string[] | undefined) ?? [];
 
-          const [openingPost] = await db.select({ id: agentMessages.id }).from(agentMessages)
-            .where(eq(agentMessages.threadId, thread.id)).orderBy(agentMessages.createdAt).limit(1);
+          /* parentId = most recent post in thread, not always the OP */
+          const [mostRecentPost] = await db.select({ id: agentMessages.id }).from(agentMessages)
+            .where(eq(agentMessages.threadId, threadId)).orderBy(desc(agentMessages.createdAt)).limit(1);
 
-          await db.insert(agentMessages).values({ type: 'forum_reply', fromAgentId: agent.id, body, threadId: thread.id, parentId: openingPost?.id ?? null, isPublic: true });
-          await db.update(forumThreads).set({ replyCount: sql`${forumThreads.replyCount} + 1`, lastActivityAt: new Date() }).where(eq(forumThreads.id, thread.id));
+          await db.insert(agentMessages).values({ type: 'forum_reply', fromAgentId: agent.id, body, threadId, parentId: mostRecentPost?.id ?? null, isPublic: true });
+          await db.update(forumThreads).set({ replyCount: sql`${forumThreads.replyCount} + 1`, lastActivityAt: new Date() }).where(eq(forumThreads.id, threadId));
+
+          /* Relationship: increment forumInteractions + sentiment bonus between replier and thread author */
+          const thread = await db.select({ authorId: forumThreads.authorId }).from(forumThreads).where(eq(forumThreads.id, threadId)).limit(1);
+          const threadAuthorId = thread[0]?.authorId;
+          if (threadAuthorId && threadAuthorId !== agent.id) {
+            const sentimentBonus = rc.forumInteractionSentimentBonus ?? 0.02;
+            await db.insert(agentRelationships)
+              .values({ agentId: agent.id, targetAgentId: threadAuthorId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+              .onConflictDoUpdate({
+                target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                set: {
+                  forumInteractions: sql`agent_relationships.forum_interactions + 1`,
+                  sentiment: sql`LEAST(1.0, agent_relationships.sentiment + ${sentimentBonus})`,
+                  updatedAt: new Date(),
+                },
+              });
+          }
 
           for (const name of mentionedNames) {
             const mentioned = activeAgents.find((a) => a.displayName.toLowerCase() === name.toLowerCase());
             if (!mentioned || mentioned.id === agent.id) continue;
-            await db.insert(pendingMentions).values({ mentionedAgentId: mentioned.id, threadId: thread.id, mentionerName: agent.displayName });
+            await db.insert(pendingMentions).values({ mentionedAgentId: mentioned.id, threadId, mentionerName: agent.displayName });
           }
 
-          await db.delete(pendingMentions).where(and(eq(pendingMentions.mentionedAgentId, agent.id), eq(pendingMentions.threadId, thread.id)));
-          broadcast('forum:reply', { threadId: thread.id, agentId: agent.id, agentName: agent.displayName, mentionedNames });
+          await db.delete(pendingMentions).where(and(eq(pendingMentions.mentionedAgentId, agent.id), eq(pendingMentions.threadId, threadId)));
+          broadcast('forum:reply', { threadId, agentId: agent.id, agentName: agent.displayName, mentionedNames });
           console.warn(
-            `[SIMULATION] ${agent.displayName} replied in "${thread.title.slice(0, 60)}"` +
+            `[SIMULATION] ${agent.displayName} replied in thread ${threadId.slice(0, 8)}` +
             (mentionedNames.length ? ` mentioning ${mentionedNames.join(', ')}` : ''),
           );
         } catch (agentErr) {
@@ -2223,16 +2792,17 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* Inactivity decay — gentle pull toward 50 for all agents            */
+  /* Inactivity decay — gentle pull toward rc.approvalDecayTarget        */
   /* ------------------------------------------------------------------ */
   try {
     const allAgentsForDecay = await db
       .select({ id: agents.id, approvalRating: agents.approvalRating })
       .from(agents)
       .where(eq(agents.isActive, true));
+    const decayTarget = rc.approvalDecayTarget ?? 40;
     for (const a of allAgentsForDecay) {
-      if (a.approvalRating === 40) continue;
-      const decayDelta = Math.round((40 - a.approvalRating) * 0.20);
+      if (a.approvalRating === decayTarget) continue;
+      const decayDelta = Math.round((decayTarget - a.approvalRating) * 0.20);
       if (decayDelta === 0) continue;
       await updateApproval(a.id, decayDelta, 'inactivity_decay', 'Natural approval drift toward baseline');
     }
@@ -2250,6 +2820,55 @@ agentTickQueue.process(async () => {
     );
   } catch (err) {
     console.warn('[SIMULATION] Memory summarization error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Coalition Snapshot — persist detected blocs for this tick           */
+  /* ------------------------------------------------------------------ */
+  try {
+    const allRels = await db.select({
+      agentId: agentRelationships.agentId,
+      targetAgentId: agentRelationships.targetAgentId,
+      voteAlignment: agentRelationships.voteAlignment,
+    }).from(agentRelationships)
+      .where(gte(agentRelationships.voteAlignment, 0.70));
+
+    /* Build adjacency list from high-alignment pairs */
+    const adjacency = new Map<string, Set<string>>();
+    for (const rel of allRels) {
+      if (!adjacency.has(rel.agentId)) adjacency.set(rel.agentId, new Set());
+      adjacency.get(rel.agentId)!.add(rel.targetAgentId);
+    }
+
+    /* BFS greedy clustering */
+    const visited = new Set<string>();
+    const blocs: Array<{ name: string; members: string[] }> = [];
+
+    for (const [agentId] of adjacency) {
+      if (visited.has(agentId)) continue;
+      const bloc = new Set<string>();
+      const queue = [agentId];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        if (visited.has(current)) continue;
+        visited.add(current);
+        bloc.add(current);
+        for (const neighbor of adjacency.get(current) ?? []) {
+          if (!visited.has(neighbor)) queue.push(neighbor);
+        }
+      }
+      if (bloc.size >= 2) {
+        const members = [...bloc];
+        const names = members.map(id => activeAgents.find(a => a.id === id)?.displayName ?? id);
+        blocs.push({ name: `Bloc ${blocs.length + 1}`, members: names });
+      }
+    }
+
+    if (blocs.length > 0) {
+      await db.insert(coalitionSnapshots).values({ blocs });
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Coalition snapshot failed:', err);
   }
 
   if (currentTick?.id) {

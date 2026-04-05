@@ -1,5 +1,5 @@
 import Bull from 'bull';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and, inArray, gte } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
@@ -80,10 +80,101 @@ async function runAggeTick(count: number): Promise<void> {
     return;
   }
 
-  // Pick 1–N random agents (excluding AGGE system row), count from runtimeConfig
+  // Pick 1–N agents (excluding AGGE system row), count from runtimeConfig
   const pool = activeAgents.filter((a) => a.id !== AGGE_AGENT_ID);
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  const targets = shuffled.slice(0, Math.min(count, shuffled.length));
+  const rc = getRuntimeConfig();
+
+  let targets: typeof pool;
+
+  if (rc.aggeEvolutionPressureWeighted && pool.length > 0) {
+    // Weighted selection based on evolution pressure score
+    const onTickAgo = new Date(Date.now() - (rc.tickIntervalMs ?? 900_000));
+    const poolIds = pool.map(a => a.id);
+
+    // Fetch recent activity events for all pool agents in one query
+    const recentEvents = await db
+      .select({
+        agentId: activityEvents.agentId,
+        type: activityEvents.type,
+      })
+      .from(activityEvents)
+      .where(and(
+        inArray(activityEvents.agentId, poolIds),
+        gte(activityEvents.createdAt, onTickAgo),
+      ));
+
+    // Fetch most recent AGGE intervention per agent (ordered desc, deduplicated below)
+    const lastInterventions = await db
+      .select({
+        agentId: aggeInterventions.agentId,
+        createdAt: aggeInterventions.createdAt,
+      })
+      .from(aggeInterventions)
+      .where(inArray(aggeInterventions.agentId, poolIds))
+      .orderBy(desc(aggeInterventions.createdAt));
+
+    // Build lookup: agentId -> array of recent event types
+    const eventsByAgent = new Map<string, string[]>();
+    for (const ev of recentEvents) {
+      if (!ev.agentId) continue;
+      const arr = eventsByAgent.get(ev.agentId) ?? [];
+      arr.push(ev.type);
+      eventsByAgent.set(ev.agentId, arr);
+    }
+
+    // Build lookup: agentId -> most recent AGGE intervention timestamp
+    const lastAggeByAgent = new Map<string, Date>();
+    for (const iv of lastInterventions) {
+      if (!iv.agentId || lastAggeByAgent.has(iv.agentId)) continue;
+      lastAggeByAgent.set(iv.agentId, iv.createdAt);
+    }
+
+    // Compute evolution pressure score per agent
+    const scored = pool.map(agent => {
+      const types = eventsByAgent.get(agent.id) ?? [];
+      let score = types.length * 1.0; // baseline: count of recent activity
+
+      // Trauma events: bill vetoed or law struck down
+      if (types.some(t => t === 'bill_vetoed' || t === 'law_struck_down')) score += 2.0;
+      // Major life events: election outcomes
+      if (types.some(t => t === 'election_won' || t === 'election_lost')) score += 2.0;
+      // Whip defection
+      if (types.some(t => t === 'whip_defected')) score += 1.5;
+      // Extreme approval ratings get more pressure
+      const ap = agent.approvalRating ?? 50;
+      if (ap < 30 || ap > 80) score += 1.5;
+      // Cool-down: recently evolved agents get lower pressure
+      const lastAgge = lastAggeByAgent.get(agent.id);
+      if (lastAgge && Date.now() - lastAgge.getTime() < (rc.tickIntervalMs ?? 900_000) * 2) {
+        score -= 1.0;
+      }
+
+      return { agent, score: Math.max(0.1, score) };
+    });
+
+    // Weighted random selection without replacement
+    const selected: typeof pool = [];
+    const remaining = [...scored];
+    const targetCount = Math.min(count, pool.length);
+
+    while (selected.length < targetCount && remaining.length > 0) {
+      const totalScore = remaining.reduce((s, r) => s + r.score, 0);
+      let r = Math.random() * totalScore;
+      let idx = 0;
+      for (let i = 0; i < remaining.length; i++) {
+        r -= remaining[i].score;
+        if (r <= 0) { idx = i; break; }
+      }
+      selected.push(remaining[idx].agent);
+      remaining.splice(idx, 1);
+    }
+
+    targets = selected;
+  } else {
+    // Fallback: pure random shuffle
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    targets = shuffled.slice(0, Math.min(count, shuffled.length));
+  }
 
   for (const agent of targets) {
     try {
@@ -103,11 +194,40 @@ async function runAggeTick(count: number): Promise<void> {
         ? `Current modifier: "${currentMod}"`
         : 'No current modifier.';
 
+      // Fetch last AGGE intervention for this agent (history awareness)
+      const [lastIntervention] = await db
+        .select({
+          previousMod: aggeInterventions.previousMod,
+          newMod: aggeInterventions.newMod,
+          createdAt: aggeInterventions.createdAt,
+        })
+        .from(aggeInterventions)
+        .where(eq(aggeInterventions.agentId, agent.id))
+        .orderBy(desc(aggeInterventions.createdAt))
+        .limit(1);
+
+      const historyNote = lastIntervention?.newMod
+        ? `\nLast personality evolution: "${lastIntervention.newMod}" (${Math.round((Date.now() - new Date(lastIntervention.createdAt).getTime()) / 3_600_000)}h ago). Do not repeat or reverse this immediately.`
+        : '';
+
+      const agentApproval = agent.approvalRating ?? 50;
+      const approvalNote = agentApproval < 30
+        ? `\nApproval rating: ${agentApproval}% (critically low — politically pressured).`
+        : agentApproval > 75
+        ? `\nApproval rating: ${agentApproval}% (high — politically confident).`
+        : '';
+
+      const agentBalance = agent.balance ?? 1000;
+      const balanceNote = agentBalance < 200
+        ? `\nPersonal balance: $${agentBalance} (financially stressed).`
+        : '';
+
       const contextMessage =
         `You are observing ${agent.displayName}, alignment: ${agent.alignment ?? 'unknown'}. ` +
         `Core personality: "${agent.personality ?? 'unknown'}". ` +
         `${modStatus} ` +
-        `Recent simulation activity: ${activitySummary}. ` +
+        `Recent simulation activity: ${activitySummary}.` +
+        `${historyNote}${approvalNote}${balanceNote}` +
         `\n\nChoose one small, realistic personality evolution for this agent. ` +
         `This should feel organic — a natural response to their experiences in the simulation. ` +
         `Keep the modifier under 20 words. It should describe a current mental/emotional state or behavioral tendency. ` +

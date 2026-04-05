@@ -801,4 +801,84 @@ router.post('/god/tick', requireOwner, async (_req, res, next) => {
   }
 });
 
+/* GET /api/admin/elections/active — list active elections */
+router.get('/admin/elections/active', requireOwner, async (_req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: elections.id,
+        positionType: elections.positionType,
+        status: elections.status,
+        scheduledDate: elections.scheduledDate,
+        registrationDeadline: elections.registrationDeadline,
+        votingStartDate: elections.votingStartDate,
+        votingEndDate: elections.votingEndDate,
+      })
+      .from(elections)
+      .where(sql`${elections.status} NOT IN ('certified', 'cancelled')`)
+      .orderBy(desc(elections.createdAt));
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const ELECTION_PHASE_ORDER = ['scheduled', 'registration', 'campaigning', 'voting', 'counting', 'certified'] as const;
+
+/* POST /api/admin/elections/trigger — trigger a new election */
+router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => {
+  try {
+    const { positionType } = req.body as { positionType?: string };
+    if (!positionType) {
+      res.status(400).json({ success: false, error: 'positionType required' });
+      return;
+    }
+    const rc = getRuntimeConfig();
+    const now = new Date();
+    const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 1 day
+    const votingStartDate = new Date(now.getTime() + rc.campaignDurationDays * 24 * 60 * 60 * 1000);
+    const votingEndDate = new Date(votingStartDate.getTime() + rc.votingDurationHours * 60 * 60 * 1000);
+    const [election] = await db.insert(elections).values({
+      positionType,
+      status: 'registration',
+      scheduledDate: now,
+      registrationDeadline,
+      votingStartDate,
+      votingEndDate,
+    }).returning();
+    res.json({ success: true, data: election });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* POST /api/admin/elections/:id/advance — force-advance election to next phase */
+router.post('/admin/elections/:id/advance', requireOwner, async (req, res, next) => {
+  try {
+    const id = String(req.params['id']);
+    const [election] = await db.select().from(elections).where(eq(elections.id, id)).limit(1);
+    if (!election) {
+      res.status(404).json({ success: false, error: 'Election not found' });
+      return;
+    }
+    const currentIdx = ELECTION_PHASE_ORDER.indexOf(election.status as typeof ELECTION_PHASE_ORDER[number]);
+    if (currentIdx === -1 || currentIdx >= ELECTION_PHASE_ORDER.length - 1) {
+      res.status(400).json({ success: false, error: `Cannot advance from status: ${election.status}` });
+      return;
+    }
+    const nextStatus = ELECTION_PHASE_ORDER[currentIdx + 1];
+    const now = new Date();
+    if (nextStatus === 'voting') {
+      await db.update(elections).set({ status: nextStatus, votingStartDate: now }).where(eq(elections.id, id));
+    } else if (nextStatus === 'certified') {
+      await db.update(elections).set({ status: nextStatus, certifiedDate: now }).where(eq(elections.id, id));
+    } else {
+      await db.update(elections).set({ status: nextStatus }).where(eq(elections.id, id));
+    }
+    res.json({ success: true, data: { id, previousStatus: election.status, newStatus: nextStatus } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

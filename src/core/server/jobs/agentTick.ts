@@ -76,7 +76,7 @@ agentTickQueue.process(async () => {
   const whipSignals = new Map<string, Map<string, string>>();
 
   try {
-    console.warn('[SIMULATION] Phase 1: Party Whip Signal');
+    console.warn('[SIMULATION] Phase 1: Party Whip Signal'); broadcast('tick:phase', { phase: 'voting' });
 
     const floorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
 
@@ -433,7 +433,7 @@ agentTickQueue.process(async () => {
   /* Committee chairs approve, amend, or table bills in committee.        */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 3: Committee Review');
+    console.warn('[SIMULATION] Phase 3: Committee Review'); broadcast('tick:phase', { phase: 'committee' });
 
     const halfDelay = rc.billAdvancementDelayMs / 2;
     const halfDelayAgo = new Date(Date.now() - halfDelay);
@@ -648,7 +648,7 @@ agentTickQueue.process(async () => {
   /* Congress-vetoed bills get status='vetoed'.                           */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 5: Bill Resolution');
+    console.warn('[SIMULATION] Phase 5: Bill Resolution'); broadcast('tick:phase', { phase: 'presidential' });
 
     const floorBillsForResolution = await db.select().from(bills).where(eq(bills.status, 'floor'));
 
@@ -1037,7 +1037,7 @@ agentTickQueue.process(async () => {
   /* Passed bills become laws. Amendment bills update existing law text.  */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 9: Law Enactment');
+    console.warn('[SIMULATION] Phase 9: Law Enactment'); broadcast('tick:phase', { phase: 'legislation' });
 
     const passedBillsForEnactment = await db.select().from(bills).where(eq(bills.status, 'passed'));
 
@@ -1220,7 +1220,7 @@ agentTickQueue.process(async () => {
   /* Justices challenge and vote on active laws (3% chance per law).      */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 10: Judicial Review');
+    console.warn('[SIMULATION] Phase 10: Judicial Review'); broadcast('tick:phase', { phase: 'judiciary' });
 
     const activeLaws = await db
       .select()
@@ -1452,7 +1452,7 @@ agentTickQueue.process(async () => {
   /* sponsored one in the last 5 minutes. 25% chance of amendment bill.   */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 11: Agent Bill Proposal');
+    console.warn('[SIMULATION] Phase 11: Agent Bill Proposal'); broadcast('tick:phase', { phase: 'economy' });
 
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000);
 
@@ -1721,7 +1721,7 @@ agentTickQueue.process(async () => {
   /* voting -> completed when votingEndDate <= now                        */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 14: Election Lifecycle');
+    console.warn('[SIMULATION] Phase 14: Election Lifecycle'); broadcast('tick:phase', { phase: 'elections' });
 
     const now = new Date();
 
@@ -1870,7 +1870,7 @@ agentTickQueue.process(async () => {
   /* Campaigning agents have a 20% chance per tick to make a speech.      */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 15: Agent Campaigning');
+    console.warn('[SIMULATION] Phase 15: Agent Campaigning'); broadcast('tick:phase', { phase: 'campaign' });
 
     const activeCampaigningElections = await db
       .select()
@@ -1964,7 +1964,7 @@ agentTickQueue.process(async () => {
   /* Agents with recent activity post to the public forum.              */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 16: Forum Posts');
+    console.warn('[SIMULATION] Phase 16: Forum Posts'); broadcast('tick:phase', { phase: 'forum' });
 
     const rc16 = getRuntimeConfig();
     const forumPostChance = rc16.billProposalChance * 0.5; // ~15% by default

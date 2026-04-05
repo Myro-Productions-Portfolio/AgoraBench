@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
@@ -154,6 +154,39 @@ const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'health',      label: 'Health',          icon: '\u2661' },
 ];
 
+function TickStageBar({ phases }: { phases: { key: string; label: string; state: 'idle' | 'active' | 'done' }[]; running: boolean }) {
+  // Always show so you can see it waiting between ticks too
+  return (
+    <div className="rounded-lg border border-border bg-surface px-4 py-3 space-y-2">
+      <p className="text-badge text-text-muted uppercase tracking-widest">Tick in Progress</p>
+      <div className="flex gap-1 items-stretch">
+        {phases.map((phase, i) => {
+          const isDone = phase.state === 'done';
+          const isActive = phase.state === 'active';
+          return (
+            <div key={phase.key} className="flex-1 flex flex-col gap-1 min-w-0">
+              <div
+                className={`h-2 rounded-sm transition-all duration-500 ${
+                  isDone  ? 'bg-gold/80' :
+                  isActive ? 'bg-gold/40 animate-pulse' :
+                  'bg-white/10'
+                }`}
+              />
+              <span className={`text-[9px] uppercase tracking-wide text-center truncate transition-colors duration-300 ${
+                isDone  ? 'text-gold' :
+                isActive ? 'text-gold/70' :
+                'text-text-muted/40'
+              }`}>
+                {i + 1}. {phase.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
@@ -198,23 +231,7 @@ function msToLabel(ms: number): string {
   return `${ms / 86_400_000}d`;
 }
 
-const TICK_PRESETS = [
-  { label: '30s', ms: 30_000 },
-  { label: '2m', ms: 120_000 },
-  { label: '5m', ms: 300_000 },
-  { label: '15m', ms: 900_000 },
-  { label: '1h', ms: 3_600_000 },
-  { label: '6h', ms: 21_600_000 },
-  { label: '24h', ms: 86_400_000 },
-];
 
-const ADVANCEMENT_PRESETS = [
-  { label: '30s', ms: 30_000 },
-  { label: '1m', ms: 60_000 },
-  { label: '5m', ms: 300_000 },
-  { label: '15m', ms: 900_000 },
-  { label: '1h', ms: 3_600_000 },
-];
 
 const ALIGNMENTS = ['progressive', 'moderate', 'conservative', 'libertarian', 'technocrat'];
 const AI_PROVIDERS = ['anthropic', 'openai', 'google', 'huggingface', 'ollama'];
@@ -355,6 +372,28 @@ export function AdminPage() {
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(Date.now());
+  const [lastTickStartMs, setLastTickStartMs] = useState<number | null>(null);
+
+  /* Live tick stage tracker */
+  type TickStage = 'idle' | 'active' | 'done';
+  interface TickPhase { key: string; label: string; state: TickStage }
+  const TICK_PHASES: { key: string; label: string; events: string[] }[] = [
+    { key: 'voting',      label: 'Voting',      events: ['agent:vote'] },
+    { key: 'committee',   label: 'Committee',   events: ['bill:advanced', 'bill:tabled', 'bill:committee_amended'] },
+    { key: 'presidential',label: 'Presidential',events: ['bill:presidential_veto', 'bill:passed', 'bill:resolved'] },
+    { key: 'legislation', label: 'Legislation', events: ['law:amended'] },
+    { key: 'judiciary',   label: 'Judiciary',   events: ['law:struck_down'] },
+    { key: 'economy',     label: 'Economy',     events: [] },
+    { key: 'elections',   label: 'Elections',   events: ['election:voting_started', 'election:completed'] },
+    { key: 'campaign',    label: 'Campaign',    events: ['campaign:speech'] },
+    { key: 'forum',       label: 'Forum',       events: ['forum:post', 'forum:reply'] },
+  ];
+  const [tickPhases, setTickPhases] = useState<TickPhase[]>(
+    TICK_PHASES.map((p) => ({ key: p.key, label: p.label, state: 'idle' as TickStage }))
+  );
+  const [tickRunning, setTickRunning] = useState(false);
+  const tickPhaseRef = useRef<TickPhase[]>(tickPhases);
   const [reseedConfirm, setReseedConfirm] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const { subscribe } = useWebSocket();
@@ -400,6 +439,24 @@ export function AdminPage() {
     createdAt: string;
   }>>([]);
   const [aggeTriggering, setAggeTriggering] = useState(false);
+
+  /* Model registry state */
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelsFetchFailed, setModelsFetchFailed] = useState(false);
+
+  /* Active elections state */
+  interface ActiveElection {
+    id: string;
+    positionType: string;
+    status: string;
+    scheduledDate: string;
+    registrationDeadline: string;
+    votingStartDate: string | null;
+    votingEndDate: string | null;
+  }
+  const [activeElections, setActiveElections] = useState<ActiveElection[]>([]);
+  const [electionTriggerType, setElectionTriggerType] = useState<string>('president');
+  const [electionWorking, setElectionWorking] = useState(false);
 
   /* Health state */
   const [healthTicks, setHealthTicks] = useState<Array<{ id: string; firedAt: string; completedAt: string; durationMs: number | null }>>([]);
@@ -525,6 +582,29 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchExportCounts failed:', err); }
   }, []);
 
+  const fetchModels = useCallback(async () => {
+    try {
+      const res = await adminApi.getModels();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = res as any;
+      const data = Array.isArray(r) ? r : (r.data ?? []);
+      setAvailableModels(data as string[]);
+      setModelsFetchFailed(data.length === 0);
+    } catch {
+      setAvailableModels([]);
+      setModelsFetchFailed(true);
+    }
+  }, []);
+
+  const fetchActiveElections = useCallback(async () => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res = await adminApi.getActiveElections() as any;
+      const data = Array.isArray(res) ? res : (res.data ?? []);
+      setActiveElections(data as ActiveElection[]);
+    } catch (err) { console.error('[ADMIN] fetchActiveElections failed:', err); }
+  }, []);
+
   const fetchAggeInterventions = useCallback(async () => {
     try {
       const res = await adminApi.godInterventions();
@@ -587,9 +667,14 @@ export function AdminPage() {
     void fetchResearcherRequests();
     void fetchExportCounts();
     void fetchAggeInterventions();
+    void fetchModels();
     void fetchHealth();
     void fetchActivityFeed();
     void fetchBillPipeline();
+    void fetchActiveElections();
+
+    /* 1s clock for countdown timer */
+    const clockInterval = setInterval(() => setNowMs(Date.now()), 1000);
 
     /* Auto-refresh activity feed every 30s */
     const activityInterval = setInterval(() => { void fetchActivityFeed(); }, 30_000);
@@ -605,17 +690,78 @@ export function AdminPage() {
       void fetchAgents();
       void fetchEconomy();
       void fetchExportCounts();
+      void fetchHealth();
+    };
+
+    /* Tick stage tracker helpers */
+    const advanceStage = (eventKey: string) => {
+      const phaseIdx = TICK_PHASES.findIndex((p) => p.events.includes(eventKey));
+      if (phaseIdx === -1) return;
+      setTickRunning(true);
+      setTickPhases((prev) => {
+        const next = prev.map((p, i) => {
+          if (i < phaseIdx) return p.state === 'done' ? p : { ...p, state: 'done' as TickStage };
+          if (i === phaseIdx) return p.state === 'idle' ? { ...p, state: 'active' as TickStage } : p;
+          return p;
+        });
+        tickPhaseRef.current = next;
+        return next;
+      });
+    };
+
+    const advanceToPhaseKey = (phaseKey: string) => {
+      const phaseIdx = TICK_PHASES.findIndex((p) => p.key === phaseKey);
+      if (phaseIdx === -1) return;
+      setTickRunning(true);
+      setTickPhases((prev) => {
+        const next = prev.map((p, i) => {
+          if (i < phaseIdx) return { ...p, state: 'done' as TickStage };
+          if (i === phaseIdx) return { ...p, state: 'active' as TickStage };
+          return p.state === 'idle' ? p : { ...p, state: 'idle' as TickStage };
+        });
+        tickPhaseRef.current = next;
+        return next;
+      });
     };
 
     const unsubs = [
-      subscribe('tick:start', () => void fetchStatus()),
-      subscribe('tick:complete', refetchFull),
-      subscribe('agent:vote', refetchLight),
+      subscribe('tick:start', () => {
+        setTickRunning(true);
+        setLastTickStartMs(Date.now());
+        const reset = TICK_PHASES.map((p) => ({ key: p.key, label: p.label, state: 'idle' as TickStage }));
+        setTickPhases(reset);
+        tickPhaseRef.current = reset;
+        void fetchStatus();
+      }),
+      subscribe('tick:complete', () => {
+        setTickPhases((prev) => prev.map((p) => ({ ...p, state: 'done' as TickStage })));
+        setTickRunning(false);
+        setTimeout(() => {
+          setTickPhases(TICK_PHASES.map((p) => ({ key: p.key, label: p.label, state: 'idle' as TickStage })));
+          setTickRunning(false);
+        }, 4000);
+        refetchFull();
+      }),
+      subscribe('agent:vote',               () => advanceStage('agent:vote')),
+      subscribe('bill:advanced',            () => advanceStage('bill:advanced')),
+      subscribe('bill:tabled',              () => advanceStage('bill:tabled')),
+      subscribe('bill:committee_amended',   () => advanceStage('bill:committee_amended')),
+      subscribe('bill:passed',              () => advanceStage('bill:passed')),
+      subscribe('bill:resolved',            () => advanceStage('bill:resolved')),
+      subscribe('bill:presidential_veto',   () => advanceStage('bill:presidential_veto')),
+      subscribe('law:amended',              () => advanceStage('law:amended')),
+      subscribe('law:struck_down',          () => advanceStage('law:struck_down')),
+      subscribe('election:voting_started',  () => advanceStage('election:voting_started')),
+      subscribe('election:completed',       () => advanceStage('election:completed')),
+      subscribe('campaign:speech',          () => advanceStage('campaign:speech')),
+      subscribe('forum:post',               () => advanceStage('forum:post')),
+      subscribe('forum:reply',              () => advanceStage('forum:reply')),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      subscribe('tick:phase', (data: any) => advanceToPhaseKey((data as { phase: string }).phase)),
       subscribe('bill:proposed', refetchLight),
-      subscribe('campaign:speech', refetchLight),
     ];
-    return () => { unsubs.forEach((fn) => fn()); clearInterval(activityInterval); };
-  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline]);
+    return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); };
+  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchModels, fetchHealth]);
 
   const flash = (msg: string) => {
     setActionMsg(msg);
@@ -863,8 +1009,9 @@ export function AdminPage() {
           const lastTick = healthTicks[0];
           const lastTickMs = lastTick?.durationMs ?? 0;
           const tickInterval = simConfig?.tickIntervalMs ?? 300_000;
-          const nextEtaMs = lastTick?.completedAt
-            ? Math.max(0, tickInterval - (Date.now() - new Date(lastTick.completedAt).getTime()))
+          const cycleStartMs = lastTickStartMs ?? (lastTick?.completedAt ? new Date(lastTick.completedAt).getTime() : null);
+          const nextEtaMs = cycleStartMs
+            ? Math.max(0, tickInterval - (nowMs - cycleStartMs))
             : tickInterval;
           const activeAgents = agentList.filter(a => a.isActive).length;
           const errorRate = healthErrors?.rate ?? 0;
@@ -915,12 +1062,18 @@ export function AdminPage() {
                   </p>
                   <p className="text-sm text-text-muted">{economySettings?.taxRatePercent ?? 0}% tax rate</p>
                 </div>
-                <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
-                  <p className="text-badge text-text-muted uppercase tracking-widest">Queue</p>
-                  <p className="font-serif text-lg text-stone">
-                    {(simStatus?.waiting ?? 0) + (simStatus?.active ?? 0)} jobs
+                <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
+                  <p className="text-badge text-text-muted uppercase tracking-widest">Next Tick</p>
+                  <p className="font-serif text-3xl text-gold font-mono tabular-nums leading-none">
+                    {Math.floor(nextEtaMs / 60000)}:{String(Math.floor((nextEtaMs % 60000) / 1000)).padStart(2, '0')}
                   </p>
-                  <p className="text-sm text-text-muted">{simStatus?.failed ?? 0} failed</p>
+                  <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gold/70 rounded-full transition-none"
+                      style={{ width: `${Math.round((1 - nextEtaMs / tickInterval) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-sm text-text-muted">{(simStatus?.waiting ?? 0) + (simStatus?.active ?? 0)} queued &middot; {simStatus?.failed ?? 0} failed</p>
                 </div>
                 <div className="rounded-lg border border-border bg-surface p-4 space-y-1">
                   <p className="text-badge text-text-muted uppercase tracking-widest">Error Rate</p>
@@ -930,6 +1083,9 @@ export function AdminPage() {
                   <p className="text-sm text-text-muted">{healthErrors?.errors ?? 0} / {healthErrors?.total ?? 0}</p>
                 </div>
               </div>
+
+              {/* Tick Stage Tracker */}
+              <TickStageBar phases={tickPhases} running={tickRunning} />
 
               {/* Row 2: Tick Performance */}
               <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
@@ -1096,7 +1252,7 @@ export function AdminPage() {
                 </AdminButton>
               </div>
               {simStatus && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 pt-2">
                   {[
                     { label: 'Waiting', value: simStatus.waiting },
                     { label: 'Active', value: simStatus.active },
@@ -1108,9 +1264,34 @@ export function AdminPage() {
                       <div className="text-xl font-semibold text-text-primary mt-1">{value}</div>
                     </div>
                   ))}
+                  {(() => {
+                    const lastTick = healthTicks[0];
+                    const tickInterval = simConfig?.tickIntervalMs ?? 300_000;
+                    const cycleStart = lastTickStartMs ?? (lastTick?.completedAt ? new Date(lastTick.completedAt).getTime() : null);
+                    const eta = cycleStart
+                      ? Math.max(0, tickInterval - (nowMs - cycleStart))
+                      : tickInterval;
+                    return (
+                      <div className="bg-white/5 rounded p-3 flex flex-col gap-1.5">
+                        <div className="text-xs text-text-muted uppercase tracking-wide">Next Tick</div>
+                        <div className="text-3xl font-mono text-gold tabular-nums leading-none">
+                          {Math.floor(eta / 60000)}:{String(Math.floor((eta % 60000) / 1000)).padStart(2, '0')}
+                        </div>
+                        <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gold/70 rounded-full transition-none"
+                            style={{ width: `${Math.round((1 - eta / tickInterval) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </CollapsibleSection>
+
+            {/* Tick Stage Tracker */}
+            <TickStageBar phases={tickPhases} running={tickRunning} />
 
             {/* Simulation Settings */}
             {simConfig && (
@@ -1121,20 +1302,34 @@ export function AdminPage() {
                     <label className="text-sm font-medium text-text-secondary">Tick Interval</label>
                     <span className="text-sm text-gold font-mono">{msToLabel(simConfig.tickIntervalMs)}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {TICK_PRESETS.map(({ label, ms }) => (
-                      <button
-                        key={ms}
-                        onClick={() => void saveConfig({ tickIntervalMs: ms })}
-                        className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${
-                          simConfig.tickIntervalMs === ms
-                            ? 'bg-gold/20 text-gold border-gold/40'
-                            : 'bg-white/5 text-text-muted border-border hover:bg-white/10'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div className="flex gap-2">
+                    {/* Minutes */}
+                    <select
+                      value={[5,10,15,20,30,45].includes(Math.round(simConfig.tickIntervalMs/60000)) ? simConfig.tickIntervalMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ tickIntervalMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Minutes</option>
+                      {[5,10,15,20,30,45].map((m) => <option key={m} value={m*60000}>{m}m</option>)}
+                    </select>
+                    {/* Hours */}
+                    <select
+                      value={simConfig.tickIntervalMs >= 3600000 && simConfig.tickIntervalMs < 86400000 && simConfig.tickIntervalMs % 3600000 === 0 ? simConfig.tickIntervalMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ tickIntervalMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Hours</option>
+                      {Array.from({length:11},(_,i)=>i+1).map((h) => <option key={h} value={h*3600000}>{h}h</option>)}
+                    </select>
+                    {/* Days */}
+                    <select
+                      value={simConfig.tickIntervalMs >= 86400000 && simConfig.tickIntervalMs % 86400000 === 0 ? simConfig.tickIntervalMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ tickIntervalMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Days</option>
+                      {[1,2,3,4,5].map((d) => <option key={d} value={d*86400000}>{d}d</option>)}
+                    </select>
                   </div>
                   <p className="text-xs text-text-muted">How often agents vote, propose bills, and campaign.</p>
                 </div>
@@ -1145,20 +1340,31 @@ export function AdminPage() {
                     <label className="text-sm font-medium text-text-secondary">Bill Advancement Delay</label>
                     <span className="text-sm text-gold font-mono">{msToLabel(simConfig.billAdvancementDelayMs)}</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {ADVANCEMENT_PRESETS.map(({ label, ms }) => (
-                      <button
-                        key={ms}
-                        onClick={() => void saveConfig({ billAdvancementDelayMs: ms })}
-                        className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${
-                          simConfig.billAdvancementDelayMs === ms
-                            ? 'bg-gold/20 text-gold border-gold/40'
-                            : 'bg-white/5 text-text-muted border-border hover:bg-white/10'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div className="flex gap-2">
+                    <select
+                      value={simConfig.billAdvancementDelayMs < 60000 ? simConfig.billAdvancementDelayMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ billAdvancementDelayMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Seconds</option>
+                      {[10,20,30,45].map((s) => <option key={s} value={s*1000}>{s}s</option>)}
+                    </select>
+                    <select
+                      value={simConfig.billAdvancementDelayMs >= 60000 && simConfig.billAdvancementDelayMs < 3600000 && simConfig.billAdvancementDelayMs % 60000 === 0 ? simConfig.billAdvancementDelayMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ billAdvancementDelayMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Minutes</option>
+                      {[1,2,5,10,15,20,30,45].map((m) => <option key={m} value={m*60000}>{m}m</option>)}
+                    </select>
+                    <select
+                      value={simConfig.billAdvancementDelayMs >= 3600000 && simConfig.billAdvancementDelayMs % 3600000 === 0 ? simConfig.billAdvancementDelayMs : ''}
+                      onChange={(e) => { if (e.target.value) void saveConfig({ billAdvancementDelayMs: Number(e.target.value) }); }}
+                      className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      <option value="">Hours</option>
+                      {[1,2,4,6,12,24].map((h) => <option key={h} value={h*3600000}>{h}h</option>)}
+                    </select>
                   </div>
                   <p className="text-xs text-text-muted">Time bills wait in proposed/committee before advancing to next stage.</p>
                 </div>
@@ -1531,13 +1737,31 @@ export function AdminPage() {
                       <label className="text-sm font-medium text-text-secondary">Congress Term Length</label>
                       <span className="text-sm text-gold font-mono">{simConfig.congressTermDays}d</span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[30, 60, 90, 180, 365].map((d) => (
-                        <button key={d} onClick={() => void saveConfig({ congressTermDays: d })}
-                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${simConfig.congressTermDays === d ? 'bg-gold/20 text-gold border-gold/40' : 'bg-white/5 text-text-muted border-border hover:bg-white/10'}`}>
-                          {d}d
-                        </button>
-                      ))}
+                    <div className="flex gap-2">
+                      <select
+                        value={[1,2,3,5,7,10,14].includes(simConfig.congressTermDays) ? simConfig.congressTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ congressTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Days</option>
+                        {[1,2,3,5,7,10,14].map((d) => <option key={d} value={d}>{d}d</option>)}
+                      </select>
+                      <select
+                        value={[30,45,60,90,120,180].includes(simConfig.congressTermDays) ? simConfig.congressTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ congressTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Months</option>
+                        {[{v:30,l:'1mo'},{v:45,l:'1.5mo'},{v:60,l:'2mo'},{v:90,l:'3mo'},{v:120,l:'4mo'},{v:180,l:'6mo'}].map(({v,l}) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                      <select
+                        value={[365,730].includes(simConfig.congressTermDays) ? simConfig.congressTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ congressTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Years</option>
+                        {[{v:365,l:'1yr'},{v:730,l:'2yr'}].map(({v,l}) => <option key={v} value={v}>{l}</option>)}
+                      </select>
                     </div>
                   </div>
 
@@ -1547,13 +1771,31 @@ export function AdminPage() {
                       <label className="text-sm font-medium text-text-secondary">President Term Length</label>
                       <span className="text-sm text-gold font-mono">{simConfig.presidentTermDays}d</span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[30, 60, 90, 180, 365].map((d) => (
-                        <button key={d} onClick={() => void saveConfig({ presidentTermDays: d })}
-                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${simConfig.presidentTermDays === d ? 'bg-gold/20 text-gold border-gold/40' : 'bg-white/5 text-text-muted border-border hover:bg-white/10'}`}>
-                          {d}d
-                        </button>
-                      ))}
+                    <div className="flex gap-2">
+                      <select
+                        value={[1,2,3,5,7,10,14].includes(simConfig.presidentTermDays) ? simConfig.presidentTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ presidentTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Days</option>
+                        {[1,2,3,5,7,10,14].map((d) => <option key={d} value={d}>{d}d</option>)}
+                      </select>
+                      <select
+                        value={[30,45,60,90,120,180].includes(simConfig.presidentTermDays) ? simConfig.presidentTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ presidentTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Months</option>
+                        {[{v:30,l:'1mo'},{v:45,l:'1.5mo'},{v:60,l:'2mo'},{v:90,l:'3mo'},{v:120,l:'4mo'},{v:180,l:'6mo'}].map(({v,l}) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                      <select
+                        value={[365,730].includes(simConfig.presidentTermDays) ? simConfig.presidentTermDays : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ presidentTermDays: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Years</option>
+                        {[{v:365,l:'1yr'},{v:730,l:'2yr'}].map(({v,l}) => <option key={v} value={v}>{l}</option>)}
+                      </select>
                     </div>
                   </div>
                 </div>
@@ -1585,61 +1827,181 @@ export function AdminPage() {
             {/* Elections */}
             {simConfig && (
               <CollapsibleSection id="elections" title="Elections">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-6">
+
+                  {/* Trigger new election */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-text-secondary">Campaign Duration</label>
-                      <span className="text-sm text-gold font-mono">{simConfig.campaignDurationDays}d</span>
+                    <p className="text-xs font-medium text-text-secondary uppercase tracking-widest">Trigger Election Now</p>
+                    <div className="flex gap-2 items-center">
+                      <select
+                        value={electionTriggerType}
+                        onChange={(e) => setElectionTriggerType(e.target.value)}
+                        className="bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="president">President</option>
+                        <option value="congress">Congress</option>
+                        <option value="supreme_court">Supreme Court</option>
+                      </select>
+                      <button
+                        disabled={electionWorking}
+                        onClick={async () => {
+                          setElectionWorking(true);
+                          try {
+                            await adminApi.triggerElection(electionTriggerType);
+                            flash(`${electionTriggerType} election triggered`);
+                            void fetchActiveElections();
+                          } catch (err) {
+                            flash(err instanceof Error ? err.message : 'Failed to trigger election');
+                          } finally {
+                            setElectionWorking(false);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded text-xs font-medium border bg-gold/20 text-gold border-gold/40 hover:bg-gold/30 disabled:opacity-40 transition-all"
+                      >
+                        {electionWorking ? 'Working...' : 'Trigger'}
+                      </button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[7, 14, 30, 60].map((d) => (
-                        <button key={d} onClick={() => void saveConfig({ campaignDurationDays: d })}
-                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${simConfig.campaignDurationDays === d ? 'bg-gold/20 text-gold border-gold/40' : 'bg-white/5 text-text-muted border-border hover:bg-white/10'}`}>
-                          {d}d
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-xs text-text-muted">Immediately starts a new election in registration phase using current campaign/voting duration settings.</p>
                   </div>
 
+                  {/* Active elections */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-text-secondary">Voting Window</label>
-                      <span className="text-sm text-gold font-mono">{simConfig.votingDurationHours}h</span>
+                      <p className="text-xs font-medium text-text-secondary uppercase tracking-widest">Active Elections</p>
+                      <button onClick={() => void fetchActiveElections()} className="text-xs text-text-muted hover:text-text-primary transition-colors">Refresh</button>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {[12, 24, 48, 72, 168].map((h) => (
-                        <button key={h} onClick={() => void saveConfig({ votingDurationHours: h })}
-                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${simConfig.votingDurationHours === h ? 'bg-gold/20 text-gold border-gold/40' : 'bg-white/5 text-text-muted border-border hover:bg-white/10'}`}>
-                          {h}h
-                        </button>
-                      ))}
-                    </div>
+                    {activeElections.length === 0 ? (
+                      <p className="text-xs text-text-muted py-2">No active elections.</p>
+                    ) : (
+                      <div className="rounded-lg border border-border overflow-hidden">
+                        <table className="w-full text-xs">
+                          <thead className="border-b border-border bg-white/5">
+                            <tr>
+                              <th className="text-left px-3 py-2 text-text-muted font-normal">Position</th>
+                              <th className="text-left px-3 py-2 text-text-muted font-normal">Phase</th>
+                              <th className="text-left px-3 py-2 text-text-muted font-normal">Voting Opens</th>
+                              <th className="px-3 py-2"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {activeElections.map((el) => (
+                              <tr key={el.id} className="border-b border-border/50 last:border-0">
+                                <td className="px-3 py-2 text-text-primary capitalize">{el.positionType.replace('_', ' ')}</td>
+                                <td className="px-3 py-2">
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-gold/10 text-gold border border-gold/20">
+                                    {el.status}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 text-text-muted">
+                                  {el.votingStartDate ? new Date(el.votingStartDate).toLocaleString() : '—'}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {el.status !== 'certified' && el.status !== 'cancelled' && (
+                                    <button
+                                      disabled={electionWorking}
+                                      onClick={async () => {
+                                        setElectionWorking(true);
+                                        try {
+                                          const res = await adminApi.advanceElection(el.id) as { data?: { newStatus: string } };
+                                          flash(`Advanced to: ${res.data?.newStatus ?? 'next phase'}`);
+                                          void fetchActiveElections();
+                                        } catch (err) {
+                                          flash(err instanceof Error ? err.message : 'Failed to advance');
+                                        } finally {
+                                          setElectionWorking(false);
+                                        }
+                                      }}
+                                      className="px-2 py-1 rounded text-[10px] font-medium border bg-white/5 text-text-muted border-border hover:bg-white/10 disabled:opacity-40 transition-all"
+                                    >
+                                      Advance Phase
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-text-secondary">Min Reputation to Run</label>
-                      <span className="text-sm text-gold font-mono">{simConfig.minReputationToRun}</span>
+                  {/* Timing config */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Campaign Duration</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.campaignDurationDays}d</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <select
+                          value={[1,2,3,5,7,10,14].includes(simConfig.campaignDurationDays) ? simConfig.campaignDurationDays : ''}
+                          onChange={(e) => { if (e.target.value) void saveConfig({ campaignDurationDays: Number(e.target.value) }); }}
+                          className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                        >
+                          <option value="">Days</option>
+                          {[1,2,3,5,7,10,14].map((d) => <option key={d} value={d}>{d}d</option>)}
+                        </select>
+                        <select
+                          value={[30,45,60,90,120,180].includes(simConfig.campaignDurationDays) ? simConfig.campaignDurationDays : ''}
+                          onChange={(e) => { if (e.target.value) void saveConfig({ campaignDurationDays: Number(e.target.value) }); }}
+                          className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                        >
+                          <option value="">Months</option>
+                          {[{v:30,l:'1mo'},{v:45,l:'1.5mo'},{v:60,l:'2mo'},{v:90,l:'3mo'},{v:120,l:'4mo'},{v:180,l:'6mo'}].map(({v,l}) => <option key={v} value={v}>{l}</option>)}
+                        </select>
+                      </div>
                     </div>
-                    <input type="range" min={0} max={500} step={10} value={simConfig.minReputationToRun}
-                      onChange={(e) => setSimConfig((c) => c ? { ...c, minReputationToRun: parseInt(e.target.value) } : c)}
-                      onMouseUp={() => void saveConfig({ minReputationToRun: simConfig.minReputationToRun })}
-                      onTouchEnd={() => void saveConfig({ minReputationToRun: simConfig.minReputationToRun })}
-                      className="w-full accent-gold" />
-                    <p className="text-xs text-text-muted">Reputation required to declare candidacy.</p>
-                  </div>
 
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-text-secondary">Min Reputation to Vote</label>
-                      <span className="text-sm text-gold font-mono">{simConfig.minReputationToVote}</span>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Voting Window</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.votingDurationHours}h</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <select
+                          value={simConfig.votingDurationHours < 24 ? simConfig.votingDurationHours : ''}
+                          onChange={(e) => { if (e.target.value) void saveConfig({ votingDurationHours: Number(e.target.value) }); }}
+                          className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                        >
+                          <option value="">Hours</option>
+                          {[1,2,4,6,8,12,18].map((h) => <option key={h} value={h}>{h}h</option>)}
+                        </select>
+                        <select
+                          value={simConfig.votingDurationHours >= 24 && simConfig.votingDurationHours % 24 === 0 && simConfig.votingDurationHours / 24 <= 14 ? simConfig.votingDurationHours : ''}
+                          onChange={(e) => { if (e.target.value) void saveConfig({ votingDurationHours: Number(e.target.value) }); }}
+                          className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                        >
+                          <option value="">Days</option>
+                          {[1,2,3,5,7,10,14].map((d) => <option key={d} value={d*24}>{d}d</option>)}
+                        </select>
+                      </div>
                     </div>
-                    <input type="range" min={0} max={200} step={5} value={simConfig.minReputationToVote}
-                      onChange={(e) => setSimConfig((c) => c ? { ...c, minReputationToVote: parseInt(e.target.value) } : c)}
-                      onMouseUp={() => void saveConfig({ minReputationToVote: simConfig.minReputationToVote })}
-                      onTouchEnd={() => void saveConfig({ minReputationToVote: simConfig.minReputationToVote })}
-                      className="w-full accent-gold" />
-                    <p className="text-xs text-text-muted">Reputation required to cast a vote.</p>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Min Reputation to Run</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.minReputationToRun}</span>
+                      </div>
+                      <input type="range" min={0} max={500} step={10} value={simConfig.minReputationToRun}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, minReputationToRun: parseInt(e.target.value) } : c)}
+                        onMouseUp={() => void saveConfig({ minReputationToRun: simConfig.minReputationToRun })}
+                        onTouchEnd={() => void saveConfig({ minReputationToRun: simConfig.minReputationToRun })}
+                        className="w-full accent-gold" />
+                      <p className="text-xs text-text-muted">Reputation required to declare candidacy.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Min Reputation to Vote</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.minReputationToVote}</span>
+                      </div>
+                      <input type="range" min={0} max={200} step={5} value={simConfig.minReputationToVote}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, minReputationToVote: parseInt(e.target.value) } : c)}
+                        onMouseUp={() => void saveConfig({ minReputationToVote: simConfig.minReputationToVote })}
+                        onTouchEnd={() => void saveConfig({ minReputationToVote: simConfig.minReputationToVote })}
+                        className="w-full accent-gold" />
+                      <p className="text-xs text-text-muted">Reputation required to cast a vote.</p>
+                    </div>
                   </div>
                 </div>
               </CollapsibleSection>
@@ -1696,10 +2058,19 @@ export function AdminPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-text-secondary mb-1">Model (optional)</label>
-                      <input type="text" value={agentForm.model}
-                        onChange={(e) => setAgentForm((f) => ({ ...f, model: e.target.value }))}
-                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
-                        placeholder="e.g. claude-haiku-4-5-20251001" />
+                      {availableModels.length > 0 && !modelsFetchFailed ? (
+                        <select value={agentForm.model}
+                          onChange={(e) => setAgentForm((f) => ({ ...f, model: e.target.value }))}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50">
+                          <option value="" className="bg-surface">Default</option>
+                          {availableModels.map((m) => <option key={m} value={m} className="bg-surface">{m}</option>)}
+                        </select>
+                      ) : (
+                        <input type="text" value={agentForm.model}
+                          onChange={(e) => setAgentForm((f) => ({ ...f, model: e.target.value }))}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                          placeholder="e.g. claude-haiku-4-5-20251001" />
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-text-secondary mb-1">Starting Balance (M$)</label>
@@ -2227,21 +2598,37 @@ export function AdminPage() {
                       type="text"
                       value={simConfig.aggeInferenceUrl ?? ''}
                       onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceUrl: e.target.value } : c)}
-                      onBlur={() => void saveConfig({ aggeInferenceUrl: simConfig.aggeInferenceUrl })}
+                      onBlur={() => { void saveConfig({ aggeInferenceUrl: simConfig.aggeInferenceUrl }); void fetchModels(); }}
                       className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
                       placeholder="http://localhost:8000/v1"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-text-secondary">Model Name</label>
-                    <input
-                      type="text"
-                      value={simConfig.aggeInferenceModel ?? ''}
-                      onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceModel: e.target.value } : c)}
-                      onBlur={() => void saveConfig({ aggeInferenceModel: simConfig.aggeInferenceModel })}
-                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
-                      placeholder="meta-llama/Llama-3.1-8B-Instruct"
-                    />
+                    {availableModels.length > 0 && !modelsFetchFailed ? (
+                      <select
+                        value={simConfig.aggeInferenceModel ?? ''}
+                        onChange={(e) => {
+                          setSimConfig((c) => c ? { ...c, aggeInferenceModel: e.target.value } : c);
+                          void saveConfig({ aggeInferenceModel: e.target.value });
+                        }}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="" className="bg-surface">Select a model</option>
+                        {availableModels.map((m) => (
+                          <option key={m} value={m} className="bg-surface">{m}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={simConfig.aggeInferenceModel ?? ''}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceModel: e.target.value } : c)}
+                        onBlur={() => void saveConfig({ aggeInferenceModel: simConfig.aggeInferenceModel })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
+                        placeholder="meta-llama/Llama-3.1-8B-Instruct"
+                      />
+                    )}
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -2271,26 +2658,31 @@ export function AdminPage() {
                       <label className="text-sm font-medium text-text-secondary">AGGE Tick Interval</label>
                       <span className="text-sm text-gold font-mono">{msToLabel(simConfig.aggeTickIntervalMs ?? 3600000)}</span>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {([
-                        { label: '15m', ms: 900_000 },
-                        { label: '30m', ms: 1_800_000 },
-                        { label: '1h', ms: 3_600_000 },
-                        { label: '2h', ms: 7_200_000 },
-                        { label: '4h', ms: 14_400_000 },
-                      ]).map(({ label, ms }) => (
-                        <button
-                          key={ms}
-                          onClick={() => void saveConfig({ aggeTickIntervalMs: ms })}
-                          className={`px-3 py-1.5 rounded text-xs font-medium border transition-all ${
-                            (simConfig.aggeTickIntervalMs ?? 3600000) === ms
-                              ? 'bg-gold/20 text-gold border-gold/40'
-                              : 'bg-white/5 text-text-muted border-border hover:bg-white/10'
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                    <div className="flex gap-2">
+                      <select
+                        value={(simConfig.aggeTickIntervalMs ?? 3600000) >= 60000 && (simConfig.aggeTickIntervalMs ?? 3600000) < 3600000 && (simConfig.aggeTickIntervalMs ?? 3600000) % 60000 === 0 ? (simConfig.aggeTickIntervalMs ?? 3600000) : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ aggeTickIntervalMs: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Minutes</option>
+                        {[5,10,15,20,30,45].map((m) => <option key={m} value={m*60000}>{m}m</option>)}
+                      </select>
+                      <select
+                        value={(simConfig.aggeTickIntervalMs ?? 3600000) >= 3600000 && (simConfig.aggeTickIntervalMs ?? 3600000) < 86400000 && (simConfig.aggeTickIntervalMs ?? 3600000) % 3600000 === 0 ? (simConfig.aggeTickIntervalMs ?? 3600000) : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ aggeTickIntervalMs: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Hours</option>
+                        {Array.from({length:11},(_,i)=>i+1).map((h) => <option key={h} value={h*3600000}>{h}h</option>)}
+                      </select>
+                      <select
+                        value={(simConfig.aggeTickIntervalMs ?? 3600000) >= 86400000 && (simConfig.aggeTickIntervalMs ?? 3600000) % 86400000 === 0 ? (simConfig.aggeTickIntervalMs ?? 3600000) : ''}
+                        onChange={(e) => { if (e.target.value) void saveConfig({ aggeTickIntervalMs: Number(e.target.value) }); }}
+                        className="flex-1 bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="">Days</option>
+                        {[1,2,3,5,7].map((d) => <option key={d} value={d*86400000}>{d}d</option>)}
+                      </select>
                     </div>
                     <p className="text-xs text-text-muted">How often AGGE evaluates and intervenes in the simulation.</p>
                   </div>

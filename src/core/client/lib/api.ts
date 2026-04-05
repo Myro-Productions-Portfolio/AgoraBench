@@ -218,6 +218,12 @@ export const adminApi = {
   rejectResearcherRequest: (id: string) =>
     request(`/admin/researcher-requests/${id}/reject`, { method: 'POST' }),
   exportCounts: () => request('/admin/export/counts'),
+  getModels: () => request('/admin/models'),
+  getActiveElections: () => request('/admin/elections/active'),
+  triggerElection: (positionType: string) =>
+    request('/admin/elections/trigger', { method: 'POST', body: JSON.stringify({ positionType }) }),
+  advanceElection: (id: string) =>
+    request(`/admin/elections/${id}/advance`, { method: 'POST' }),
   godTick: () => request('/admin/god/tick', { method: 'POST' }),
   godInterventions: () => request('/admin/god/interventions'),
   downloadExport: async (dataset: string, filename: string): Promise<void> => {

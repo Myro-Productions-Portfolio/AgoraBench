@@ -193,21 +193,8 @@ aggeQueue.process(async () => {
 });
 
 export function startAggeTick(): void {
-  if (process.env.BOB_ORCHESTRATOR_KEY) {
-    console.warn('[AGGE] BOB_ORCHESTRATOR_KEY set — AGGE auto-tick disabled (Bob orchestrates)');
-    return;
-  }
-  const rc = getRuntimeConfig();
-  aggeQueue
-    .add({}, {
-      repeat: { every: rc.aggeTickIntervalMs },
-      removeOnComplete: 10,
-      removeOnFail: 5,
-      attempts: 2,
-      backoff: { type: 'exponential', delay: 10000 },
-    })
-    .catch((err: unknown) => console.error('[AGGE] Failed to schedule tick:', err));
-  console.warn(`[AGGE] Started — interval: ${rc.aggeTickIntervalMs / 1000 / 60} min`);
+  console.warn('[AGGE] AGGE auto-tick disabled — Bob orchestrates personality nudges');
+  return;
 }
 
 export async function triggerManualAggeTick(): Promise<void> {

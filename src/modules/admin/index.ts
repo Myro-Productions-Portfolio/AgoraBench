@@ -4,6 +4,7 @@ export { default as adminRouter } from './server/routes/admin';
 export { default as researcherRouter } from './server/routes/researcher';
 export { default as providersRouter } from './server/routes/providers';
 export { default as profileRouter } from './server/routes/profile';
+export { default as modelsRouter } from './server/routes/models';
 
 // Client pages
 export { AdminPage } from './client/pages/AdminPage';

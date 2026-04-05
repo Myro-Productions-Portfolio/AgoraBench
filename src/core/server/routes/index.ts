@@ -23,6 +23,7 @@ import researcherRouter from '@modules/admin/server/routes/researcher';
 import benchmarkRouter from '@modules/benchmark/server/routes/benchmark';
 import coalitionsRouter from '@modules/agents/server/routes/coalitions';
 import orchestratorRouter from '@modules/admin/server/routes/orchestrator';
+import modelsRouter from '@modules/admin/server/routes/models';
 
 const router = Router();
 
@@ -50,5 +51,6 @@ router.use(researcherRouter);
 router.use(benchmarkRouter);
 router.use(coalitionsRouter);
 router.use(orchestratorRouter);
+router.use(modelsRouter);
 
 export default router;

@@ -4,6 +4,8 @@ Last Updated: 2026-04-05
 
 ## Recently Completed
 
+- [x] 2026-04-05: Dynamic Weight Engine smoke test passed (90 rel deltas, 30 policy positions, 2 laws, 1 judicial review)
+- [x] 2026-04-05: Dynamic Weight Engine comprehensive documentation (docs/DYNAMIC_WEIGHT_ENGINE.md with Mermaid diagrams)
 - [x] 2026-04-05: Dynamic Weight Engine — all 10 phases implemented
   - Phase 1: Foundation (bio field, forum_reply action, 16 rc fields, vote count denorm, term config)
   - Phase 2: Relationship Evolution Engine (delta+decay model, sentiment from co-sponsorship/tabling/veto, forumInteractions writes)
@@ -35,7 +37,6 @@ Last Updated: 2026-04-05
 - [ ] Type-check pass on AdminPage.tsx changes (verify zero tsc errors)
 - [ ] Validate election trigger/advance endpoints with live simulation
 - [ ] Test TickStageBar rendering across all 9 phases
-- [ ] Smoke test Dynamic Weight Engine with a full tick cycle
 
 ### Medium Priority
 
@@ -43,7 +44,6 @@ Last Updated: 2026-04-05
 - [ ] Add error toast feedback for failed election operations
 - [ ] E2e test coverage for admin election management flow
 - [ ] Document orchestrator API in docs/
-- [ ] Document Dynamic Weight Engine RuntimeConfig fields
 
 ### Low Priority
 

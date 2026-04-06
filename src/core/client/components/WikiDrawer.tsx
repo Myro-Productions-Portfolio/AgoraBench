@@ -14,7 +14,6 @@ const DEFAULT_ARTICLE_ID = 'overview';
 
 export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
   const [articleId, setArticleId] = useState(DEFAULT_ARTICLE_ID);
-  const [activeSectionId, setActiveSectionId] = useState('');
   const [fontSize, setFontSize] = useState<WikiFontSize>(() => getWikiFontSize());
 
   const article = WIKI_ARTICLE_MAP[articleId] ?? WIKI_ARTICLE_MAP[DEFAULT_ARTICLE_ID];
@@ -27,9 +26,8 @@ export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  function handleNavigate(id: string, sectionId?: string) {
+  function handleNavigate(id: string) {
     setArticleId(id);
-    if (sectionId) setActiveSectionId(sectionId);
   }
 
   function handleFontStep(delta: 1 | -1) {
@@ -40,9 +38,8 @@ export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
     });
   }
 
-  const handleSectionVisible = useCallback((sectionId: string) => {
-    setActiveSectionId(sectionId);
-  }, []);
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
+  const handleSectionVisible = useCallback((_sectionId: string) => {}, []);
 
   const fontIndex = FONT_SIZES.indexOf(fontSize);
 

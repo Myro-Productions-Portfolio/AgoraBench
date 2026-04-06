@@ -116,6 +116,16 @@ interface RuntimeConfig {
   aggeInferenceUrl: string;
   aggeInferenceModel: string;
   aggeEvolutionPressureWeighted: boolean;
+  /* Floor Activity & Negotiation */
+  lobbyingEnabled: boolean;
+  maxLobbyistsPerTick: number;
+  lobbyingPositionShiftChance: number;
+  floorAmendmentsEnabled: boolean;
+  maxAmendmentsPerBillPerTick: number;
+  billWithdrawalEnabled: boolean;
+  publicStatementsEnabled: boolean;
+  proactiveStatementChance: number;
+  maxStatementsPerAgentPerTick: number;
 }
 
 interface EconomySettings {
@@ -1533,6 +1543,119 @@ export function AdminPage() {
                     </div>
                   </div>
                 </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Floor Activity & Negotiation */}
+            {simConfig && (
+              <CollapsibleSection id="floor_activity_negotiation" title="Floor Activity & Negotiation" defaultOpen={false}>
+
+                {/* Lobbying */}
+                <div className="space-y-3">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Lobbying</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Lobbying Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.lobbyingEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, lobbyingEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ lobbyingEnabled: simConfig.lobbyingEnabled })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Max Lobbyists / Tick</span>
+                    <input type="number" min={1} max={10} step={1}
+                      className="input-sm w-20 text-right"
+                      value={simConfig.maxLobbyistsPerTick}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, maxLobbyistsPerTick: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ maxLobbyistsPerTick: simConfig.maxLobbyistsPerTick })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Position Shift Chance</span>
+                    <input type="number" min={0} max={1} step={0.01}
+                      className="input-sm w-24 text-right"
+                      value={simConfig.lobbyingPositionShiftChance}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, lobbyingPositionShiftChance: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ lobbyingPositionShiftChance: simConfig.lobbyingPositionShiftChance })}
+                    />
+                  </label>
+                </div>
+
+                {/* Floor Amendments */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Floor Amendments</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Floor Amendments Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.floorAmendmentsEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, floorAmendmentsEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ floorAmendmentsEnabled: simConfig.floorAmendmentsEnabled })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Max Amendments / Bill / Tick</span>
+                    <input type="number" min={1} max={5} step={1}
+                      className="input-sm w-20 text-right"
+                      value={simConfig.maxAmendmentsPerBillPerTick}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, maxAmendmentsPerBillPerTick: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ maxAmendmentsPerBillPerTick: simConfig.maxAmendmentsPerBillPerTick })}
+                    />
+                  </label>
+                </div>
+
+                {/* Bill Withdrawal */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Bill Withdrawal</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Bill Withdrawal Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.billWithdrawalEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, billWithdrawalEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ billWithdrawalEnabled: simConfig.billWithdrawalEnabled })}
+                    />
+                  </label>
+                </div>
+
+                {/* Public Statements */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Public Statements</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Public Statements Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.publicStatementsEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, publicStatementsEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ publicStatementsEnabled: simConfig.publicStatementsEnabled })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Proactive Statement Chance</span>
+                    <input type="number" min={0} max={0.20} step={0.01}
+                      className="input-sm w-24 text-right"
+                      value={simConfig.proactiveStatementChance}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, proactiveStatementChance: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ proactiveStatementChance: simConfig.proactiveStatementChance })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Max Statements / Agent / Tick</span>
+                    <input type="number" min={1} max={3} step={1}
+                      className="input-sm w-20 text-right"
+                      value={simConfig.maxStatementsPerAgentPerTick}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, maxStatementsPerAgentPerTick: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ maxStatementsPerAgentPerTick: simConfig.maxStatementsPerAgentPerTick })}
+                    />
+                  </label>
+                </div>
+
               </CollapsibleSection>
             )}
 

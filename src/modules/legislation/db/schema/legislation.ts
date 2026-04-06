@@ -22,6 +22,7 @@ export const bills = pgTable('bills', {
   nayCount: integer('nay_count').default(0),
   introducedAt: timestamp('introduced_at', { withTimezone: true }).notNull().defaultNow(),
   lastActionAt: timestamp('last_action_at', { withTimezone: true }).notNull().defaultNow(),
+  withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
 });
 
 export const laws = pgTable('laws', {

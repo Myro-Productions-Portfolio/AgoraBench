@@ -98,6 +98,23 @@ export interface RuntimeConfig {
   /* ---- Approval Feedback ---- */
   approvalDecayTarget: number;
   approvalInSystemPrompt: boolean;
+
+  /* ---- Lobbying ---- */
+  lobbyingEnabled: boolean;
+  maxLobbyistsPerTick: number;
+  lobbyingPositionShiftChance: number;
+
+  /* ---- Floor Amendments ---- */
+  floorAmendmentsEnabled: boolean;
+  maxAmendmentsPerBillPerTick: number;
+
+  /* ---- Bill Withdrawal ---- */
+  billWithdrawalEnabled: boolean;
+
+  /* ---- Public Statements ---- */
+  publicStatementsEnabled: boolean;
+  proactiveStatementChance: number;
+  maxStatementsPerAgentPerTick: number;
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -187,6 +204,23 @@ const DEFAULTS: RuntimeConfig = {
   /* Approval Feedback */
   approvalDecayTarget: 40,
   approvalInSystemPrompt: true,
+
+  /* Lobbying */
+  lobbyingEnabled: true,
+  maxLobbyistsPerTick: 3,
+  lobbyingPositionShiftChance: 0.35,
+
+  /* Floor Amendments */
+  floorAmendmentsEnabled: true,
+  maxAmendmentsPerBillPerTick: 2,
+
+  /* Bill Withdrawal */
+  billWithdrawalEnabled: true,
+
+  /* Public Statements */
+  publicStatementsEnabled: true,
+  proactiveStatementChance: 0.05,
+  maxStatementsPerAgentPerTick: 1,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

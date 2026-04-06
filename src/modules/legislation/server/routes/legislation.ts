@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { bills, billVotes, agents, laws, judicialReviews, judicialVotes } from '@db/schema/index';
+import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements } from '@db/schema/index';
 import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -396,6 +396,126 @@ router.get('/legislation/:id/judicial-reviews', async (req, res, next) => {
     );
 
     res.json({ success: true, data: enrichedReviews });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/legislation/:id/amendments -- Floor amendments for a bill */
+router.get('/legislation/:id/amendments', async (req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: billAmendments.id,
+        billId: billAmendments.billId,
+        proposerId: billAmendments.proposerId,
+        proposerName: agents.displayName,
+        amendmentText: billAmendments.amendmentText,
+        type: billAmendments.type,
+        status: billAmendments.status,
+        reasoning: billAmendments.reasoning,
+        votesFor: billAmendments.votesFor,
+        votesAgainst: billAmendments.votesAgainst,
+        proposedAt: billAmendments.proposedAt,
+        resolvedAt: billAmendments.resolvedAt,
+      })
+      .from(billAmendments)
+      .innerJoin(agents, eq(billAmendments.proposerId, agents.id))
+      .where(eq(billAmendments.billId, req.params.id))
+      .orderBy(
+        sql`CASE WHEN ${billAmendments.status} = 'pending' THEN 0 WHEN ${billAmendments.status} = 'accepted' THEN 1 ELSE 2 END`,
+        desc(billAmendments.proposedAt),
+      );
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/legislation/:id/lobbying -- Lobbying events for a bill */
+router.get('/legislation/:id/lobbying', async (req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: lobbyingEvents.id,
+        lobbyistId: lobbyingEvents.lobbyistId,
+        lobbyistName: sql<string>`lobbyist.display_name`,
+        targetId: lobbyingEvents.targetId,
+        targetName: sql<string>`target.display_name`,
+        billId: lobbyingEvents.billId,
+        argument: lobbyingEvents.argument,
+        desiredVote: lobbyingEvents.desiredVote,
+        positionShifted: lobbyingEvents.positionShifted,
+        sentimentDelta: lobbyingEvents.sentimentDelta,
+        createdAt: lobbyingEvents.createdAt,
+      })
+      .from(lobbyingEvents)
+      .innerJoin(sql`agents lobbyist`, sql`lobbyist.id = ${lobbyingEvents.lobbyistId}`)
+      .innerJoin(sql`agents target`, sql`target.id = ${lobbyingEvents.targetId}`)
+      .where(eq(lobbyingEvents.billId, req.params.id))
+      .orderBy(desc(lobbyingEvents.createdAt))
+      .limit(50);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/legislation/:id/deals -- Agent deals for a bill */
+router.get('/legislation/:id/deals', async (req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: agentDeals.id,
+        initiatorId: agentDeals.initiatorId,
+        initiatorName: sql<string>`initiator.display_name`,
+        targetId: agentDeals.targetId,
+        targetName: sql<string>`target.display_name`,
+        billId: agentDeals.billId,
+        initiatorCommitment: agentDeals.initiatorCommitment,
+        targetCommitment: agentDeals.targetCommitment,
+        status: agentDeals.status,
+        initiatorHonored: agentDeals.initiatorHonored,
+        targetHonored: agentDeals.targetHonored,
+        expiresAt: agentDeals.expiresAt,
+        createdAt: agentDeals.createdAt,
+        resolvedAt: agentDeals.resolvedAt,
+      })
+      .from(agentDeals)
+      .innerJoin(sql`agents initiator`, sql`initiator.id = ${agentDeals.initiatorId}`)
+      .innerJoin(sql`agents target`, sql`target.id = ${agentDeals.targetId}`)
+      .where(eq(agentDeals.billId, req.params.id))
+      .orderBy(desc(agentDeals.createdAt))
+      .limit(50);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/legislation/:id/statements -- Public statements triggered by a bill */
+router.get('/legislation/:id/statements', async (req, res, next) => {
+  try {
+    const rows = await db
+      .select({
+        id: agentStatements.id,
+        agentId: agentStatements.agentId,
+        agentName: agents.displayName,
+        statementText: agentStatements.statementText,
+        triggerType: agentStatements.triggerType,
+        approvalDelta: agentStatements.approvalDelta,
+        createdAt: agentStatements.createdAt,
+      })
+      .from(agentStatements)
+      .innerJoin(agents, eq(agentStatements.agentId, agents.id))
+      .where(eq(agentStatements.triggerBillId, req.params.id))
+      .orderBy(desc(agentStatements.createdAt))
+      .limit(20);
+
+    res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
   }

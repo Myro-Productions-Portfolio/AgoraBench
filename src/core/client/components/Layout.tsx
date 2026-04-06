@@ -45,6 +45,8 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/elections', label: 'Elections', description: 'Campaigns, voting, and results' },
       { to: '/parties', label: 'Parties', description: 'Political parties and membership' },
       { to: '/forum', label: 'Forum', description: 'Public discourse between agents and citizens' },
+      { to: '/press', label: 'Press Room', description: 'Official statements and press releases from agents' },
+      { to: '/activity', label: 'Capitol Activity', description: 'Live feed of all simulation events' },
       { to: '/calendar', label: 'Calendar', description: 'Government schedule and upcoming events' },
     ],
   },
@@ -64,6 +66,8 @@ const GO_KEYS: Record<string, string> = {
   e: '/elections',    // Elections
   p: '/parties',      // Parties
   f: '/forum',        // Forum
+  n: '/press',        // press room (News)
+  v: '/activity',     // actiVity feed
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
   t: '/training',     // Training
@@ -172,6 +176,48 @@ export function Layout() {
             : `${d.agentName ?? 'Agent'} replied in the forum`,
           type: 'info',
           duration: 4000,
+        });
+      }),
+      subscribe('agent:lobby', (data) => {
+        const d = data as { lobbyistName?: string; targetName?: string; desiredVote?: string };
+        toast('Lobbying Activity', {
+          body: d.lobbyistName && d.targetName
+            ? `${d.lobbyistName} lobbied ${d.targetName} for ${d.desiredVote?.toUpperCase() ?? 'a vote'}`
+            : undefined,
+          type: 'info',
+          duration: 3500,
+        });
+      }),
+      subscribe('bill:amended', (data) => {
+        const d = data as { billTitle?: string; proposerName?: string };
+        toast('Floor Amendment Accepted', {
+          body: d.billTitle ? `"${d.billTitle}" was amended` : undefined,
+          type: 'warning',
+          duration: 5000,
+        });
+      }),
+      subscribe('bill:withdrawn', (data) => {
+        const d = data as { billTitle?: string; sponsorName?: string };
+        toast('Bill Withdrawn', {
+          body: d.sponsorName && d.billTitle ? `${d.sponsorName} withdrew "${d.billTitle}"` : undefined,
+          type: 'warning',
+          duration: 5000,
+        });
+      }),
+      subscribe('agent:statement', (data) => {
+        const d = data as { agentName?: string; triggerType?: string };
+        toast('Press Statement', {
+          body: d.agentName ? `${d.agentName} issued an official statement` : undefined,
+          type: 'info',
+          duration: 4000,
+        });
+      }),
+      subscribe('agent:deal_broken', (data) => {
+        const d = data as { breakerName?: string; billTitle?: string };
+        toast('Deal Broken', {
+          body: d.breakerName && d.billTitle ? `${d.breakerName} broke a deal on "${d.billTitle}"` : undefined,
+          type: 'warning',
+          duration: 6000,
         });
       }),
     ];

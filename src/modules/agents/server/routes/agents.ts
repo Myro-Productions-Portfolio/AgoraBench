@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { agents, parties, partyMemberships } from '@db/schema/index';
+import { agents, parties, partyMemberships, agentStatements, agentDeals } from '@db/schema/index';
 import { positions } from '@modules/government/db/schema/government';
 import { agentRegistrationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq } from 'drizzle-orm';
+import { eq, desc, or, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -148,6 +148,69 @@ router.get('/agents/:id', async (req, res, next) => {
     }
 
     res.json({ success: true, data: agent });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/agents/:id/statements -- Recent public statements by an agent */
+router.get('/agents/:id/statements', async (req, res, next) => {
+  try {
+    const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 10;
+    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 10 : rawLimit, 50);
+
+    const rows = await db
+      .select()
+      .from(agentStatements)
+      .where(eq(agentStatements.agentId, req.params.id))
+      .orderBy(desc(agentStatements.createdAt))
+      .limit(limit);
+
+    res.json({ success: true, data: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/agents/:id/deals -- Deals involving an agent (initiator or target) */
+router.get('/agents/:id/deals', async (req, res, next) => {
+  try {
+    const statusFilter = typeof req.query.status === 'string' ? req.query.status : undefined;
+
+    const baseCondition = or(
+      eq(agentDeals.initiatorId, req.params.id),
+      eq(agentDeals.targetId, req.params.id),
+    );
+
+    const rows = await db
+      .select({
+        id: agentDeals.id,
+        initiatorId: agentDeals.initiatorId,
+        initiatorName: sql<string>`initiator.display_name`,
+        targetId: agentDeals.targetId,
+        targetName: sql<string>`target.display_name`,
+        billId: agentDeals.billId,
+        initiatorCommitment: agentDeals.initiatorCommitment,
+        targetCommitment: agentDeals.targetCommitment,
+        status: agentDeals.status,
+        initiatorHonored: agentDeals.initiatorHonored,
+        targetHonored: agentDeals.targetHonored,
+        expiresAt: agentDeals.expiresAt,
+        createdAt: agentDeals.createdAt,
+        resolvedAt: agentDeals.resolvedAt,
+      })
+      .from(agentDeals)
+      .innerJoin(sql`agents initiator`, sql`initiator.id = ${agentDeals.initiatorId}`)
+      .innerJoin(sql`agents target`, sql`target.id = ${agentDeals.targetId}`)
+      .where(
+        statusFilter
+          ? sql`(${baseCondition}) AND ${agentDeals.status} = ${statusFilter}`
+          : baseCondition,
+      )
+      .orderBy(desc(agentDeals.createdAt))
+      .limit(50);
+
+    res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
   }

@@ -6,7 +6,7 @@ import { BillPipeline } from '../components/BillPipeline';
 import { legislationApi } from '@core/client/lib/api';
 import type { BillStatus } from '@shared/types';
 
-type ExtendedBillStatus = BillStatus | 'tabled' | 'presidential_veto';
+type ExtendedBillStatus = BillStatus | 'tabled' | 'presidential_veto' | 'withdrawn';
 
 interface BillTally {
   yea: number;
@@ -28,6 +28,7 @@ interface BillData {
   tally?: BillTally;
   billType?: string;
   amendsLawId?: string | null;
+  amendmentCount?: number;
 }
 
 interface LawData {
@@ -49,6 +50,7 @@ function getStatusColor(status: ExtendedBillStatus): string {
     case 'tabled': return 'text-gray-400 bg-gray-400/10';
     case 'presidential_veto': return 'text-orange-400 bg-orange-400/10';
     case 'law': return 'text-emerald-400 bg-emerald-400/10';
+    case 'withdrawn': return 'text-stone/60 bg-stone/10 border-stone/20';
     default: return 'text-text-muted bg-black/20';
   }
 }
@@ -63,6 +65,7 @@ function getStatusLabel(status: ExtendedBillStatus): string {
     case 'tabled': return 'Tabled';
     case 'presidential_veto': return 'Pres. Veto';
     case 'law': return 'Law';
+    case 'withdrawn': return 'Withdrawn';
     default: return String(status);
   }
 }
@@ -213,10 +216,10 @@ export function LegislationPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
           {filteredBills.map((bill, idx) => (
-            <div key={bill.id} className="flex flex-col gap-1">
+            <div key={bill.id} className={`flex flex-col gap-1 ${bill.status === 'withdrawn' ? 'opacity-60' : ''}`}>
               {/* Extra badges for new statuses and amendment type */}
               <div className="flex gap-2 flex-wrap">
-                {(bill.status === 'tabled' || bill.status === 'presidential_veto') && (
+                {(bill.status === 'tabled' || bill.status === 'presidential_veto' || bill.status === 'withdrawn') && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(bill.status)}`}>
                     {getStatusLabel(bill.status)}
                   </span>
@@ -224,6 +227,11 @@ export function LegislationPage() {
                 {bill.billType === 'amendment' && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-amber-400 bg-amber-400/10">
                     Amendment Bill
+                  </span>
+                )}
+                {(bill.amendmentCount ?? 0) > 0 && (
+                  <span className="badge border border-amber-700/30 text-amber-300 bg-amber-900/10">
+                    {bill.amendmentCount} amendment{bill.amendmentCount !== 1 ? 's' : ''}
                   </span>
                 )}
               </div>

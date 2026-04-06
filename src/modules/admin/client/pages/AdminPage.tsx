@@ -461,6 +461,8 @@ export function AdminPage() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   /* AGGE state */
+  const [aggeMode, setAggeMode] = useState<'bob' | 'agge' | null>(null);
+  const [bobChecking, setBobChecking] = useState(false);
   const [aggeInterventions, setAggeInterventions] = useState<Array<{
     id: string;
     agentId: string;
@@ -637,6 +639,13 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchActiveElections failed:', err); }
   }, []);
 
+  const fetchAggeMode = useCallback(async () => {
+    try {
+      const res = await adminApi.godMode() as unknown as { bobActive: boolean; mode: 'bob' | 'agge' };
+      setAggeMode(res.mode);
+    } catch (err) { console.error('[ADMIN] fetchAggeMode failed:', err); }
+  }, []);
+
   const fetchAggeInterventions = useCallback(async () => {
     try {
       const res = await adminApi.godInterventions();
@@ -699,6 +708,7 @@ export function AdminPage() {
     void fetchResearcherRequests();
     void fetchExportCounts();
     void fetchAggeInterventions();
+    void fetchAggeMode();
     void fetchModels();
     void fetchHealth();
     void fetchActivityFeed();
@@ -2882,26 +2892,78 @@ export function AdminPage() {
 
             {/* Controls */}
             <CollapsibleSection id="agge_controls" title="Controls">
-              <div className="flex flex-wrap gap-3">
-                <AdminButton
-                  onClick={async () => {
-                    setAggeTriggering(true);
-                    try {
-                      await adminApi.godTick();
-                      flash('AGGE tick triggered');
-                      void fetchAggeInterventions();
-                    } catch (err) {
-                      console.error('[ADMIN] godTick failed:', err);
-                      flash('AGGE tick failed');
-                    } finally {
-                      setAggeTriggering(false);
-                    }
-                  }}
-                  disabled={aggeTriggering}
-                  variant="gold"
-                >
-                  {aggeTriggering ? 'Triggering...' : 'Trigger Manual AGGE Tick'}
-                </AdminButton>
+              {/* Mode indicator */}
+              <div className="mb-4 flex items-center gap-2">
+                <span className="text-xs text-text-muted uppercase tracking-widest">Active driver:</span>
+                {aggeMode === null ? (
+                  <span className="text-xs text-text-muted">checking…</span>
+                ) : aggeMode === 'bob' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono bg-gold/10 text-gold border border-gold/30">Bob (Openclaw)</span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono bg-white/5 text-text-secondary border border-border">AGGE auto-tick</span>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {/* AGGE direct tick — always available */}
+                <div>
+                  <AdminButton
+                    onClick={async () => {
+                      setAggeTriggering(true);
+                      try {
+                        await adminApi.godTick();
+                        flash('AGGE personality tick queued');
+                        void fetchAggeInterventions();
+                      } catch (err) {
+                        console.error('[ADMIN] godTick failed:', err);
+                        flash('AGGE tick failed');
+                      } finally {
+                        setAggeTriggering(false);
+                      }
+                    }}
+                    disabled={aggeTriggering}
+                    variant="gold"
+                  >
+                    {aggeTriggering ? 'Queuing...' : 'Force AGGE Personality Tick'}
+                  </AdminButton>
+                  <p className="text-xs text-text-muted mt-1">
+                    Directly queues a personality-mod job via the Bull worker — picks {simConfig?.aggeAgentsPerTickMin ?? 1}–{simConfig?.aggeAgentsPerTickMax ?? 3} agents and calls the inference endpoint. Works regardless of Bob mode.
+                  </p>
+                </div>
+
+                {/* Bob observe — only useful when Bob mode is active */}
+                {aggeMode === 'bob' && (
+                  <div>
+                    <AdminButton
+                      onClick={async () => {
+                        setBobChecking(true);
+                        try {
+                          const res = await adminApi.godBobPing() as { success: boolean; agentCount?: number; lastTickDuration?: number | null; errorRate?: number; error?: string };
+                          if (res?.success) {
+                            const dur = res.lastTickDuration;
+                            const durStr = dur != null ? `${(dur / 1000).toFixed(1)}s` : 'n/a';
+                            flash(`Bob observe OK — ${res.agentCount ?? 0} agents, last tick ${durStr}`);
+                          } else {
+                            flash(res.error ?? 'Bob observe failed');
+                          }
+                        } catch (err) {
+                          console.error('[ADMIN] orchestratorObserve failed:', err);
+                          flash('Bob observe failed — check server logs');
+                        } finally {
+                          setBobChecking(false);
+                        }
+                      }}
+                      disabled={bobChecking}
+                      variant="default"
+                    >
+                      {bobChecking ? 'Checking...' : 'Bob: Test Observe Endpoint'}
+                    </AdminButton>
+                    <p className="text-xs text-text-muted mt-1">
+                      Calls the orchestrator observe endpoint that Bob uses. Confirms the API is reachable and returns a status flash with agent count and last tick duration.
+                    </p>
+                  </div>
+                )}
+
                 <AdminButton onClick={() => void fetchAggeInterventions()} variant="default">
                   Refresh Interventions
                 </AdminButton>

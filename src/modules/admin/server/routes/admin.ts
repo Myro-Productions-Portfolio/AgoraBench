@@ -875,7 +875,40 @@ router.get('/god/interventions', requireOwner, async (req, res, next) => {
   }
 });
 
-// POST /api/admin/god/tick — manually trigger an AGGE tick
+// GET /api/admin/god/mode — returns active personality-mod driver (bob or agge)
+router.get('/god/mode', requireOwner, (_req, res) => {
+  const bobActive = !!process.env.BOB_ORCHESTRATOR_KEY;
+  res.json({ bobActive, mode: bobActive ? 'bob' : 'agge' });
+});
+
+// POST /api/admin/god/bob-ping — admin proxy: call observe endpoint with Bob key, return summary
+router.post('/god/bob-ping', requireOwner, async (_req, res, next) => {
+  try {
+    const key = process.env.BOB_ORCHESTRATOR_KEY;
+    if (!key) {
+      res.status(400).json({ success: false, error: 'BOB_ORCHESTRATOR_KEY not set — Bob mode not active' });
+      return;
+    }
+    const origin = `http://localhost:${process.env.PORT ?? 3001}`;
+    const response = await fetch(`${origin}/api/orchestrator/observe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    });
+    if (!response.ok) {
+      res.status(response.status).json({ success: false, error: `Observe returned ${response.status}` });
+      return;
+    }
+    const data = await response.json() as { data?: { agents?: unknown[]; simulation?: { lastTickDuration?: number | null; errorRate?: number } } };
+    const agentCount = data.data?.agents?.length ?? 0;
+    const lastTickDuration = data.data?.simulation?.lastTickDuration ?? null;
+    const errorRate = data.data?.simulation?.errorRate ?? 0;
+    res.json({ success: true, agentCount, lastTickDuration, errorRate });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/god/tick — manually trigger an AGGE personality tick
 router.post('/god/tick', requireOwner, async (_req, res, next) => {
   try {
     await triggerManualAggeTick();

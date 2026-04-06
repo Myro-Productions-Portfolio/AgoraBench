@@ -224,8 +224,10 @@ export const adminApi = {
     request('/admin/elections/trigger', { method: 'POST', body: JSON.stringify({ positionType }) }),
   advanceElection: (id: string) =>
     request(`/admin/elections/${id}/advance`, { method: 'POST' }),
+  godMode: () => request('/admin/god/mode'),
   godTick: () => request('/admin/god/tick', { method: 'POST' }),
   godInterventions: () => request('/admin/god/interventions'),
+  godBobPing: () => request('/admin/god/bob-ping', { method: 'POST' }),
   downloadExport: async (dataset: string, filename: string): Promise<void> => {
     const token = _tokenProvider ? await _tokenProvider() : null;
     const res = await fetch(`/api/admin/export/${dataset}`, {

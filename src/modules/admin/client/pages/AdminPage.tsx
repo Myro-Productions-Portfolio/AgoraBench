@@ -669,7 +669,7 @@ export function AdminPage() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await activityApi.recent({ limit: 10 }) as any;
-      const data = Array.isArray(res) ? res : (res.data ?? []);
+      const data = Array.isArray(res) ? res : Array.isArray(res.data) ? res.data : (res.data?.events ?? []);
       setActivityFeed(data as typeof activityFeed);
     } catch (err) { console.error('[ADMIN] fetchActivityFeed failed:', err); }
   }, []);

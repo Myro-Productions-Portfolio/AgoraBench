@@ -59,8 +59,18 @@ app.use(API_PREFIX, apiRouter);
 /* Static files + SPA catch-all (production only) */
 if (config.isProd) {
   const clientDist = path.resolve(process.cwd(), 'dist/client');
-  app.use(express.static(clientDist));
+  // Cache hashed assets forever, never cache HTML
+  app.use(express.static(clientDist, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store');
+      } else if (/\.[a-f0-9]{8}\.(js|css)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
   app.get('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
 }

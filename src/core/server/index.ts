@@ -59,10 +59,10 @@ app.use(API_PREFIX, apiRouter);
 /* Static files + SPA catch-all (production only) */
 if (config.isProd) {
   const clientDist = path.resolve(process.cwd(), 'dist/client');
-  // Cache hashed assets forever, never cache HTML
+  // Cache hashed assets forever, never cache HTML or service worker
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) {
+      if (filePath.endsWith('.html') || filePath.endsWith('sw.js') || /workbox-[a-f0-9]+\.js$/.test(filePath)) {
         res.setHeader('Cache-Control', 'no-store');
       } else if (/\.[a-f0-9]{8}\.(js|css)$/.test(filePath)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');

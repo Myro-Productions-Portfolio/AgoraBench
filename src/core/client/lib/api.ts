@@ -273,7 +273,7 @@ export const courtApi = {
 
 export const providersApi = {
   list: () => request('/admin/providers'),
-  set: (name: string, data: { key?: string; isActive?: boolean; ollamaBaseUrl?: string }) =>
+  set: (name: string, data: { key?: string; isActive?: boolean; ollamaBaseUrl?: string; defaultModel?: string }) =>
     request(`/admin/providers/${name}`, { method: 'POST', body: JSON.stringify(data) }),
   test: (name: string) =>
     request(`/admin/providers/${name}/test`, { method: 'POST' }),

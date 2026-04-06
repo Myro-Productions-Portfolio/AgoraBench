@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions, apiProviders } from '@db/schema/index';
+import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions } from '@db/schema/index';
 import { count, eq, sql, asc, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -223,6 +223,67 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const pwf = prob('partyWhipFollowRate');              if (pwf !== undefined) update.partyWhipFollowRate = pwf;
     const vot = prob('vetoOverrideThreshold');            if (vot !== undefined) update.vetoOverrideThreshold = vot;
 
+    /* AGGE */
+    const atiMs = num('aggeTickIntervalMs', 60_000, 86_400_000);
+    if (atiMs !== undefined) update.aggeTickIntervalMs = Math.round(atiMs);
+    const aaptMin = posInt('aggeAgentsPerTickMin', 1, 10);
+    if (aaptMin !== undefined) update.aggeAgentsPerTickMin = aaptMin;
+    const aaptMax = posInt('aggeAgentsPerTickMax', 1, 10);
+    if (aaptMax !== undefined) update.aggeAgentsPerTickMax = aaptMax;
+    const aTemp = num('aggeTemperature', 0, 2);
+    if (aTemp !== undefined) update.aggeTemperature = aTemp;
+    if (typeof body.aggeInferenceUrl === 'string') {
+      update.aggeInferenceUrl = body.aggeInferenceUrl.trim();
+    }
+    if (typeof body.aggeInferenceModel === 'string') {
+      update.aggeInferenceModel = body.aggeInferenceModel.trim();
+    }
+    if (typeof body.aggeEvolutionPressureWeighted === 'boolean') {
+      update.aggeEvolutionPressureWeighted = body.aggeEvolutionPressureWeighted;
+    }
+
+    /* Relationship & Forum */
+    const rdr = num('relationshipDecayRate', 0, 1);
+    if (rdr !== undefined) update.relationshipDecayRate = rdr;
+    const fisb = num('forumInteractionSentimentBonus', 0, 1);
+    if (fisb !== undefined) update.forumInteractionSentimentBonus = fisb;
+    const fbsw = num('forumBaseSilenceWeight', 0, 10);
+    if (fbsw !== undefined) update.forumBaseSilenceWeight = fbsw;
+    const fdhlt = posInt('forumDecayHalfLifeTicks', 1, 20);
+    if (fdhlt !== undefined) update.forumDecayHalfLifeTicks = fdhlt;
+    const fspt = posInt('forumSilencePressureThreshold', 1, 20);
+    if (fspt !== undefined) update.forumSilencePressureThreshold = fspt;
+    const mfppapt = posInt('maxForumPostsPerAgentPerTick', 1, 10);
+    if (mfppapt !== undefined) update.maxForumPostsPerAgentPerTick = mfppapt;
+    const mfppt = posInt('maxForumPostsPerTick', 1, 50);
+    if (mfppt !== undefined) update.maxForumPostsPerTick = mfppt;
+    const mfrpt = posInt('maxForumRepliesPerTick', 1, 50);
+    if (mfrpt !== undefined) update.maxForumRepliesPerTick = mfrpt;
+
+    /* Economy Dynamic Weights */
+    const tct = num('treasuryCrisisThreshold', 0, 1);
+    if (tct !== undefined) update.treasuryCrisisThreshold = tct;
+    const epmc = num('economyProposalMultiplierCrisis', 1, 3);
+    if (epmc !== undefined) update.economyProposalMultiplierCrisis = epmc;
+
+    /* Judiciary Dynamic Weights */
+    const jcb = num('judicialContestationBonus', 1, 5);
+    if (jcb !== undefined) update.judicialContestationBonus = jcb;
+    const jrb = num('judicialRecencyBonus', 1, 5);
+    if (jrb !== undefined) update.judicialRecencyBonus = jrb;
+
+    /* Elections Dynamic Weights */
+    if (typeof body.electionPostOutcomeCascade === 'boolean') {
+      update.electionPostOutcomeCascade = body.electionPostOutcomeCascade;
+    }
+
+    /* Approval Feedback */
+    const adt = num('approvalDecayTarget', 0, 100);
+    if (adt !== undefined) update.approvalDecayTarget = adt;
+    if (typeof body.approvalInSystemPrompt === 'boolean') {
+      update.approvalInSystemPrompt = body.approvalInSystemPrompt;
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {
@@ -269,28 +330,6 @@ router.post('/admin/economy', async (req, res, next) => {
     }
 
     res.json({ success: true, data: row });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/* GET /api/admin/providers — list configured AI providers */
-router.get('/admin/providers', async (_req, res, next) => {
-  try {
-    const rows = await db
-      .select({
-        id: apiProviders.id,
-        providerName: apiProviders.providerName,
-        isActive: apiProviders.isActive,
-        ollamaBaseUrl: apiProviders.ollamaBaseUrl,
-        defaultModel: apiProviders.defaultModel,
-        hasKey: sql<boolean>`${apiProviders.encryptedKey} IS NOT NULL`,
-        updatedAt: apiProviders.updatedAt,
-      })
-      .from(apiProviders)
-      .orderBy(apiProviders.providerName);
-
-    res.json({ success: true, data: rows });
   } catch (error) {
     next(error);
   }

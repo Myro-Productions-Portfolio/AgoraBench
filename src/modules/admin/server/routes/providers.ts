@@ -39,6 +39,7 @@ router.get('/admin/providers', requireOwner, async (_req, res, next) => {
         isActive: row?.isActive ?? false,
         maskedKey: maskKey(row?.encryptedKey ?? null),
         ollamaBaseUrl: row?.ollamaBaseUrl ?? null,
+        defaultModel: row?.defaultModel ?? null,
         models: PROVIDER_MODELS[name] ?? [],
       };
     });
@@ -67,6 +68,7 @@ router.post('/admin/providers/:name', requireOwner, async (req, res, next) => {
     }
     if (typeof body.isActive === 'boolean') patch.isActive = body.isActive;
     if (typeof body.ollamaBaseUrl === 'string') patch.ollamaBaseUrl = body.ollamaBaseUrl.trim() || null;
+    if (typeof body.defaultModel === 'string') patch.defaultModel = body.defaultModel.trim() || null;
 
     const [row] = await db
       .insert(apiProviders)

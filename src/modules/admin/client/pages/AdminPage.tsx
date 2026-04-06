@@ -5,7 +5,7 @@ import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
 
-type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'health';
+type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'weights' | 'health';
 
 interface ResearcherRequest {
   id: string;
@@ -90,6 +90,24 @@ interface RuntimeConfig {
   maxOutputLengthTokens: number;
   maxBillsPerAgentPerTick: number;
   maxCampaignSpeechesPerTick: number;
+  /* Relationship & Forum */
+  relationshipDecayRate: number;
+  forumInteractionSentimentBonus: number;
+  forumBaseSilenceWeight: number;
+  forumDecayHalfLifeTicks: number;
+  forumSilencePressureThreshold: number;
+  maxForumPostsPerAgentPerTick: number;
+  maxForumPostsPerTick: number;
+  maxForumRepliesPerTick: number;
+  /* Dynamic Weights */
+  treasuryCrisisThreshold: number;
+  economyProposalMultiplierCrisis: number;
+  judicialContestationBonus: number;
+  judicialRecencyBonus: number;
+  electionPostOutcomeCascade: boolean;
+  /* Approval */
+  approvalDecayTarget: number;
+  approvalInSystemPrompt: boolean;
   /* AGGE (God Agent) */
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
@@ -97,6 +115,7 @@ interface RuntimeConfig {
   aggeTemperature: number;
   aggeInferenceUrl: string;
   aggeInferenceModel: string;
+  aggeEvolutionPressureWeighted: boolean;
 }
 
 interface EconomySettings {
@@ -127,6 +146,7 @@ interface ProviderRow {
   isActive: boolean;
   maskedKey: string | null;
   ollamaBaseUrl: string | null;
+  defaultModel: string | null;
   models: string[];
 }
 
@@ -151,6 +171,7 @@ const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'database',    label: 'Database',        icon: '\u26A0' },
   { id: 'experiments', label: 'Experiments',     icon: '\u229E' },
   { id: 'agge',        label: 'AGGE',            icon: '\u2726' },
+  { id: 'weights',     label: 'Weights',         icon: '\u2696' },
   { id: 'health',      label: 'Health',          icon: '\u2661' },
 ];
 
@@ -412,6 +433,7 @@ export function AdminPage() {
   /* Provider panel state */
   const [providerKeyInputs, setProviderKeyInputs] = useState<Record<string, string>>({});
   const [providerOllamaInputs, setProviderOllamaInputs] = useState<Record<string, string>>({});
+  const [providerModelInputs, setProviderModelInputs] = useState<Record<string, string>>({});
   const [providerTesting, setProviderTesting] = useState<string | null>(null);
   const [providerTestResults, setProviderTestResults] = useState<Record<string, { success: boolean; latencyMs: number; error?: string }>>({});
   const [providerSaving, setProviderSaving] = useState<string | null>(null);
@@ -857,7 +879,12 @@ export function AdminPage() {
     try {
       const key = providerKeyInputs[name]?.trim();
       const ollamaBaseUrl = providerOllamaInputs[name]?.trim();
-      await providersApi.set(name, { key: key || undefined, ollamaBaseUrl: ollamaBaseUrl || undefined });
+      const defaultModel = providerModelInputs[name]?.trim();
+      await providersApi.set(name, {
+        key: key || undefined,
+        ollamaBaseUrl: ollamaBaseUrl || undefined,
+        defaultModel: defaultModel !== undefined ? defaultModel : undefined,
+      });
       flash(`${name} provider saved`);
       setProviderKeyInputs((prev) => ({ ...prev, [name]: '' }));
       void fetchProviders();
@@ -2404,6 +2431,16 @@ export function AdminPage() {
                         </div>
                       )}
 
+                      <div>
+                        <input
+                          type="text"
+                          value={providerModelInputs[p.providerName] ?? (p.defaultModel ?? '')}
+                          onChange={(e) => setProviderModelInputs((prev) => ({ ...prev, [p.providerName]: e.target.value }))}
+                          className="w-full bg-white/5 border border-border rounded px-2 py-1.5 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                          placeholder="Default model (e.g. gpt-4o)"
+                        />
+                      </div>
+
                       <div className="flex gap-2">
                         <button
                           onClick={() => void handleProviderSave(p.providerName)}
@@ -2783,6 +2820,230 @@ export function AdminPage() {
                     </table>
                   </div>
                 )}
+              </div>
+            </CollapsibleSection>
+          </div>
+        )}
+
+        {activeTab === 'weights' && simConfig && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="font-serif text-stone text-xl font-semibold">Dynamic Weights</h2>
+              <p className="text-text-muted text-sm mt-1">Fine-tune simulation engine weights and thresholds.</p>
+            </div>
+
+            {/* Relationship & Forum */}
+            <CollapsibleSection id="weights_forum" title="Relationship & Forum" badge={savingBadge}>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Relationship Decay Rate</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.relationshipDecayRate ?? 0.05).toFixed(2)}</span>
+                  </div>
+                  <input type="range" min="0" max="0.2" step="0.01"
+                    value={simConfig.relationshipDecayRate ?? 0.05}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, relationshipDecayRate: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ relationshipDecayRate: simConfig.relationshipDecayRate })}
+                    onTouchEnd={() => void saveConfig({ relationshipDecayRate: simConfig.relationshipDecayRate })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Per-tick decay of relationship scores toward neutral.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Forum Interaction Sentiment Bonus</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.forumInteractionSentimentBonus ?? 0.02).toFixed(3)}</span>
+                  </div>
+                  <input type="range" min="0" max="0.1" step="0.005"
+                    value={simConfig.forumInteractionSentimentBonus ?? 0.02}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, forumInteractionSentimentBonus: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ forumInteractionSentimentBonus: simConfig.forumInteractionSentimentBonus })}
+                    onTouchEnd={() => void saveConfig({ forumInteractionSentimentBonus: simConfig.forumInteractionSentimentBonus })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Bonus per forum reply between agents.</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Forum Base Silence Weight</label>
+                    <input type="number" min="0" max="10" step="0.5"
+                      value={simConfig.forumBaseSilenceWeight ?? 1}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, forumBaseSilenceWeight: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ forumBaseSilenceWeight: simConfig.forumBaseSilenceWeight })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Forum Decay Half-Life (ticks)</label>
+                    <input type="number" min="1" max="20" step="1"
+                      value={simConfig.forumDecayHalfLifeTicks ?? 5}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, forumDecayHalfLifeTicks: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ forumDecayHalfLifeTicks: simConfig.forumDecayHalfLifeTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Silence Pressure Threshold</label>
+                    <input type="number" min="1" max="20" step="1"
+                      value={simConfig.forumSilencePressureThreshold ?? 3}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, forumSilencePressureThreshold: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ forumSilencePressureThreshold: simConfig.forumSilencePressureThreshold })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Max Posts / Agent / Tick</label>
+                    <input type="number" min="1" max="10" step="1"
+                      value={simConfig.maxForumPostsPerAgentPerTick ?? 2}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, maxForumPostsPerAgentPerTick: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ maxForumPostsPerAgentPerTick: simConfig.maxForumPostsPerAgentPerTick })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Max Posts / Tick</label>
+                    <input type="number" min="1" max="50" step="1"
+                      value={simConfig.maxForumPostsPerTick ?? 10}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, maxForumPostsPerTick: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ maxForumPostsPerTick: simConfig.maxForumPostsPerTick })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-text-secondary">Max Replies / Tick</label>
+                    <input type="number" min="1" max="50" step="1"
+                      value={simConfig.maxForumRepliesPerTick ?? 10}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, maxForumRepliesPerTick: Number(e.target.value) } : c)}
+                      onBlur={() => void saveConfig({ maxForumRepliesPerTick: simConfig.maxForumRepliesPerTick })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
+                  </div>
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* Dynamic Weights */}
+            <CollapsibleSection id="weights_dw" title="Economy & Judiciary Weights" badge={savingBadge}>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Treasury Crisis Threshold</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.treasuryCrisisThreshold ?? 0.2).toFixed(2)}</span>
+                  </div>
+                  <input type="range" min="0" max="0.5" step="0.05"
+                    value={simConfig.treasuryCrisisThreshold ?? 0.2}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, treasuryCrisisThreshold: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ treasuryCrisisThreshold: simConfig.treasuryCrisisThreshold })}
+                    onTouchEnd={() => void saveConfig({ treasuryCrisisThreshold: simConfig.treasuryCrisisThreshold })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Fraction of seed treasury that triggers a fiscal crisis.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Economy Proposal Multiplier (Crisis)</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.economyProposalMultiplierCrisis ?? 1.5).toFixed(1)}</span>
+                  </div>
+                  <input type="range" min="1" max="3" step="0.1"
+                    value={simConfig.economyProposalMultiplierCrisis ?? 1.5}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, economyProposalMultiplierCrisis: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ economyProposalMultiplierCrisis: simConfig.economyProposalMultiplierCrisis })}
+                    onTouchEnd={() => void saveConfig({ economyProposalMultiplierCrisis: simConfig.economyProposalMultiplierCrisis })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Bill proposal boost during fiscal crisis.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Judicial Contestation Bonus</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.judicialContestationBonus ?? 1.5).toFixed(1)}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="0.1"
+                    value={simConfig.judicialContestationBonus ?? 1.5}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, judicialContestationBonus: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ judicialContestationBonus: simConfig.judicialContestationBonus })}
+                    onTouchEnd={() => void saveConfig({ judicialContestationBonus: simConfig.judicialContestationBonus })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Weight boost for contested judicial challenges.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Judicial Recency Bonus</label>
+                    <span className="text-sm text-gold font-mono">{(simConfig.judicialRecencyBonus ?? 1.5).toFixed(1)}</span>
+                  </div>
+                  <input type="range" min="1" max="5" step="0.1"
+                    value={simConfig.judicialRecencyBonus ?? 1.5}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, judicialRecencyBonus: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ judicialRecencyBonus: simConfig.judicialRecencyBonus })}
+                    onTouchEnd={() => void saveConfig({ judicialRecencyBonus: simConfig.judicialRecencyBonus })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Weight boost for recent judicial challenges.</p>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-border/50">
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">Election Post-Outcome Cascade</label>
+                    <p className="text-xs text-text-muted">Trigger relationship cascades after election results.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !simConfig.electionPostOutcomeCascade;
+                      setSimConfig((c) => c ? { ...c, electionPostOutcomeCascade: next } : c);
+                      void saveConfig({ electionPostOutcomeCascade: next });
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${simConfig.electionPostOutcomeCascade ? 'bg-gold/60' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${simConfig.electionPostOutcomeCascade ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+              </div>
+            </CollapsibleSection>
+
+            {/* Approval & AGGE */}
+            <CollapsibleSection id="weights_approval" title="Approval & AGGE" badge={savingBadge}>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium text-text-secondary">Approval Decay Target</label>
+                    <span className="text-sm text-gold font-mono">{simConfig.approvalDecayTarget ?? 50}</span>
+                  </div>
+                  <input type="range" min="0" max="100" step="5"
+                    value={simConfig.approvalDecayTarget ?? 50}
+                    onChange={(e) => setSimConfig((c) => c ? { ...c, approvalDecayTarget: Number(e.target.value) } : c)}
+                    onMouseUp={() => void saveConfig({ approvalDecayTarget: simConfig.approvalDecayTarget })}
+                    onTouchEnd={() => void saveConfig({ approvalDecayTarget: simConfig.approvalDecayTarget })}
+                    className="w-full accent-gold" />
+                  <p className="text-xs text-text-muted">Target approval rating that scores decay toward.</p>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-border/50">
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">Approval in System Prompt</label>
+                    <p className="text-xs text-text-muted">Inject approval rating into agent system prompts.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !simConfig.approvalInSystemPrompt;
+                      setSimConfig((c) => c ? { ...c, approvalInSystemPrompt: next } : c);
+                      void saveConfig({ approvalInSystemPrompt: next });
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${simConfig.approvalInSystemPrompt ? 'bg-gold/60' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${simConfig.approvalInSystemPrompt ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+
+                <div className="flex items-center justify-between py-2 border-t border-border/50">
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">AGGE Evolution Pressure Weighted</label>
+                    <p className="text-xs text-text-muted">Use weighted selection by trauma/elections/defection in AGGE.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !simConfig.aggeEvolutionPressureWeighted;
+                      setSimConfig((c) => c ? { ...c, aggeEvolutionPressureWeighted: next } : c);
+                      void saveConfig({ aggeEvolutionPressureWeighted: next });
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${simConfig.aggeEvolutionPressureWeighted ? 'bg-gold/60' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${simConfig.aggeEvolutionPressureWeighted ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
               </div>
             </CollapsibleSection>
           </div>

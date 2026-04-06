@@ -284,6 +284,51 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.approvalInSystemPrompt = body.approvalInSystemPrompt;
     }
 
+    // Lobbying
+    if (body.lobbyingEnabled !== undefined) {
+      update.lobbyingEnabled = Boolean(body.lobbyingEnabled);
+    }
+    if (body.maxLobbyistsPerTick !== undefined) {
+      const v = Number(body.maxLobbyistsPerTick);
+      if (!isFinite(v) || v < 1 || v > 10) { res.status(400).json({ error: 'maxLobbyistsPerTick must be 1–10' }); return; }
+      update.maxLobbyistsPerTick = Math.round(v);
+    }
+    if (body.lobbyingPositionShiftChance !== undefined) {
+      const v = Number(body.lobbyingPositionShiftChance);
+      if (!isFinite(v) || v < 0 || v > 1) { res.status(400).json({ error: 'lobbyingPositionShiftChance must be 0.0–1.0' }); return; }
+      update.lobbyingPositionShiftChance = v;
+    }
+
+    // Floor Amendments
+    if (body.floorAmendmentsEnabled !== undefined) {
+      update.floorAmendmentsEnabled = Boolean(body.floorAmendmentsEnabled);
+    }
+    if (body.maxAmendmentsPerBillPerTick !== undefined) {
+      const v = Number(body.maxAmendmentsPerBillPerTick);
+      if (!isFinite(v) || v < 1 || v > 5) { res.status(400).json({ error: 'maxAmendmentsPerBillPerTick must be 1–5' }); return; }
+      update.maxAmendmentsPerBillPerTick = Math.round(v);
+    }
+
+    // Bill Withdrawal
+    if (body.billWithdrawalEnabled !== undefined) {
+      update.billWithdrawalEnabled = Boolean(body.billWithdrawalEnabled);
+    }
+
+    // Public Statements
+    if (body.publicStatementsEnabled !== undefined) {
+      update.publicStatementsEnabled = Boolean(body.publicStatementsEnabled);
+    }
+    if (body.proactiveStatementChance !== undefined) {
+      const v = Number(body.proactiveStatementChance);
+      if (!isFinite(v) || v < 0 || v > 0.20) { res.status(400).json({ error: 'proactiveStatementChance must be 0.0–0.20' }); return; }
+      update.proactiveStatementChance = v;
+    }
+    if (body.maxStatementsPerAgentPerTick !== undefined) {
+      const v = Number(body.maxStatementsPerAgentPerTick);
+      if (!isFinite(v) || v < 1 || v > 3) { res.status(400).json({ error: 'maxStatementsPerAgentPerTick must be 1–3' }); return; }
+      update.maxStatementsPerAgentPerTick = Math.round(v);
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

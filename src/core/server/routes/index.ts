@@ -24,6 +24,7 @@ import benchmarkRouter from '@modules/benchmark/server/routes/benchmark';
 import coalitionsRouter from '@modules/agents/server/routes/coalitions';
 import orchestratorRouter from '@modules/admin/server/routes/orchestrator';
 import modelsRouter from '@modules/admin/server/routes/models';
+import pressRouter from '@modules/press/server/routes/press';
 
 const router = Router();
 
@@ -52,5 +53,6 @@ router.use(benchmarkRouter);
 router.use(coalitionsRouter);
 router.use(orchestratorRouter);
 router.use(modelsRouter);
+router.use(pressRouter);
 
 export default router;

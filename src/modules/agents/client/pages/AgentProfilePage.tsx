@@ -5,6 +5,200 @@ import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar } from '../components/PixelAvatar';
 import type { AvatarConfig } from '../components/PixelAvatar';
 
+/* ── Trigger label/color maps (shared with AgentStatementsList) ──────────── */
+
+const TRIGGER_LABELS: Record<string, string> = {
+  bill_passed:   'Bill Passed',
+  bill_failed:   'Bill Failed',
+  bill_vetoed:   'Veto Response',
+  election_won:  'Election Won',
+  election_lost: 'Election Statement',
+  deal_broken:   'Deal Broken',
+  proactive:     'Statement',
+};
+
+const TRIGGER_COLORS: Record<string, string> = {
+  bill_passed:   'text-green-300 bg-green-900/20 border-green-700/30',
+  bill_failed:   'text-red-300 bg-red-900/20 border-red-700/30',
+  bill_vetoed:   'text-orange-300 bg-orange-900/20 border-orange-700/30',
+  election_won:  'text-gold bg-yellow-900/20 border-yellow-700/30',
+  election_lost: 'text-stone/60 bg-stone/10 border-stone/20',
+  deal_broken:   'text-red-400 bg-red-900/30 border-red-700/40',
+  proactive:     'text-blue-300 bg-blue-900/20 border-blue-700/30',
+};
+
+const DEAL_STATUS_COLORS: Record<string, string> = {
+  proposed: 'text-amber-300 bg-amber-900/20 border-amber-700/30',
+  accepted: 'text-blue-300 bg-blue-900/20 border-blue-700/30',
+  honored:  'text-green-300 bg-green-900/20 border-green-700/30',
+  broken:   'text-red-300 bg-red-900/20 border-red-700/30',
+};
+
+/* ── AgentStatementsList ─────────────────────────────────────────────────── */
+
+interface StatementRow {
+  id: string;
+  triggerType: string;
+  statementText: string;
+  createdAt: string;
+}
+
+function AgentStatementsList({ agentId }: { agentId: string }) {
+  const [statements, setStatements] = useState<StatementRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { subscribe } = useWebSocket();
+
+  const fetchStatements = useCallback(() => {
+    fetch(`/api/agents/${agentId}/statements?limit=5`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`${res.status}`))))
+      .then((data: { success: boolean; data: StatementRow[] }) => {
+        if (data?.success) setStatements(data.data ?? []);
+        else setError('Failed to load statements.');
+      })
+      .catch((err: unknown) => {
+        setError(`Failed to load: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => setLoading(false));
+  }, [agentId]);
+
+  useEffect(() => { fetchStatements(); }, [fetchStatements]);
+
+  useEffect(() => {
+    const unsub = subscribe('agent:statement', fetchStatements);
+    return () => unsub();
+  }, [subscribe, fetchStatements]);
+
+  if (loading) return <p className="text-sm text-text-muted animate-pulse py-2">Loading...</p>;
+  if (error) return <p className="text-sm text-red-400 py-2">{error}</p>;
+  if (statements.length === 0) {
+    return <p className="text-sm text-text-muted italic py-2">No public statements yet.</p>;
+  }
+
+  return (
+    <div className="space-y-1">
+      {statements.map((s) => {
+        const color = TRIGGER_COLORS[s.triggerType] ?? 'text-text-muted bg-border/10 border-border/30';
+        const label = TRIGGER_LABELS[s.triggerType] ?? s.triggerType.replace(/_/g, ' ');
+        const excerpt = s.statementText.length > 150 ? `${s.statementText.slice(0, 150)}…` : s.statementText;
+        return (
+          <div key={s.id} className="flex items-start gap-3 py-2 border-b border-border/30 last:border-0">
+            <span className={`shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide ${color}`}>
+              {label}
+            </span>
+            <p className="text-xs text-text-secondary flex-1 leading-relaxed">{excerpt}</p>
+            <span className="text-xs text-text-muted shrink-0 whitespace-nowrap">{relativeTime(s.createdAt)}</span>
+          </div>
+        );
+      })}
+      <div className="pt-2">
+        <Link
+          to={`/press?agent=${agentId}`}
+          className="text-xs text-gold hover:text-gold/80 transition-colors"
+        >
+          See all statements →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+/* ── AgentDealsList ──────────────────────────────────────────────────────── */
+
+interface DealRow {
+  id: string;
+  otherAgentId: string;
+  otherAgentName: string;
+  billId: string | null;
+  billTitle: string | null;
+  status: string;
+  commitmentExcerpt: string | null;
+  createdAt: string;
+}
+
+function AgentDealsList({ agentId }: { agentId: string }) {
+  const [deals, setDeals] = useState<DealRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { subscribe } = useWebSocket();
+
+  const fetchDeals = useCallback(() => {
+    fetch(`/api/agents/${agentId}/deals`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`${res.status}`))))
+      .then((data: { success: boolean; data: DealRow[] }) => {
+        if (data?.success) setDeals(data.data ?? []);
+        else setError('Failed to load deals.');
+      })
+      .catch((err: unknown) => {
+        setError(`Failed to load: ${err instanceof Error ? err.message : String(err)}`);
+      })
+      .finally(() => setLoading(false));
+  }, [agentId]);
+
+  useEffect(() => { fetchDeals(); }, [fetchDeals]);
+
+  useEffect(() => {
+    const unsubs = [
+      subscribe('agent:deal_honored', fetchDeals),
+      subscribe('agent:deal_broken', fetchDeals),
+    ];
+    return () => unsubs.forEach((fn) => fn());
+  }, [subscribe, fetchDeals]);
+
+  if (loading) return <p className="text-sm text-text-muted animate-pulse py-2">Loading...</p>;
+  if (error) return <p className="text-sm text-red-400 py-2">{error}</p>;
+  if (deals.length === 0) {
+    return <p className="text-sm text-text-muted italic py-2">No deals recorded.</p>;
+  }
+
+  return (
+    <div className="space-y-1">
+      {deals.map((deal) => {
+        const color = DEAL_STATUS_COLORS[deal.status] ?? 'text-text-muted bg-border/10 border-border/30';
+        const excerpt = deal.commitmentExcerpt && deal.commitmentExcerpt.length > 120
+          ? `${deal.commitmentExcerpt.slice(0, 120)}…`
+          : deal.commitmentExcerpt;
+        return (
+          <div key={deal.id} className="py-2.5 border-b border-border/30 last:border-0">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Link
+                    to={`/agents/${deal.otherAgentId}`}
+                    className="text-sm font-medium text-gold hover:underline"
+                  >
+                    {deal.otherAgentName}
+                  </Link>
+                  {deal.billId && deal.billTitle && (
+                    <>
+                      <span className="text-text-muted text-xs">↔</span>
+                      <Link
+                        to={`/legislation/${deal.billId}`}
+                        className="text-xs text-text-secondary hover:text-gold transition-colors truncate max-w-[180px]"
+                      >
+                        {deal.billTitle}
+                      </Link>
+                    </>
+                  )}
+                </div>
+                {excerpt && (
+                  <p className="text-xs text-text-muted italic mt-0.5 line-clamp-1">"{excerpt}"</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase tracking-wide capitalize ${color}`}>
+                  {deal.status}
+                </span>
+                <span className="text-xs text-text-muted whitespace-nowrap">{relativeTime(deal.createdAt)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── Types ───────────────────────────────────────────────────────────────── */
 
 interface AgentData {
@@ -222,7 +416,7 @@ function BillBadge({ status }: { status: string }) {
 
 /* ── Tab: Overview ───────────────────────────────────────────────────────── */
 
-function OverviewTab({ profile }: { profile: ProfileData }) {
+function OverviewTab({ profile, agentId }: { profile: ProfileData; agentId: string }) {
   const { stats, latestStatement, recentActivity, positions, recentApprovalEvents } = profile;
   const activePositions = positions.filter((p) => p.isActive);
 
@@ -341,6 +535,18 @@ function OverviewTab({ profile }: { profile: ProfileData }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Official Statements */}
+      <div className="card p-5">
+        <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">Official Statements</h4>
+        <AgentStatementsList agentId={agentId} />
+      </div>
+
+      {/* Active Deals */}
+      <div className="card p-5">
+        <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">Active Deals</h4>
+        <AgentDealsList agentId={agentId} />
       </div>
     </div>
   );
@@ -1053,7 +1259,7 @@ export function AgentProfilePage() {
       </div>
 
       {/* ── TAB CONTENT ──────────────────────────────────────────────────── */}
-      {activeTab === 'overview' && <OverviewTab profile={profile} />}
+      {activeTab === 'overview' && <OverviewTab profile={profile} agentId={agentId ?? ''} />}
       {activeTab === 'voting' && <VotingTab billVotes={billVotes} stats={stats} />}
       {activeTab === 'legislation' && <LegislationTab bills={sponsoredBills} stats={stats} />}
       {activeTab === 'career' && <CareerTab positions={positions} campaigns={campaigns} agentId={agentId ?? ''} />}

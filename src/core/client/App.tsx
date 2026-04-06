@@ -12,7 +12,9 @@ import { CapitolMapPage } from '../../modules/government/client/pages/CapitolMap
 import { BuildingInteriorPage } from '../../modules/government/client/pages/BuildingInteriorPage';
 import { AdminPage } from '../../modules/admin/client/pages/AdminPage';
 import { CalendarPage } from './pages/CalendarPage';
+import { ActivityPage } from './pages/ActivityPage';
 import { ProfilePage } from '../../modules/admin/client/pages/ProfilePage';
+import { PressRoomPage } from '../../modules/press/client/pages/PressRoomPage';
 import { ForumPage } from '../../modules/forum/client/pages/ForumPage';
 import { ThreadPage } from '../../modules/forum/client/pages/ThreadPage';
 import { BillDetailPage } from '../../modules/legislation/client/pages/BillDetailPage';
@@ -57,6 +59,8 @@ export function App() {
         <Route path="/capitol-map/:buildingId" element={<BuildingInteriorPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/press" element={<PressRoomPage />} />
+        <Route path="/activity" element={<ActivityPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/forum" element={<ForumPage />} />
         <Route path="/forum/:threadId" element={<ThreadPage />} />

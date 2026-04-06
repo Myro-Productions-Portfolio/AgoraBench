@@ -17,3 +17,7 @@ export { coalitionSnapshots } from '@modules/agents/db/schema/coalitionSnapshots
 export { pendingMentions } from '@modules/forum/db/schema/pendingMentions';
 export { benchmarkScenarios, benchmarkRuns } from '@modules/benchmark/db/schema/benchmark';
 export { runtimeConfigStore } from './runtimeConfigStore';
+export { billAmendments } from '@modules/legislation/db/schema/amendments';
+export { lobbyingEvents } from '@modules/legislation/db/schema/lobbying';
+export { agentDeals } from '@modules/agents/db/schema/agentDeals';
+export { agentStatements } from '@modules/agents/db/schema/agentStatements';

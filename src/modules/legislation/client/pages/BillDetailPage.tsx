@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { legislationApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { AmendmentsList } from '../components/AmendmentsList';
+import { BillSidebar } from '../components/BillSidebar';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -26,6 +28,7 @@ interface BillDetail {
   committeeDecision: string | null;
   introducedAt: string;
   lastActionAt: string;
+  withdrawnAt?: string;
   tally: { yea: number; nay: number; abstain: number; total: number };
   rollCall: RollCallEntry[];
   law: { id: string; title: string; enactedDate: string; isActive: boolean } | null;
@@ -41,6 +44,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   presidential_veto: { label: 'Presidential Veto',  color: 'text-red-300 bg-red-900/20 border-red-700/30' },
   vetoed:            { label: 'Vetoed',              color: 'text-red-400 bg-red-900/30 border-red-700/40' },
   law:               { label: 'Enacted into Law',   color: 'text-emerald-300 bg-emerald-900/20 border-emerald-700/30' },
+  withdrawn:         { label: 'Withdrawn',           color: 'text-stone/60 bg-stone/10 border-stone/20' },
 };
 
 const VOTE_COLORS: Record<string, string> = {
@@ -89,6 +93,10 @@ export function BillDetailPage() {
       subscribe('bill:advanced', fetchBill),
       subscribe('bill:resolved', fetchBill),
       subscribe('bill:presidential_veto', fetchBill),
+      subscribe('bill:floor_amendment_proposed', fetchBill),
+      subscribe('bill:amended', fetchBill),
+      subscribe('bill:withdrawn', fetchBill),
+      subscribe('agent:lobby', fetchBill),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, [subscribe, fetchBill]);
@@ -106,8 +114,10 @@ export function BillDetailPage() {
   const yeaPct = votedCount > 0 ? (yea / votedCount) * 100 : 0;
   const nayPct = votedCount > 0 ? (nay / votedCount) * 100 : 0;
 
+  const showSidebar = bill.status === 'floor' || bill.status === 'passed' || bill.status === 'presidential_veto';
+
   return (
-    <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-8 space-y-6">
       {/* Back link */}
       <Link to="/legislation" className="text-badge text-text-muted hover:text-gold transition-colors">
         ← Back to Legislation
@@ -156,80 +166,99 @@ export function BillDetailPage() {
             {!bill.law.isActive && <span className="ml-2 text-text-muted">(repealed)</span>}
           </div>
         )}
-      </div>
 
-      {/* Summary */}
-      <Section title="Summary">
-        <p className="text-sm text-text-secondary leading-relaxed">{bill.summary}</p>
-      </Section>
-
-      {/* Vote Tally */}
-      {total > 0 && (
-        <Section title={`Vote Tally — ${total} vote${total !== 1 ? 's' : ''} cast`}>
-          {/* Breakdown bar */}
-          <div className="h-3 rounded-full overflow-hidden flex mb-3">
-            {yeaPct > 0 && (
-              <div className="h-full bg-green-500 transition-all" style={{ width: `${yeaPct}%` }} title={`Yea: ${yea}`} />
-            )}
-            {nayPct > 0 && (
-              <div className="h-full bg-red-500 transition-all" style={{ width: `${nayPct}%` }} title={`Nay: ${nay}`} />
-            )}
-            {abstain > 0 && (
-              <div className="h-full bg-border flex-1" title={`Abstain: ${abstain}`} />
-            )}
-          </div>
-          <div className="flex gap-6 text-sm mb-4">
-            <span className="text-green-400 font-medium">{yea} Yea</span>
-            <span className="text-red-400 font-medium">{nay} Nay</span>
-            {abstain > 0 && <span className="text-text-muted">{abstain} Abstain</span>}
-          </div>
-
-          {/* Roll call table */}
-          {bill.rollCall.length > 0 && (
-            <div className="rounded border border-border overflow-hidden">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-capitol-deep/60">
-                    <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Agent</th>
-                    <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Vote</th>
-                    <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider hidden sm:table-cell">Cast At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bill.rollCall.map((entry, i) => (
-                    <tr key={entry.voterId} className={`border-b border-border/40 ${i % 2 === 1 ? 'bg-white/[0.01]' : ''}`}>
-                      <td className="px-4 py-2">
-                        <Link to={`/agents/${entry.voterId}`} className="text-text-secondary hover:text-gold transition-colors">
-                          {entry.voterName}
-                        </Link>
-                      </td>
-                      <td className={`px-4 py-2 font-medium capitalize ${VOTE_COLORS[entry.choice] ?? 'text-text-muted'}`}>
-                        {entry.choice}
-                      </td>
-                      <td className="px-4 py-2 text-text-muted hidden sm:table-cell">{fmtDateTime(entry.castAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Section>
-      )}
-
-      {/* Full Text */}
-      <Section title="Full Text">
-        <button
-          onClick={() => setFullTextOpen((v) => !v)}
-          className="mb-3 text-badge text-gold hover:text-gold/80 transition-colors"
-        >
-          {fullTextOpen ? '▲ Collapse' : '▼ Expand full text'}
-        </button>
-        {fullTextOpen && (
-          <div className="rounded border border-border bg-capitol-deep/40 p-4 text-sm text-text-secondary leading-relaxed whitespace-pre-wrap font-mono text-xs">
-            {bill.fullText}
+        {/* Withdrawal banner */}
+        {bill.status === 'withdrawn' && bill.withdrawnAt && (
+          <div className="rounded border border-stone/30 bg-stone/10 px-4 py-2.5 text-sm text-stone/70">
+            {bill.sponsorDisplayName} withdrew this bill on {fmtDate(bill.withdrawnAt)}.
           </div>
         )}
-      </Section>
+      </div>
+
+      {/* Two-column layout on lg+ when sidebar is active */}
+      <div className={`grid grid-cols-1 gap-6 items-start ${showSidebar ? 'lg:grid-cols-[1fr_300px]' : ''}`}>
+        {/* Main content column */}
+        <div className="space-y-6">
+          {/* Summary */}
+          <Section title="Summary">
+            <p className="text-sm text-text-secondary leading-relaxed">{bill.summary}</p>
+          </Section>
+
+          {/* Floor Amendments */}
+          <AmendmentsList billId={bill.id} billStatus={bill.status} />
+
+          {/* Vote Tally */}
+          {total > 0 && (
+            <Section title={`Vote Tally — ${total} vote${total !== 1 ? 's' : ''} cast`}>
+              {/* Breakdown bar */}
+              <div className="h-3 rounded-full overflow-hidden flex mb-3">
+                {yeaPct > 0 && (
+                  <div className="h-full bg-green-500 transition-all" style={{ width: `${yeaPct}%` }} title={`Yea: ${yea}`} />
+                )}
+                {nayPct > 0 && (
+                  <div className="h-full bg-red-500 transition-all" style={{ width: `${nayPct}%` }} title={`Nay: ${nay}`} />
+                )}
+                {abstain > 0 && (
+                  <div className="h-full bg-border flex-1" title={`Abstain: ${abstain}`} />
+                )}
+              </div>
+              <div className="flex gap-6 text-sm mb-4">
+                <span className="text-green-400 font-medium">{yea} Yea</span>
+                <span className="text-red-400 font-medium">{nay} Nay</span>
+                {abstain > 0 && <span className="text-text-muted">{abstain} Abstain</span>}
+              </div>
+
+              {/* Roll call table */}
+              {bill.rollCall.length > 0 && (
+                <div className="rounded border border-border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-capitol-deep/60">
+                        <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Agent</th>
+                        <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Vote</th>
+                        <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider hidden sm:table-cell">Cast At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bill.rollCall.map((entry, i) => (
+                        <tr key={entry.voterId} className={`border-b border-border/40 ${i % 2 === 1 ? 'bg-white/[0.01]' : ''}`}>
+                          <td className="px-4 py-2">
+                            <Link to={`/agents/${entry.voterId}`} className="text-text-secondary hover:text-gold transition-colors">
+                              {entry.voterName}
+                            </Link>
+                          </td>
+                          <td className={`px-4 py-2 font-medium capitalize ${VOTE_COLORS[entry.choice] ?? 'text-text-muted'}`}>
+                            {entry.choice}
+                          </td>
+                          <td className="px-4 py-2 text-text-muted hidden sm:table-cell">{fmtDateTime(entry.castAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
+
+          {/* Full Text */}
+          <Section title="Full Text">
+            <button
+              onClick={() => setFullTextOpen((v) => !v)}
+              className="mb-3 text-badge text-gold hover:text-gold/80 transition-colors"
+            >
+              {fullTextOpen ? '▲ Collapse' : '▼ Expand full text'}
+            </button>
+            {fullTextOpen && (
+              <div className="rounded border border-border bg-capitol-deep/40 p-4 text-sm text-text-secondary leading-relaxed whitespace-pre-wrap font-mono text-xs">
+                {bill.fullText}
+              </div>
+            )}
+          </Section>
+        </div>
+
+        {/* Sidebar column */}
+        {showSidebar && <BillSidebar billId={bill.id} />}
+      </div>
     </div>
   );
 }

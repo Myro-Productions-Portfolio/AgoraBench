@@ -26,6 +26,10 @@ import {
   agentRelationships,
   agentPolicyPositions,
   coalitionSnapshots,
+  billAmendments,
+  lobbyingEvents,
+  agentDeals,
+  agentStatements,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply } from '../services/ai.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
@@ -100,6 +104,19 @@ agentTickQueue.process(async () => {
   /* Fetch all active agents once — used across phases */
   const activeAgents = await db.select().from(agents).where(eq(agents.isActive, true));
   const activeAgentCount = activeAgents.length;
+
+  /* ---- Tick-scoped variables shared across phases ---- */
+  /* Populated by Phase 1.5, read by Phase 2 */
+  const lobbyNotesMap = new Map<string, string[]>();
+  /* Populated by Phase 5, read by Phase 5.5 and Phase 11.5 */
+  let passedBillsThisTick: (typeof bills.$inferSelect)[] = [];
+  let failedBillsThisTick: (typeof bills.$inferSelect)[] = [];
+  /* Populated by Phase 6, read by Phase 11.5 */
+  let vetoedByPresidentThisTick: (typeof bills.$inferSelect)[] = [];
+  /* Populated by Phase 2c, read by Phase 11.5 */
+  let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
+  /* Election results from Phase 14, read by Phase 11.5 */
+  let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
 
   /* ------------------------------------------------------------------ */
   /* PHASE 1: Party Whip Signal                                            */
@@ -185,6 +202,379 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 1 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 1.5: Pre-Vote Lobbying                                          */
+  /* Agents attempt to persuade each other before votes are cast.        */
+  /* Arguments are injected into each target's vote prompt in Phase 2.   */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 1.5: Pre-Vote Lobbying');
+
+    const lobbyFloorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+
+    if (!rc.lobbyingEnabled || lobbyFloorBills.length === 0) {
+      console.warn('[SIMULATION] Phase 1.5: Skipping — lobbyingEnabled=false or no floor bills.');
+    } else {
+      const maxLobbyists = rc.maxLobbyistsPerTick ?? 3;
+
+      /* Weight lobbyists: position holders get 2x weight */
+      const positionHolderIds = new Set<string>();
+      const allPositions15 = await db.select({ agentId: positions.agentId })
+        .from(positions)
+        .where(and(eq(positions.isActive, true), inArray(positions.type, ['president', 'committee_chair', 'leader'] as string[])));
+      for (const p of allPositions15) {
+        if (p.agentId) positionHolderIds.add(p.agentId);
+      }
+
+      /* Weighted sample: position holders appear twice in candidate pool */
+      const candidatePool = activeAgents.flatMap((a) =>
+        positionHolderIds.has(a.id) ? [a, a] : [a],
+      );
+      /* Shuffle and deduplicate to get up to maxLobbyists unique lobbyists */
+      const shuffled = candidatePool.sort(() => Math.random() - 0.5);
+      const selectedLobbyists: (typeof activeAgents)[number][] = [];
+      const seenIds = new Set<string>();
+      for (const a of shuffled) {
+        if (seenIds.has(a.id)) continue;
+        seenIds.add(a.id);
+        selectedLobbyists.push(a);
+        if (selectedLobbyists.length >= maxLobbyists) break;
+      }
+
+      /* Pre-fetch all relationships among active agents for alignment distance */
+      const activeAgentIds15 = activeAgents.map((a) => a.id);
+      const allRels15 = activeAgentIds15.length > 0
+        ? await db.select({
+            agentId: agentRelationships.agentId,
+            targetAgentId: agentRelationships.targetAgentId,
+            voteAlignment: agentRelationships.voteAlignment,
+          })
+          .from(agentRelationships)
+          .where(inArray(agentRelationships.agentId, activeAgentIds15))
+        : [];
+      const relMap15 = new Map<string, number>();
+      for (const r of allRels15) {
+        relMap15.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
+      }
+
+      /* Track which (agentId, billId) pairs have been lobbied this tick to avoid duplication */
+      const lobbiedPairs = new Set<string>(); // "targetId:billId"
+
+      for (const lobbyist of selectedLobbyists) {
+        /* Pick a random floor bill */
+        const bill = lobbyFloorBills[Math.floor(Math.random() * lobbyFloorBills.length)];
+        if (!bill) continue;
+
+        /* Pick target: active agent with greatest alignment distance not yet lobbied */
+        const candidates = activeAgents.filter(
+          (a) => a.id !== lobbyist.id && !lobbiedPairs.has(`${a.id}:${bill.id}`),
+        );
+        if (candidates.length === 0) continue;
+
+        /* Sort by alignment distance from lobbyist (descending — most distant first) */
+        candidates.sort((a, b) => {
+          const alignA = relMap15.get(`${lobbyist.id}:${a.id}`) ?? 0.5;
+          const alignB = relMap15.get(`${lobbyist.id}:${b.id}`) ?? 0.5;
+          return Math.abs(alignA - 0.5) - Math.abs(alignB - 0.5);
+        });
+        const targetAgent = candidates[0];
+        if (!targetAgent) continue;
+
+        lobbiedPairs.add(`${targetAgent.id}:${bill.id}`);
+
+        /* Lobbyist wants the target to vote the same way they themselves lean */
+        const lobbyistAlignment = relMap15.get(`${lobbyist.id}:${targetAgent.id}`) ?? 0.5;
+        const desiredVote = lobbyistAlignment >= 0.5 ? 'yea' : 'nay';
+
+        const currentAlignment = relMap15.get(`${lobbyist.id}:${targetAgent.id}`) ?? 0.5;
+        const billSignals15 = whipSignals.get(bill.id);
+        const lobbyPartyId = activeAgents.find((a) => a.id === lobbyist.id)?.id;
+        const whipSignal15 = lobbyPartyId && billSignals15
+          ? billSignals15.get(lobbyPartyId) ?? null
+          : null;
+
+        const contextMessage =
+          `Bill "${bill.title}" is on the floor. Summary: ${bill.summary}. ` +
+          `You want ${targetAgent.displayName} to vote ${desiredVote.toUpperCase()}. ` +
+          `Your current vote alignment with them is ${Math.round(currentAlignment * 100)}%. ` +
+          `Party whip signal for their party on this bill: ${whipSignal15 ?? 'none issued'}. ` +
+          `Make a direct, politically grounded argument for your position in 1-2 sentences. ` +
+          `Respond with exactly this JSON: ` +
+          `{"action":"lobby","reasoning":"your persuasive argument","data":{"desiredVote":"${desiredVote}","targetId":"${targetAgent.id}"}}`;
+
+        try {
+          const decision = await generateAgentDecision(
+            {
+              id: lobbyist.id,
+              displayName: lobbyist.displayName,
+              alignment: lobbyist.alignment,
+              modelProvider: rc.providerOverride === 'default' ? lobbyist.modelProvider : rc.providerOverride,
+              personality: lobbyist.personality,
+              model: lobbyist.model,
+              ownerUserId: lobbyist.ownerUserId,
+            },
+            contextMessage,
+            'lobby',
+          );
+
+          if (decision.action !== 'lobby' && decision.action !== 'idle') {
+            console.warn(`[SIMULATION] Phase 1.5: Unexpected action from ${lobbyist.displayName}: ${decision.action}`);
+          }
+
+          if (decision.action === 'idle') continue;
+
+          const argument = decision.reasoning ?? '';
+
+          /* Insert lobbyingEvents row */
+          await db.insert(lobbyingEvents).values({
+            lobbyistId: lobbyist.id,
+            targetId: targetAgent.id,
+            billId: bill.id,
+            argument,
+            desiredVote,
+            sentimentDelta: 0.03,
+          });
+
+          /* Apply +0.03 sentiment: target → lobbyist (the approach was noted) */
+          await db.insert(agentRelationships)
+            .values({
+              agentId: targetAgent.id,
+              targetAgentId: lobbyist.id,
+              voteAlignment: 0.5,
+              sentiment: 0.5,
+              forumInteractions: 0,
+              updatedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+              set: {
+                sentiment: sql`LEAST(1.0, agent_relationships.sentiment + 0.03)`,
+                updatedAt: new Date(),
+              },
+            });
+
+          /* Store lobby note for Phase 2 injection */
+          const existingNotes = lobbyNotesMap.get(targetAgent.id) ?? [];
+          existingNotes.push(`${lobbyist.displayName}: "${argument}" (wants you to vote ${desiredVote.toUpperCase()})`);
+          lobbyNotesMap.set(targetAgent.id, existingNotes);
+
+          /* Activity event */
+          await db.insert(activityEvents).values({
+            type: 'lobby',
+            agentId: lobbyist.id,
+            title: `${lobbyist.displayName} lobbied ${targetAgent.displayName}`,
+            description: argument,
+            metadata: JSON.stringify({ billId: bill.id, billTitle: bill.title, desiredVote, targetId: targetAgent.id }),
+          });
+
+          broadcast('agent:lobby', {
+            lobbyistId: lobbyist.id,
+            lobbyistName: lobbyist.displayName,
+            targetId: targetAgent.id,
+            targetName: targetAgent.displayName,
+            billId: bill.id,
+            billTitle: bill.title,
+            desiredVote,
+            argument,
+          });
+
+          console.warn(`[SIMULATION] ${lobbyist.displayName} lobbied ${targetAgent.displayName} on "${bill.title}" (wants ${desiredVote.toUpperCase()})`);
+        } catch (agentErr) {
+          console.warn(`[SIMULATION] Phase 1.5: LLM error for ${lobbyist.displayName}:`, agentErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 1.5 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 1.7: Floor Amendments                                           */
+  /* Agents propose modifications to floor bills before voting occurs.   */
+  /* Accepted amendments update bills.fullText before Phase 2 votes.     */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 1.7: Floor Amendments');
+
+    const amendFloorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+
+    if (!rc.floorAmendmentsEnabled || amendFloorBills.length === 0) {
+      console.warn('[SIMULATION] Phase 1.7: Skipping — floorAmendmentsEnabled=false or no floor bills.');
+    } else {
+      const maxAmendmentsPerBill = rc.maxAmendmentsPerBillPerTick ?? 2;
+      const amendmentChance = rc.amendmentProposalChance ?? 0.15;
+
+      /* Get all active committee_chair positions for bonus */
+      const chairPositions17 = await db.select()
+        .from(positions)
+        .where(and(eq(positions.isActive, true), eq(positions.type, 'committee_chair')));
+
+      /* Pre-fetch all relationships for amendment voting alignment scoring */
+      const activeAgentIds17 = activeAgents.map((a) => a.id);
+      const allRels17 = activeAgentIds17.length > 0
+        ? await db.select({
+            agentId: agentRelationships.agentId,
+            targetAgentId: agentRelationships.targetAgentId,
+            voteAlignment: agentRelationships.voteAlignment,
+          })
+          .from(agentRelationships)
+          .where(inArray(agentRelationships.agentId, activeAgentIds17))
+        : [];
+      const relMap17 = new Map<string, number>();
+      for (const r of allRels17) {
+        relMap17.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
+      }
+
+      for (const bill of amendFloorBills) {
+        let amendmentsThisBill = 0;
+
+        /* Eligible proposers: active agents who are NOT the sponsor */
+        const eligible = activeAgents.filter((a) => a.id !== bill.sponsorId);
+
+        /* Shuffle to randomize order */
+        const shuffled17 = eligible.sort(() => Math.random() - 0.5);
+
+        for (const proposer of shuffled17) {
+          if (amendmentsThisBill >= maxAmendmentsPerBill) break;
+
+          /* Per-agent chance; committee chairs for this bill's committee get +0.15 */
+          const isChairForCommittee = chairPositions17.some(
+            (p) => p.agentId === proposer.id && p.title.toLowerCase().includes(bill.committee.toLowerCase()),
+          );
+          const effectiveChance = amendmentChance + (isChairForCommittee ? 0.15 : 0);
+          if (Math.random() >= effectiveChance) continue;
+
+          const contextMessage =
+            `Bill "${bill.title}" is on the floor for a vote. ` +
+            `Full text: ${bill.fullText.slice(0, 800)}. ` +
+            `Summary: ${bill.summary}. ` +
+            `You may propose a floor amendment to refine this legislation before the vote. ` +
+            `Choose type: 'addition' (add a new clause), 'strike' (remove a clause), or 'substitute' (rewrite a section). ` +
+            `Keep the amendment under 150 words. Be specific — reference actual content from the bill. ` +
+            `Respond with exactly this JSON: ` +
+            `{"action":"propose_amendment","reasoning":"one sentence explaining your change","data":{"type":"addition","amendmentText":"The amendment text"}}`;
+
+          try {
+            const decision = await generateAgentDecision(
+              {
+                id: proposer.id,
+                displayName: proposer.displayName,
+                alignment: proposer.alignment,
+                modelProvider: rc.providerOverride === 'default' ? proposer.modelProvider : rc.providerOverride,
+                personality: proposer.personality,
+                model: proposer.model,
+                ownerUserId: proposer.ownerUserId,
+              },
+              contextMessage,
+              'propose_amendment',
+            );
+
+            if (decision.action !== 'propose_amendment' || !decision.data) continue;
+
+            const amendmentText = String(decision.data['amendmentText'] ?? '').trim();
+            const amendmentType = String(decision.data['type'] ?? 'addition').trim() as 'addition' | 'strike' | 'substitute';
+            if (!amendmentText || amendmentText.length < 10) continue;
+
+            /* Insert bill amendment row */
+            const [insertedAmendment] = await db.insert(billAmendments).values({
+              billId: bill.id,
+              proposerId: proposer.id,
+              amendmentText,
+              type: amendmentType,
+              status: 'pending',
+              reasoning: decision.reasoning,
+              votesFor: 0,
+              votesAgainst: 0,
+            }).returning({ id: billAmendments.id });
+
+            if (!insertedAmendment) continue;
+
+            /* Amendment voting via weighted alignment scoring — NO extra LLM calls */
+            const existingYeaVotes = await db.select({ voterId: billVotes.voterId })
+              .from(billVotes)
+              .where(and(eq(billVotes.billId, bill.id), eq(billVotes.choice, 'yea')));
+            const supporterIds = existingYeaVotes.map((v) => v.voterId);
+
+            /* If no prior votes, use all active agents as baseline */
+            const voterPool = supporterIds.length > 0 ? supporterIds : activeAgentIds17;
+
+            let votesFor = 0;
+            let votesAgainst = 0;
+            for (const supporterId of voterPool) {
+              if (supporterId === proposer.id) continue;
+              const alignment = relMap17.get(`${proposer.id}:${supporterId}`) ?? 0.5;
+              votesFor += alignment;
+              votesAgainst += (1 - alignment);
+            }
+
+            const total17 = votesFor + votesAgainst;
+            const amendmentPasses = total17 > 0 && (votesFor / total17) >= rc.billPassagePercentage;
+
+            if (amendmentPasses) {
+              /* Update bill text */
+              await db.update(bills)
+                .set({ fullText: amendmentText, lastActionAt: new Date() })
+                .where(eq(bills.id, bill.id));
+
+              await db.update(billAmendments)
+                .set({ status: 'accepted', resolvedAt: new Date(), votesFor, votesAgainst })
+                .where(eq(billAmendments.id, insertedAmendment.id));
+
+              await updateApproval(proposer.id, 5, 'amendment_accepted', `Floor amendment to "${bill.title}" was accepted`);
+
+              await db.insert(activityEvents).values({
+                type: 'floor_amendment',
+                agentId: proposer.id,
+                title: `${proposer.displayName} proposed floor amendment (accepted)`,
+                description: decision.reasoning,
+                metadata: JSON.stringify({ billId: bill.id, billTitle: bill.title, amendmentType, status: 'accepted' }),
+              });
+
+              broadcast('bill:amended', {
+                billId: bill.id,
+                billTitle: bill.title,
+                amendmentId: insertedAmendment.id,
+                proposerName: proposer.displayName,
+                amendmentType,
+              });
+
+              console.warn(`[SIMULATION] ${proposer.displayName} floor amendment ACCEPTED on "${bill.title}"`);
+            } else {
+              await db.update(billAmendments)
+                .set({ status: 'rejected', resolvedAt: new Date(), votesFor, votesAgainst })
+                .where(eq(billAmendments.id, insertedAmendment.id));
+
+              await db.insert(activityEvents).values({
+                type: 'floor_amendment',
+                agentId: proposer.id,
+                title: `${proposer.displayName} proposed floor amendment (rejected)`,
+                description: decision.reasoning,
+                metadata: JSON.stringify({ billId: bill.id, billTitle: bill.title, amendmentType, status: 'rejected' }),
+              });
+
+              broadcast('bill:floor_amendment_proposed', {
+                billId: bill.id,
+                billTitle: bill.title,
+                amendmentId: insertedAmendment.id,
+                proposerName: proposer.displayName,
+                amendmentType,
+                status: 'rejected',
+              });
+
+              console.warn(`[SIMULATION] ${proposer.displayName} floor amendment rejected on "${bill.title}"`);
+            }
+
+            amendmentsThisBill++;
+          } catch (agentErr) {
+            console.warn(`[SIMULATION] Phase 1.7: LLM error for ${proposer.displayName}:`, agentErr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 1.7 error:', err);
   }
 
   /* ------------------------------------------------------------------ */
@@ -308,8 +698,16 @@ agentTickQueue.process(async () => {
             const whipNote = whipSignal
               ? ` Your party recommends voting ${whipSignal}. You may follow or vote independently.`
               : '';
+
+            /* Phase 1.5 lobby note injection */
+            const lobbyNotes = lobbyNotesMap.get(agent.id) ?? [];
+            const lobbyNote = lobbyNotes.length > 0
+              ? `\n\n## Lobbying\nBefore this vote, the following agents personally appealed to you:\n` +
+                lobbyNotes.map(n => `  - ${n}`).join('\n')
+              : '';
+
             const contextMessage =
-              baseContext + whipNote +
+              baseContext + whipNote + lobbyNote +
               ` Respond with exactly this JSON structure: {"action":"vote","reasoning":"one sentence","data":{"choice":"yea"}} ` +
               `Use "yea" to support or "nay" to oppose.`;
 
@@ -550,6 +948,149 @@ agentTickQueue.process(async () => {
     }
 
     console.warn(`[SIMULATION] Phase 2b: Applied decay + ${pairDeltas.size} relationship deltas`);
+
+    /* ---------------------------------------------------------------- */
+    /* PHASE 2c: Deal Honor Check                                         */
+    /* After votes cast, check whether agents honored deal commitments.  */
+    /* ---------------------------------------------------------------- */
+    if (rc.lobbyingEnabled) {
+      try {
+        console.warn('[SIMULATION] Phase 2c: Deal Honor Check');
+
+        const currentFloorBillIds2c = currentFloorBills.map((b) => b.id);
+
+        if (currentFloorBillIds2c.length > 0) {
+          /* Find all accepted, non-expired deals for this tick's floor bills */
+          const pendingDeals = await db.select().from(agentDeals)
+            .where(and(
+              inArray(agentDeals.billId, currentFloorBillIds2c),
+              eq(agentDeals.status, 'accepted'),
+              gt(agentDeals.expiresAt, new Date()),
+            ));
+
+          for (const deal of pendingDeals) {
+            const [initiatorVote] = await db.select()
+              .from(billVotes)
+              .where(and(eq(billVotes.billId, deal.billId), eq(billVotes.voterId, deal.initiatorId)))
+              .limit(1);
+
+            const [targetVote] = await db.select()
+              .from(billVotes)
+              .where(and(eq(billVotes.billId, deal.billId), eq(billVotes.voterId, deal.targetId)))
+              .limit(1);
+
+            /* Parse commitment text for 'yea'/'nay' intent */
+            const initiatorPromisedYea = deal.initiatorCommitment.toLowerCase().includes('yea');
+            const targetPromisedYea = deal.targetCommitment.toLowerCase().includes('yea');
+
+            const initiatorHonored = initiatorVote
+              ? (initiatorPromisedYea ? initiatorVote.choice === 'yea' : initiatorVote.choice === 'nay')
+              : false;
+            const targetHonored = targetVote
+              ? (targetPromisedYea ? targetVote.choice === 'yea' : targetVote.choice === 'nay')
+              : false;
+
+            const bothHonored = initiatorHonored && targetHonored;
+            const newStatus = bothHonored ? 'honored' : (!initiatorHonored || !targetHonored) ? 'broken' : 'proposed';
+
+            await db.update(agentDeals).set({
+              status: newStatus,
+              initiatorHonored,
+              targetHonored,
+              resolvedAt: new Date(),
+            }).where(eq(agentDeals.id, deal.id));
+
+            /* Look up display names for WS events */
+            const initiatorAgent = activeAgents.find((a) => a.id === deal.initiatorId);
+            const targetAgent2c = activeAgents.find((a) => a.id === deal.targetId);
+            const initiatorName = initiatorAgent?.displayName ?? 'Unknown';
+            const targetName2c = targetAgent2c?.displayName ?? 'Unknown';
+
+            /* Find bill title for WS event — look in tick-scoped bill arrays first */
+            const dealBillFull = [...passedBillsThisTick, ...failedBillsThisTick]
+              .find((b) => b.id === deal.billId);
+            const dealBillTitle = dealBillFull?.title ?? deal.billId;
+
+            if (bothHonored) {
+              /* Mutual alignment boost */
+              await db.insert(agentRelationships)
+                .values({ agentId: deal.initiatorId, targetAgentId: deal.targetId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                .onConflictDoUpdate({
+                  target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                  set: { voteAlignment: sql`LEAST(1.0, agent_relationships.vote_alignment + 0.08)`, updatedAt: new Date() },
+                });
+              await db.insert(agentRelationships)
+                .values({ agentId: deal.targetId, targetAgentId: deal.initiatorId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                .onConflictDoUpdate({
+                  target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                  set: { voteAlignment: sql`LEAST(1.0, agent_relationships.vote_alignment + 0.08)`, updatedAt: new Date() },
+                });
+              broadcast('agent:deal_honored', {
+                dealId: deal.id,
+                initiatorName,
+                targetName: targetName2c,
+                billTitle: dealBillTitle,
+              });
+              console.warn(`[SIMULATION] Phase 2c: Deal honored — ${initiatorName} & ${targetName2c} on "${dealBillTitle}"`);
+            } else {
+              /* Breaker penalties */
+              if (!initiatorHonored) {
+                await db.insert(agentRelationships)
+                  .values({ agentId: deal.targetId, targetAgentId: deal.initiatorId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                  .onConflictDoUpdate({
+                    target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                    set: {
+                      voteAlignment: sql`GREATEST(0.0, agent_relationships.vote_alignment - 0.15)`,
+                      sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.12)`,
+                      updatedAt: new Date(),
+                    },
+                  });
+                broadcast('agent:deal_broken', {
+                  dealId: deal.id,
+                  breakerId: deal.initiatorId,
+                  breakerName: initiatorName,
+                  billTitle: dealBillTitle,
+                });
+                brokenDealsThisTick.push({
+                  dealId: deal.id,
+                  wrongedPartyId: deal.targetId,
+                  wrongedPartyName: targetName2c,
+                });
+                console.warn(`[SIMULATION] Phase 2c: Deal broken by ${initiatorName} on "${dealBillTitle}"`);
+              }
+              if (!targetHonored) {
+                await db.insert(agentRelationships)
+                  .values({ agentId: deal.initiatorId, targetAgentId: deal.targetId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                  .onConflictDoUpdate({
+                    target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                    set: {
+                      voteAlignment: sql`GREATEST(0.0, agent_relationships.vote_alignment - 0.15)`,
+                      sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.12)`,
+                      updatedAt: new Date(),
+                    },
+                  });
+                broadcast('agent:deal_broken', {
+                  dealId: deal.id,
+                  breakerId: deal.targetId,
+                  breakerName: targetName2c,
+                  billTitle: dealBillTitle,
+                });
+                brokenDealsThisTick.push({
+                  dealId: deal.id,
+                  wrongedPartyId: deal.initiatorId,
+                  wrongedPartyName: initiatorName,
+                });
+                console.warn(`[SIMULATION] Phase 2c: Deal broken by ${targetName2c} on "${dealBillTitle}"`);
+              }
+            }
+          }
+
+          console.warn(`[SIMULATION] Phase 2c: Checked ${pendingDeals.length} deals`);
+        }
+      } catch (err2c) {
+        console.warn('[SIMULATION] Phase 2c error:', err2c);
+      }
+    }
   } catch (err) {
     console.warn('[SIMULATION] Phase 2b error:', err);
   }
@@ -915,6 +1456,9 @@ agentTickQueue.process(async () => {
           .set({ status: 'passed', lastActionAt: new Date() })
           .where(eq(bills.id, bill.id));
 
+        /* Track for Phase 11.5 public statements */
+        passedBillsThisTick.push({ ...bill, status: 'passed' });
+
         await db.insert(activityEvents).values({
           type: 'bill_resolved',
           agentId: null,
@@ -958,6 +1502,9 @@ agentTickQueue.process(async () => {
           .set({ status: 'vetoed', lastActionAt: new Date() })
           .where(eq(bills.id, bill.id));
 
+        /* Track for Phase 5.5 and Phase 11.5 */
+        failedBillsThisTick.push({ ...bill, status: 'vetoed' });
+
         await db.insert(activityEvents).values({
           type: 'bill_resolved',
           agentId: null,
@@ -987,6 +1534,92 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 5 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 5.5: Bill Withdrawal                                            */
+  /* Sponsors of Legislature-failed bills may formally withdraw them      */
+  /* to revise and reintroduce in the next session.                       */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 5.5: Bill Withdrawal');
+
+    if (!rc.billWithdrawalEnabled || failedBillsThisTick.length === 0) {
+      console.warn('[SIMULATION] Phase 5.5: Skipping — billWithdrawalEnabled=false or no failed bills.');
+    } else {
+      for (const failedBill of failedBillsThisTick) {
+        /* Only bills with an active sponsor */
+        const sponsor = activeAgents.find((a) => a.id === failedBill.sponsorId);
+        if (!sponsor) continue;
+
+        const contextMessage =
+          `Your bill "${failedBill.title}" just failed the floor vote (${failedBill.yeaCount ?? 0} yea, ${failedBill.nayCount ?? 0} nay, ` +
+          `needed ${Math.ceil(activeAgents.length * rc.billPassagePercentage)} to pass). ` +
+          `You may formally withdraw it now to revise and reintroduce a stronger version next session. ` +
+          `If you do not withdraw, it dies here. ` +
+          `Your current approval rating: ${sponsor.approvalRating}%. ` +
+          `Respond with exactly this JSON: ` +
+          `{"action":"bill_withdrawal","reasoning":"one sentence","data":{"withdraw":true}}`;
+
+        try {
+          const decision = await generateAgentDecision(
+            {
+              id: sponsor.id,
+              displayName: sponsor.displayName,
+              alignment: sponsor.alignment,
+              modelProvider: rc.providerOverride === 'default' ? sponsor.modelProvider : rc.providerOverride,
+              personality: sponsor.personality,
+              model: sponsor.model,
+              ownerUserId: sponsor.ownerUserId,
+            },
+            contextMessage,
+            'bill_withdrawal',
+          );
+
+          if (decision.action !== 'bill_withdrawal' || !decision.data) continue;
+
+          const shouldWithdraw = decision.data['withdraw'] === true || String(decision.data['withdraw']).toLowerCase() === 'true';
+
+          if (shouldWithdraw) {
+            await db.update(bills).set({
+              status: 'withdrawn',
+              withdrawnAt: new Date(),
+              lastActionAt: new Date(),
+            }).where(eq(bills.id, failedBill.id));
+
+            /* Mark in failedBillsThisTick so Phase 11.5 knows it was withdrawn */
+            const idx = failedBillsThisTick.findIndex((b) => b.id === failedBill.id);
+            if (idx >= 0) failedBillsThisTick[idx] = { ...failedBillsThisTick[idx], status: 'withdrawn' };
+
+            await db.insert(activityEvents).values({
+              type: 'bill_withdrawn',
+              agentId: sponsor.id,
+              title: `${sponsor.displayName} withdrew "${failedBill.title}"`,
+              description: decision.reasoning,
+              metadata: JSON.stringify({ billId: failedBill.id, billTitle: failedBill.title }),
+            });
+
+            await updateApproval(sponsor.id, -3, 'bill_withdrawn', `Withdrew "${failedBill.title}" after floor failure`);
+
+            broadcast('bill:withdrawn', {
+              billId: failedBill.id,
+              billTitle: failedBill.title,
+              sponsorId: sponsor.id,
+              sponsorName: sponsor.displayName,
+              reasoning: decision.reasoning,
+            });
+
+            console.warn(`[SIMULATION] ${sponsor.displayName} withdrew "${failedBill.title}"`);
+          } else {
+            console.warn(`[SIMULATION] ${sponsor.displayName} declined to withdraw "${failedBill.title}"`);
+          }
+        } catch (agentErr) {
+          console.warn(`[SIMULATION] Phase 5.5: LLM error for ${sponsor.displayName}:`, agentErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 5.5 error:', err);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1156,6 +1789,9 @@ agentTickQueue.process(async () => {
                   lastActionAt: new Date(),
                 })
                 .where(eq(bills.id, bill.id));
+
+              /* Track for Phase 11.5 public statements */
+              vetoedByPresidentThisTick.push({ ...bill, status: 'presidential_veto' });
 
               await db.insert(activityEvents).values({
                 type: 'presidential_veto',
@@ -2112,6 +2748,209 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
+  /* PHASE 11.5: Public Statements                                         */
+  /* Agents issue press statements in response to tick events.           */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 11.5: Public Statements');
+
+    if (!rc.publicStatementsEnabled) {
+      console.warn('[SIMULATION] Phase 11.5: Skipping — publicStatementsEnabled=false.');
+    } else {
+      type StatementTrigger = {
+        agentId: string;
+        triggerType: string;
+        triggerBillId?: string;
+        triggerElectionId?: string;
+        triggerDealId?: string;
+      };
+
+      const triggers115: StatementTrigger[] = [];
+
+      /* bill_passed — sponsors of bills that passed Phase 5 this tick */
+      for (const bill of passedBillsThisTick) {
+        if (bill.sponsorId) {
+          triggers115.push({ agentId: bill.sponsorId, triggerType: 'bill_passed', triggerBillId: bill.id });
+        }
+      }
+
+      /* bill_failed — sponsors of bills that failed and were NOT withdrawn */
+      for (const bill of failedBillsThisTick) {
+        if (bill.status !== 'withdrawn' && bill.sponsorId) {
+          triggers115.push({ agentId: bill.sponsorId, triggerType: 'bill_failed', triggerBillId: bill.id });
+        }
+      }
+
+      /* bill_vetoed — sponsor + president */
+      const [presPos115] = await db.select({ agentId: positions.agentId })
+        .from(positions)
+        .where(and(eq(positions.type, 'president'), eq(positions.isActive, true)))
+        .limit(1);
+      const presidentAgent115 = presPos115?.agentId
+        ? activeAgents.find((a) => a.id === presPos115.agentId) ?? null
+        : null;
+
+      for (const bill of vetoedByPresidentThisTick) {
+        if (bill.sponsorId) {
+          triggers115.push({ agentId: bill.sponsorId, triggerType: 'bill_vetoed', triggerBillId: bill.id });
+        }
+        if (presidentAgent115) {
+          triggers115.push({ agentId: presidentAgent115.id, triggerType: 'bill_vetoed', triggerBillId: bill.id });
+        }
+      }
+
+      /* election_won / election_lost — from Phase 14 */
+      for (const result of electionResultsThisTick) {
+        triggers115.push({ agentId: result.winnerId, triggerType: 'election_won', triggerElectionId: result.electionId });
+        for (const loserId of result.loserIds) {
+          triggers115.push({ agentId: loserId, triggerType: 'election_lost', triggerElectionId: result.electionId });
+        }
+      }
+
+      /* deal_broken — from Phase 2c */
+      for (const broken of brokenDealsThisTick) {
+        triggers115.push({ agentId: broken.wrongedPartyId, triggerType: 'deal_broken', triggerDealId: broken.dealId });
+      }
+
+      /* proactive — random chance for any agent not already triggered */
+      const triggeredAgentIds115 = new Set(triggers115.map((t) => t.agentId));
+      for (const agent of activeAgents) {
+        if (!triggeredAgentIds115.has(agent.id) && Math.random() < (rc.proactiveStatementChance ?? 0.05)) {
+          triggers115.push({ agentId: agent.id, triggerType: 'proactive' });
+        }
+      }
+
+      /* Priority dedup: one statement per agent, highest-priority trigger wins */
+      const PRIORITY115 = ['deal_broken', 'bill_vetoed', 'bill_passed', 'bill_failed', 'election_won', 'election_lost', 'bill_proposed', 'proactive'];
+      const finalTriggers115 = new Map<string, StatementTrigger>();
+      for (const trigger of triggers115) {
+        const existing = finalTriggers115.get(trigger.agentId);
+        if (!existing || PRIORITY115.indexOf(trigger.triggerType) < PRIORITY115.indexOf(existing.triggerType)) {
+          finalTriggers115.set(trigger.agentId, trigger);
+        }
+      }
+
+      /* Per-agent cap (maxStatementsPerAgentPerTick is actually a total cap per spec — apply as slice) */
+      const maxStatements = rc.maxStatementsPerAgentPerTick ?? 1;
+      const cappedTriggers115 = [...finalTriggers115.values()].slice(0, maxStatements * activeAgents.length);
+
+      if (cappedTriggers115.length === 0) {
+        console.warn('[SIMULATION] Phase 11.5: No statement triggers this tick.');
+      } else {
+        /* Approval deltas by trigger type */
+        const approvalDeltaByTrigger: Record<string, number> = {
+          bill_passed: 2,
+          bill_failed: 0,
+          bill_vetoed: -1,
+          election_won: 3,
+          election_lost: 0,
+          deal_broken: 1,
+          proactive: 0,
+          bill_proposed: 0,
+        };
+
+        /* Build trigger context lines for LLM */
+        const buildTriggerLine = (trigger: StatementTrigger): string => {
+          const bill = [...passedBillsThisTick, ...failedBillsThisTick, ...vetoedByPresidentThisTick]
+            .find((b) => b.id === trigger.triggerBillId);
+          const billTitle = bill?.title ?? 'a bill';
+          switch (trigger.triggerType) {
+            case 'bill_passed': return `Your bill "${billTitle}" just passed the Legislature`;
+            case 'bill_failed': return `Your bill "${billTitle}" just failed the floor vote`;
+            case 'bill_vetoed': return `Your bill "${billTitle}" was vetoed by the President`;
+            case 'election_won': return `You just won a government election`;
+            case 'election_lost': return `You just lost a government election`;
+            case 'deal_broken': return `A political deal you made was broken by the other party`;
+            default: return `You have thoughts on the current state of the legislature`;
+          }
+        };
+
+        /* Fire all LLM calls in parallel */
+        const stmtResults = await Promise.allSettled(
+          cappedTriggers115.map((trigger) => {
+            const agent = activeAgents.find((a) => a.id === trigger.agentId);
+            if (!agent) return Promise.reject(new Error(`Agent not found: ${trigger.agentId}`));
+
+            const triggerLine = buildTriggerLine(trigger);
+            const contextMessage =
+              `${triggerLine}. ` +
+              `Issue a brief public press statement responding to this event. ` +
+              `Be specific — reference actual names, bill titles, and what happened. ` +
+              `Keep it to 2-3 sentences. Do not be generic. ` +
+              `Respond with exactly this JSON: ` +
+              `{"action":"public_statement","reasoning":"your statement text","data":{"triggerType":"${trigger.triggerType}"}}`;
+
+            return generateAgentDecision(
+              {
+                id: agent.id,
+                displayName: agent.displayName,
+                alignment: agent.alignment,
+                modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
+                personality: agent.personality,
+                model: agent.model,
+                ownerUserId: agent.ownerUserId,
+              },
+              contextMessage,
+              'public_statement',
+            ).then((decision) => ({ agent, trigger, decision }));
+          }),
+        );
+
+        let stmtCount = 0;
+        for (const result of stmtResults) {
+          if (result.status === 'rejected') {
+            console.warn('[SIMULATION] Phase 11.5: Statement LLM call rejected:', result.reason);
+            continue;
+          }
+          const { agent, trigger, decision } = result.value;
+
+          if (decision.action === 'idle') continue;
+          if (decision.action !== 'public_statement') continue;
+
+          const approvalDelta = approvalDeltaByTrigger[trigger.triggerType] ?? 0;
+
+          await db.insert(agentStatements).values({
+            agentId: agent.id,
+            statementText: decision.reasoning,
+            triggerType: trigger.triggerType,
+            triggerBillId: trigger.triggerBillId ?? null,
+            triggerElectionId: trigger.triggerElectionId ?? null,
+            triggerDealId: trigger.triggerDealId ?? null,
+            approvalDelta,
+          });
+
+          await db.insert(activityEvents).values({
+            type: 'public_statement',
+            agentId: agent.id,
+            title: `${agent.displayName} issued a statement`,
+            description: decision.reasoning,
+            metadata: JSON.stringify({ triggerType: trigger.triggerType }),
+          });
+
+          if (approvalDelta !== 0) {
+            await updateApproval(agent.id, approvalDelta, 'public_statement', `Statement on ${trigger.triggerType}`);
+          }
+
+          broadcast('agent:statement', {
+            agentId: agent.id,
+            agentName: agent.displayName,
+            statementText: decision.reasoning,
+            triggerType: trigger.triggerType,
+            triggerBillId: trigger.triggerBillId,
+          });
+
+          console.warn(`[SIMULATION] ${agent.displayName} issued statement (${trigger.triggerType})`);
+          stmtCount++;
+        }
+
+        console.warn(`[SIMULATION] Phase 11.5: ${stmtCount} public statements issued`);
+      }
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 11.5 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* PHASE 12: Salary Payment                                              */
   /* Pay all active position holders from government treasury.            */
   /* ------------------------------------------------------------------ */
@@ -2340,6 +3179,13 @@ agentTickQueue.process(async () => {
       const victoryMarginFactor = totalContributions > 0
         ? Math.min(1.5, (winnerContributions / totalContributions) * candidateCount)
         : 1.0;
+
+      /* Track for Phase 11.5 public statements */
+      electionResultsThisTick.push({
+        electionId: election.id,
+        winnerId: winner.agentId,
+        loserIds: campaignTotals.filter((c) => c.agentId !== winner.agentId).map((c) => c.agentId),
+      });
 
       /* Mark election completed with winner and total votes */
       await db

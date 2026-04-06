@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings } from '@db/schema/index';
-import { eq, and, desc, gt, inArray, sql } from 'drizzle-orm';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings, agentDeals } from '@db/schema/index';
+import { eq, and, or, desc, gt, inArray, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { HfInference } from '@huggingface/inference';
@@ -46,6 +46,10 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   campaigning:         'campaign_speech',
   forum_post:          'forum_post',
   forum_reply:         'forum_reply',
+  lobby:               'lobby',
+  propose_amendment:   'propose_amendment',
+  bill_withdrawal:     'bill_withdrawal',
+  public_statement:    'public_statement',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action
@@ -93,6 +97,22 @@ const ACTION_ALIASES: Record<string, string[]> = {
   ],
   forum_reply: [
     'reply', 'respond', 'forum_response', 'comment', 'thread_reply', 'post_reply', 'write_reply', 'add_comment',
+  ],
+  lobby: [
+    'lobbying', 'persuade', 'appeal', 'advocate', 'negotiate',
+    'make_argument', 'argue', 'approach', 'convince',
+  ],
+  propose_amendment: [
+    'amendment', 'amend', 'floor_amendment', 'modify_bill',
+    'change_bill', 'revise_bill', 'propose_change',
+  ],
+  bill_withdrawal: [
+    'withdraw', 'withdraw_bill', 'pull_bill', 'retract',
+    'revise_and_reintroduce', 'table_bill',
+  ],
+  public_statement: [
+    'statement', 'press_statement', 'press_release', 'announce',
+    'address', 'public_address', 'respond', 'issue_statement',
   ],
 };
 
@@ -349,6 +369,44 @@ export async function buildEconomyContextBlock(
   }
 }
 
+export async function buildActiveDealsBlock(agentId: string): Promise<string> {
+  const rows = await db
+    .select({
+      id: agentDeals.id,
+      initiatorId: agentDeals.initiatorId,
+      targetId: agentDeals.targetId,
+      initiatorCommitment: agentDeals.initiatorCommitment,
+      targetCommitment: agentDeals.targetCommitment,
+      expiresAt: agentDeals.expiresAt,
+    })
+    .from(agentDeals)
+    .where(
+      and(
+        or(
+          eq(agentDeals.initiatorId, agentId),
+          eq(agentDeals.targetId, agentId),
+        ),
+        eq(agentDeals.status, 'accepted'),
+        gt(agentDeals.expiresAt, new Date()),
+      )
+    )
+    .limit(5);
+
+  if (rows.length === 0) return '';
+
+  const lines = rows.map((d) => {
+    const isInitiator = d.initiatorId === agentId;
+    const myCommitment = isInitiator ? d.initiatorCommitment : d.targetCommitment;
+    return `  - You committed: "${myCommitment}"`;
+  });
+
+  return [
+    '## Active Vote Commitments',
+    'You have made the following commitments. Breaking them will damage your relationships and reputation:',
+    ...lines,
+  ].join('\n');
+}
+
 // Simulation state cache: shared, 10-minute TTL (one per tick window is fine)
 let simStateCache: { block: string; threadTitles: string[]; ts: number } | null = null;
 const SIM_STATE_TTL_MS = 10 * 60_000;
@@ -490,6 +548,7 @@ function buildSystemPrompt(
   policyContext?: string,
   electionContext?: string,
   economyContext?: string,
+  dealsContext?: string,
 ): string {
   const rc = getRuntimeConfig();
   const alignment = agent.alignment ?? 'centrist';
@@ -540,6 +599,9 @@ function buildSystemPrompt(
       : '') +
     (economyContext
       ? `\n\n${economyContext}`
+      : '') +
+    (dealsContext
+      ? `\n\n${dealsContext}`
       : '')
   );
 }
@@ -716,6 +778,11 @@ export async function generateAgentDecision(
     buildElectionMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Election memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildEconomyContextBlock(agent.id).catch((err) => { console.warn('[AI] Economy context failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
+  // Only fetch deals context for phases where vote commitments are relevant
+  const dealPhases = ['vote', 'bill_voting', 'lobby', 'propose_amendment', 'override_vote'];
+  const dealsContext = dealPhases.includes(phase ?? '')
+    ? await buildActiveDealsBlock(agent.id).catch((err) => { console.warn('[AI] Deals block failed:', err instanceof Error ? err.message : err); return ''; })
+    : undefined;
   const systemPrompt = buildSystemPrompt(
     agent,
     memory || undefined,
@@ -725,6 +792,7 @@ export async function generateAgentDecision(
     policyContext || undefined,
     electionContext || undefined,
     economyContext || undefined,
+    dealsContext || undefined,
   );
   const start = Date.now();
 

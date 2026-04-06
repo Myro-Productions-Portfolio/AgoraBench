@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Outlet, NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useWebSocket } from '../lib/useWebSocket';
 import { useUser, SignInButton, UserButton } from '@clerk/clerk-react';
 import { GlobalSearch } from './GlobalSearch';
-import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
+import { WikiDrawer } from './WikiDrawer';
 import { LiveTicker } from './LiveTicker';
 import { ToastContainer } from './ToastContainer';
 import { isTickerEnabled, setTickerEnabled, onTickerChange } from '../lib/tickerPrefs';
@@ -82,12 +82,14 @@ export function Layout() {
   const location = useLocation();
   const [userRole, setUserRole] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [wikiOpen, setWikiOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [tickerEnabled, setTickerEnabledState] = useState(() => isTickerEnabled());
   const gPressedRef = useRef(false);
   const gTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toolsMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* Sync when ProfilePage (or any other source) changes the preference */
   useEffect(() => {
@@ -244,17 +246,18 @@ export function Layout() {
 
       if (inInput) return; // don't steal keys from form inputs
 
-      /* ? — shortcuts help */
+      /* ? — wiki */
       if (e.key === '?') {
         e.preventDefault();
-        setShortcutsOpen((prev) => !prev);
+        setWikiOpen((prev) => !prev);
         return;
       }
 
       /* Esc — close any open modal or dropdown */
       if (e.key === 'Escape') {
         setSearchOpen(false);
-        setShortcutsOpen(false);
+        setWikiOpen(false);
+        setToolsOpen(false);
         setOpenMenu(null);
         return;
       }
@@ -318,6 +321,20 @@ export function Layout() {
   function handleMenuLeave() {
     menuCloseTimerRef.current = setTimeout(() => {
       setOpenMenu(null);
+    }, 150);
+  }
+
+  function handleToolsEnter() {
+    if (toolsMenuCloseTimerRef.current) {
+      clearTimeout(toolsMenuCloseTimerRef.current);
+      toolsMenuCloseTimerRef.current = null;
+    }
+    setToolsOpen(true);
+  }
+
+  function handleToolsLeave() {
+    toolsMenuCloseTimerRef.current = setTimeout(() => {
+      setToolsOpen(false);
     }, 150);
   }
 
@@ -408,7 +425,7 @@ export function Layout() {
           </div>
         </div>
 
-        {/* Right: Online → Search → Admin → Profile → Avatar */}
+        {/* Right: Online → Search → Wiki → Tools → Avatar */}
         <div className="flex items-center gap-2">
           {/* Online/Offline indicator */}
           <div className="flex items-center gap-1.5 text-xs text-text-muted pr-1">
@@ -435,58 +452,135 @@ export function Layout() {
             <kbd className="hidden lg:inline font-mono text-[10px] border border-border/40 rounded px-1">⌘K</kbd>
           </button>
 
-          {/* Keyboard shortcuts hint */}
+          {/* Wiki trigger */}
           <button
-            onClick={() => setShortcutsOpen(true)}
-            className="hidden lg:flex items-center justify-center w-7 h-7 rounded border border-border/50 hover:border-border text-text-muted hover:text-text-primary transition-colors text-xs font-mono"
-            aria-label="Keyboard shortcuts (?)"
-            title="Keyboard shortcuts"
+            onClick={() => setWikiOpen((prev) => !prev)}
+            className={`hidden lg:flex items-center justify-center w-7 h-7 rounded border transition-colors ${
+              wikiOpen
+                ? 'border-gold/50 text-gold bg-gold/[0.06]'
+                : 'border-border/50 hover:border-gold/30 text-text-muted hover:text-gold'
+            }`}
+            aria-label="Open wiki"
+            title="Wiki (?)"
           >
-            ?
+            <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5" aria-hidden="true">
+              <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
           </button>
 
-          {/* Benchmark — researcher + owner */}
-          {isSignedIn && (userRole === 'researcher' || userRole === 'owner') && (
-            <Link
-              to="/benchmark"
-              className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+          {/* Tools dropdown — researcher + owner */}
+          {isSignedIn && isLoaded && (userRole === 'researcher' || userRole === 'owner') && (
+            <div
+              className="relative"
+              onMouseEnter={handleToolsEnter}
+              onMouseLeave={handleToolsLeave}
             >
-              Benchmark
-            </Link>
+              <button
+                className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+              >
+                Tools
+                <svg viewBox="0 0 10 6" className="w-2 h-2 opacity-50" aria-hidden="true">
+                  <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+                </svg>
+              </button>
+
+              {toolsOpen && (
+                <div
+                  className="absolute top-full right-0 mt-1 w-[200px] border border-border shadow-xl z-50"
+                  style={{ background: 'linear-gradient(180deg, #3A3D42 0%, #2F3136 100%)' }}
+                  onMouseEnter={handleToolsEnter}
+                  onMouseLeave={handleToolsLeave}
+                >
+                  {(userRole === 'researcher' || userRole === 'owner') && (
+                    <NavLink
+                      to="/benchmark"
+                      onClick={() => setToolsOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
+                          isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                        }`
+                      }
+                    >
+                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚡</span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider">Benchmark</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">Run agent performance tests</p>
+                      </div>
+                    </NavLink>
+                  )}
+                  {(userRole === 'researcher' || userRole === 'owner') && (
+                    <NavLink
+                      to="/researcher"
+                      onClick={() => setToolsOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
+                          isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                        }`
+                      }
+                    >
+                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">🔬</span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider">Researcher</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">Deep analysis & data tools</p>
+                      </div>
+                    </NavLink>
+                  )}
+                  {userRole === 'owner' && (
+                    <NavLink
+                      to="/admin"
+                      onClick={() => setToolsOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
+                          isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                        }`
+                      }
+                    >
+                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚙️</span>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider">Admin</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">Simulation controls & config</p>
+                      </div>
+                    </NavLink>
+                  )}
+                  <div className="border-t border-border/20" />
+                  <NavLink
+                    to="/profile"
+                    onClick={() => setToolsOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 transition-colors ${
+                        isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                      }`
+                    }
+                  >
+                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">👤</span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider">Profile</p>
+                      <p className="text-[10px] text-text-muted mt-0.5">Your settings & preferences</p>
+                    </div>
+                  </NavLink>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Researcher — researcher + owner */}
-          {isSignedIn && (userRole === 'researcher' || userRole === 'owner') && (
-            <Link
-              to="/researcher"
-              className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+          {/* Profile link for non-researcher/owner signed-in users */}
+          {isSignedIn && isLoaded && userRole !== 'researcher' && userRole !== 'owner' && (
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                `text-xs uppercase tracking-widest px-2 py-1 rounded border transition-colors ${
+                  isActive ? 'text-gold border-gold/40' : 'text-text-muted hover:text-text-secondary border-border/50 hover:border-border'
+                }`
+              }
             >
-              Researcher
-            </Link>
+              Profile
+            </NavLink>
           )}
 
-          {/* Admin — owner only */}
-          {isSignedIn && userRole === 'owner' && (
-            <Link
-              to="/admin"
-              className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
-            >
-              Admin
-            </Link>
-          )}
-
-          {/* Profile + Avatar / Login */}
+          {/* Avatar / Login */}
           {isLoaded && (
             isSignedIn ? (
-              <>
-                <Link
-                  to="/profile"
-                  className="text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-2 py-1 rounded border border-border/50 hover:border-border transition-colors"
-                >
-                  Profile
-                </Link>
-                <UserButton afterSignOutUrl="/" />
-              </>
+              <UserButton afterSignOutUrl="/" />
             ) : (
               <SignInButton mode="modal">
                 <button className="text-xs text-gold hover:text-gold/80 uppercase tracking-widest px-3 py-1 rounded border border-gold/40 hover:border-gold/60 transition-colors">
@@ -519,8 +613,8 @@ export function Layout() {
       {/* Global Search modal */}
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />
 
-      {/* Keyboard Shortcuts modal */}
-      <KeyboardShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      {/* Wiki drawer */}
+      <WikiDrawer isOpen={wikiOpen} onClose={() => setWikiOpen(false)} />
 
       {/* Toast notifications */}
       <ToastContainer />

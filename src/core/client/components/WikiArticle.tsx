@@ -20,9 +20,15 @@ export function WikiArticle({ article, fontSize, onSectionVisible, onNavigate }:
     const handler = () => {
       const scrollTop = pane.scrollTop;
       let current = article.sections[0]?.id ?? '';
+      let closestOffset = -Infinity;
       for (const section of article.sections) {
         const el = pane.querySelector<HTMLElement>(`#ws-${section.id}`);
-        if (el && el.offsetTop - 80 <= scrollTop) current = section.id;
+        if (!el) continue;
+        const sectionTop = el.offsetTop - 80;
+        if (sectionTop <= scrollTop && sectionTop > closestOffset) {
+          closestOffset = sectionTop;
+          current = section.id;
+        }
       }
       onSectionVisible(current);
     };

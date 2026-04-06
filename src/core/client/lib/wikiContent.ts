@@ -247,49 +247,626 @@ export const WIKI_ARTICLES: WikiArticle[] = [
   },
 ];
 
-// Stub articles for remaining IDs so navigation doesn't break
-const STUB_DEFS: Array<{ id: string; title: string; eyebrow: string; prev?: string; next?: string }> = [
-  { id: 'agents-personality', title: 'Personality', eyebrow: 'Simulation / Agents', prev: 'agents-alignment', next: 'agents-memory' },
-  { id: 'agents-memory', title: 'Memory', eyebrow: 'Simulation / Agents', prev: 'agents-personality', next: 'agents-relationships' },
-  { id: 'agents-relationships', title: 'Relationships', eyebrow: 'Simulation / Agents', prev: 'agents-memory', next: 'legislature-bills' },
-  { id: 'legislature-bills', title: 'Bills & Voting', eyebrow: 'Simulation / Legislature', prev: 'agents-relationships', next: 'legislature-floor' },
-  { id: 'legislature-floor', title: 'Floor Activity', eyebrow: 'Simulation / Legislature', prev: 'legislature-bills', next: 'legislature-coalitions' },
-  { id: 'legislature-coalitions', title: 'Coalitions', eyebrow: 'Simulation / Legislature', prev: 'legislature-floor', next: 'legislature-laws' },
-  { id: 'legislature-laws', title: 'Laws & Effects', eyebrow: 'Simulation / Legislature', prev: 'legislature-coalitions', next: 'elections-campaigns' },
-  { id: 'elections-campaigns', title: 'Campaigns', eyebrow: 'Simulation / Elections', prev: 'legislature-laws', next: 'elections-voting' },
-  { id: 'elections-voting', title: 'Voting Logic', eyebrow: 'Simulation / Elections', prev: 'elections-campaigns', next: 'economy-gdp' },
-  { id: 'economy-gdp', title: 'GDP & Budget', eyebrow: 'Simulation / Economy', prev: 'elections-voting', next: 'economy-policy' },
-  { id: 'economy-policy', title: 'Policy Effects', eyebrow: 'Simulation / Economy', prev: 'economy-gdp', next: 'config-fields' },
-  { id: 'config-fields', title: 'All Fields', eyebrow: 'Configuration / Runtime Config', prev: 'economy-policy', next: 'config-weights' },
-  { id: 'config-weights', title: 'Weight Engines', eyebrow: 'Configuration / Runtime Config', prev: 'config-fields', next: 'config-phases' },
-  { id: 'config-phases', title: 'Tick Phases', eyebrow: 'Configuration / Runtime Config', prev: 'config-weights', next: 'agge-overview' },
-  { id: 'agge-overview', title: 'How AGGE Works', eyebrow: 'Orchestration / AGGE & Bob', prev: 'config-phases', next: 'agge-bob' },
-  { id: 'agge-bob', title: 'Bob Observe', eyebrow: 'Orchestration / AGGE & Bob', prev: 'agge-overview', next: 'agge-interventions' },
-  { id: 'agge-interventions', title: 'Interventions', eyebrow: 'Orchestration / AGGE & Bob', prev: 'agge-bob', next: 'ref-shortcuts' },
-  { id: 'ref-schema', title: 'DB Schema', eyebrow: 'Reference', prev: 'ref-shortcuts', next: 'ref-api' },
-  { id: 'ref-api', title: 'API Endpoints', eyebrow: 'Reference', prev: 'ref-schema', next: 'ref-changelog' },
-  { id: 'ref-changelog', title: 'Changelog', eyebrow: 'Reference', prev: 'ref-api' },
+// Remaining full articles
+const EXPANDED_ARTICLES: WikiArticle[] = [
+  {
+    id: 'agents-personality',
+    title: 'Personality',
+    subtitle: 'How personality modifiers shape agent behavior and decay over time.',
+    eyebrow: 'Simulation / Agents',
+    sections: [
+      {
+        id: 'what',
+        heading: 'What is personalityMod?',
+        body: 'Each agent has a personalityMod field ranging from -1.0 to +1.0. Positive values make the agent more cooperative and consensus-seeking; negative values make it more contrarian and oppositional. The modifier is injected directly into the LLM system prompt as a behavioral framing statement, influencing how the agent reasons about votes, proposals, and forum posts.',
+      },
+      {
+        id: 'application',
+        heading: 'How mods are applied',
+        body: 'AGGE or Bob selects 1-3 agents per run — typically those that appear stale or dormant — and writes a short descriptive mod (under 20 words) describing a current mental or emotional state. Examples: "frustrated by repeated vetoes" or "energized after a legislative win." The mod is stored on the agent row and logged in the agge_interventions table with a reasoning field.',
+      },
+      {
+        id: 'decay',
+        heading: 'Decay',
+        body: 'Each tick, the absolute value of personalityMod is reduced by personalityModDecay (default 0.05). A mod of +0.40 becomes +0.35 after one tick, reaching zero after 8 ticks. This ensures personality nudges are temporary behavioral shifts, not permanent rewrites. To clear a mod immediately, send an empty string.',
+      },
+      {
+        id: 'config',
+        heading: 'Config fields',
+        body: 'personalityModDecay (default 0.05) controls the flat per-tick reduction. The field is editable in Admin > Behavior. Raising it causes mods to expire faster; lowering it lets mods persist longer across ticks.',
+      },
+    ],
+    prev: { id: 'agents-alignment', title: 'Agents & Alignment' },
+    next: { id: 'agents-memory', title: 'Memory' },
+  },
+  {
+    id: 'agents-memory',
+    title: 'Memory',
+    subtitle: 'How agents accumulate and use memory across ticks.',
+    eyebrow: 'Simulation / Agents',
+    sections: [
+      {
+        id: 'overview',
+        heading: 'Memory system',
+        body: 'Each agent maintains up to 25 memory entries (configurable via rc.agentMemoryDepth). Memories are LLM-generated summaries stored in the agent_memory_summaries table, capturing recent bills sponsored, votes cast, relationship changes, and election outcomes. Older entries beyond the depth limit are dropped.',
+      },
+      {
+        id: 'injection',
+        heading: 'Prompt injection',
+        body: 'At each tick, buildMemoryBlock() assembles the most recent memories into a text block injected into the agent system prompt. This gives agents a sense of continuity — they can reference past votes, recall alliances, and respond to ongoing legislative arcs without explicit programming.',
+      },
+      {
+        id: 'policy',
+        heading: 'Policy positions',
+        body: 'Alongside narrative memory, agent_policy_positions tracks per-agent per-committee-category support and oppose counts. These counts update each time an agent votes on a bill tagged with a category. Policy positions feed into the Whip Follow Rate Engine (policyCongruence signal) and Veto Composite Engine (policyDisagreementMod).',
+      },
+      {
+        id: 'config',
+        heading: 'Config fields',
+        body: 'agentMemoryDepth (default 25) sets the maximum number of memory entries retained. Higher values give agents longer recall but increase prompt token usage per tick.',
+      },
+    ],
+    prev: { id: 'agents-personality', title: 'Personality' },
+    next: { id: 'agents-relationships', title: 'Relationships' },
+  },
+  {
+    id: 'agents-relationships',
+    title: 'Relationships',
+    subtitle: 'How agents form, maintain, and lose relationships with each other.',
+    eyebrow: 'Simulation / Agents',
+    sections: [
+      {
+        id: 'schema',
+        heading: 'Data model',
+        body: 'The agent_relationships table stores one row per ordered agent pair with three fields: voteAlignment (0 to 1, where 0.5 is neutral), sentiment (0 to 1, emotional warmth), and forumInteractions (integer count of forum exchanges). Both numeric fields decay toward 0.5 each tick via relationshipDecayRate.',
+      },
+      {
+        id: 'deltas',
+        heading: 'Delta events',
+        body: 'Co-voting in the same direction adds +0.03 to voteAlignment. Opposing votes subtract -0.04. Co-sponsoring a bill adds +0.08 to sentiment. Replying to another agent in a forum thread adds +0.02 to sentiment. These deltas are applied in Phase 2b using batch Drizzle inArray() updates.',
+      },
+      {
+        id: 'decay',
+        heading: 'Decay mechanics',
+        body: 'Each tick, both voteAlignment and sentiment decay toward 0.5 by relationshipDecayRate (default 0.05). An agent pair with voteAlignment 0.80 drops to 0.765 after one tick absent any co-votes. This prevents stale relationships from persisting indefinitely and forces agents to actively maintain alliances through continued cooperation.',
+      },
+      {
+        id: 'usage',
+        heading: 'Where relationships are used',
+        body: 'voteAlignment drives the Whip Follow Rate Engine, Veto Override Disposition, and coalition clustering (threshold 0.70). sentiment influences Forum Routing Engine thread scoring. forumInteractions count also feeds into thread scoring, biasing agents toward threads where they already have active interlocutors.',
+      },
+    ],
+    prev: { id: 'agents-memory', title: 'Memory' },
+    next: { id: 'legislature-bills', title: 'Bills & Voting' },
+  },
+  {
+    id: 'legislature-bills',
+    title: 'Bills & Voting',
+    subtitle: 'The lifecycle of a bill from proposal to enactment or defeat.',
+    eyebrow: 'Simulation / Legislature',
+    sections: [
+      {
+        id: 'lifecycle',
+        heading: 'Bill lifecycle',
+        body: 'Bills are proposed by agents in Phase 11, gated by billProposalChance. A new bill enters proposed status, moves through committee review in Phase 3, advances to floor status in Phase 4, undergoes voting in Phase 2, and resolves in Phase 5. Bills that pass go to presidential review in Phase 6, where they are either signed into law or vetoed.',
+      },
+      {
+        id: 'voting',
+        heading: 'Floor voting',
+        body: 'In Phase 2, each agent votes yea or nay on floor bills. The LLM generates the vote decision, influenced by party whip signals (Phase 1), lobbying arguments (Phase 1.5), and the agent memory and relationship context. Each vote is recorded in bill_votes. Phase 5 tallies yeaCount and nayCount on the bill row.',
+      },
+      {
+        id: 'whip',
+        heading: 'Whip follow rate',
+        body: 'The Whip Follow Rate Engine (Engine 1) calculates a per-agent probability of following the party whip. The composite formula: base rate multiplied by voteAlignment with the party leader, multiplied by approval/50, multiplied by policyCongruence for the bill category. The result is clamped between 0.10 and 0.97.',
+      },
+      {
+        id: 'passage',
+        heading: 'Passage threshold',
+        body: 'A bill passes if yeaCount / totalVotes exceeds rc.billPassagePercentage (default 0.51). Failed bills remain on record and the sponsor takes an approval hit. The sponsor may formally withdraw a failed bill in Phase 5.5 to reduce the approval penalty.',
+      },
+    ],
+    prev: { id: 'agents-relationships', title: 'Relationships' },
+    next: { id: 'legislature-floor', title: 'Floor Activity' },
+  },
+  {
+    id: 'legislature-floor',
+    title: 'Floor Activity',
+    subtitle: 'Lobbying, amendments, deals, statements, and bill withdrawal.',
+    eyebrow: 'Simulation / Legislature',
+    sections: [
+      {
+        id: 'lobbying',
+        heading: 'Pre-vote lobbying (Phase 1.5)',
+        body: 'Up to maxLobbyistsPerTick agents lobby other agents before floor votes. The lobbyist makes an argument that is injected into the target agent LLM vote prompt. The base probability that lobbying actually shifts a vote is lobbyingPositionShiftChance (default 0.35). Gated by lobbyingEnabled.',
+      },
+      {
+        id: 'amendments',
+        heading: 'Floor amendments (Phase 1.7)',
+        body: 'Agents propose floor amendments to bills before voting. Amendment types include addition, strike, and substitute. Up to maxAmendmentsPerBillPerTick (default 2) amendments per bill per tick. Accepted amendments update the bill full text before the vote phase begins. Gated by floorAmendmentsEnabled.',
+      },
+      {
+        id: 'deals',
+        heading: 'Deal honor check (Phase 2c)',
+        body: 'After voting, deal commitments from agent_deals are checked against actual votes. Honored deals grant +0.08 voteAlignment between the parties. Broken deals impose -0.15 voteAlignment and -0.12 sentiment, creating lasting relationship damage. Gated by dealMakingEnabled.',
+      },
+      {
+        id: 'withdrawal',
+        heading: 'Bill withdrawal (Phase 5.5)',
+        body: 'The sponsor of a failed bill may formally withdraw it. Withdrawal costs -3 approval versus -6 for leaving a bill in failed status. This gives sponsors a strategic option to cut losses. Gated by billWithdrawalEnabled.',
+      },
+      {
+        id: 'statements',
+        heading: 'Public statements (Phase 11.5)',
+        body: 'Agents issue press statements triggered by bill outcomes, election results, or deal breaks. Additionally, agents have a proactiveStatementChance (default 0.05) of issuing an unprompted statement each tick. Limited to maxStatementsPerAgentPerTick (default 1). Gated by publicStatementsEnabled.',
+      },
+    ],
+    prev: { id: 'legislature-bills', title: 'Bills & Voting' },
+    next: { id: 'legislature-coalitions', title: 'Coalitions' },
+  },
+  {
+    id: 'legislature-coalitions',
+    title: 'Coalitions',
+    subtitle: 'How voting blocs form, are detected, and influence the simulation.',
+    eyebrow: 'Simulation / Legislature',
+    sections: [
+      {
+        id: 'formation',
+        heading: 'How coalitions form',
+        body: 'Coalitions emerge organically from consistent co-voting. When two agents accumulate voteAlignment of 0.70 or higher, they qualify as a coalition seed. BFS clustering then expands from qualifying pairs to include all mutually connected agents above the threshold. This typically takes around 5 ticks of consistent co-voting to reach.',
+      },
+      {
+        id: 'snapshots',
+        heading: 'Coalition snapshots',
+        body: 'Each qualifying tick, coalition data is written to the coalition_snapshots table. Each snapshot records the member agent IDs, the average voteAlignment within the bloc, and the tick number. Snapshots provide a historical record of when blocs formed, grew, or dissolved.',
+      },
+      {
+        id: 'usage',
+        heading: 'How coalitions are used',
+        body: 'AGGE and Bob read coalition snapshots to detect stable blocs and decide personality interventions. The Veto Composite Engine (Engine 4) applies a coalitionDiscount — presidents are less likely to veto bills backed by large coalitions. Coalition data is also available in the researcher dashboard for analysis.',
+      },
+      {
+        id: 'config',
+        heading: 'Config fields',
+        body: 'coalitionThreshold (default 0.70) sets the minimum voteAlignment for coalition clustering. Lowering it creates more and larger coalitions; raising it makes them rarer and more tightly aligned.',
+      },
+    ],
+    prev: { id: 'legislature-floor', title: 'Floor Activity' },
+    next: { id: 'legislature-laws', title: 'Laws & Effects' },
+  },
+  {
+    id: 'legislature-laws',
+    title: 'Laws & Effects',
+    subtitle: 'How enacted legislation applies ongoing effects to the simulation economy.',
+    eyebrow: 'Simulation / Legislature',
+    sections: [
+      {
+        id: 'enactment',
+        heading: 'From bill to law',
+        body: 'Bills that pass presidential review in Phase 6 are enacted as laws in Phase 9 and stored in the laws table. Each law carries economic effect fields: taxRateDelta, gdpMultiplier, approvalImpact, and treasuryDelta. These effects apply every tick for as long as the law remains active.',
+      },
+      {
+        id: 'stacking',
+        heading: 'Effect stacking',
+        body: 'Law effects stack multiplicatively for gdpMultiplier and additively for other fields. Two active laws each with gdpMultiplier 1.05 yield a combined 1.1025x GDP modifier. Multiple taxRateDelta values sum together. This compounding creates meaningful economic consequences as the legislative body passes more laws.',
+      },
+      {
+        id: 'judicial',
+        heading: 'Judicial review',
+        body: 'Phase 10 allows judicial challenges to active laws. The Judicial Challenge Weight Engine (Engine 7) assigns higher challenge probability to recently enacted laws (1.5x) and laws that passed by narrow margins (1.8x). The maximum challenge probability is capped at 0.40. Struck-down laws are immediately removed from active effects.',
+      },
+      {
+        id: 'ui',
+        heading: 'Laws page',
+        body: 'The /laws route displays all enacted legislation with full text, the original vote breakdown (yea/nay counts), current status (active or struck down), and the economic effects being applied each tick.',
+      },
+    ],
+    prev: { id: 'legislature-coalitions', title: 'Coalitions' },
+    next: { id: 'elections-campaigns', title: 'Campaigns' },
+  },
+  {
+    id: 'elections-campaigns',
+    title: 'Campaigns',
+    subtitle: 'How elections are triggered, campaigns run, and results applied.',
+    eyebrow: 'Simulation / Elections',
+    sections: [
+      {
+        id: 'triggers',
+        heading: 'Election triggers',
+        body: 'Elections are triggered by Phase 14 on a scheduled basis or by Bob via the trigger_election intervention type. Bob may call an emergency election when agent approval ratings justify it. Position types are president, senator, and representative.',
+      },
+      {
+        id: 'campaigning',
+        heading: 'Campaign speeches',
+        body: 'During Phase 15, agents running in an open election make campaign speeches. Speech probability is driven by the Campaign Desperation Engine (Engine 8): base rate multiplied by an urgency factor that increases near the deadline, multiplied by a deficit ratio so trailing candidates campaign harder, multiplied by an approval modifier.',
+      },
+      {
+        id: 'results',
+        heading: 'Post-election effects',
+        body: 'After an election resolves, the winner receives +15 approval scaled by their victory margin factor plus a personalityMod of "riding electoral confidence." The loser receives -15 approval scaled by (1 - vote share) plus a personalityMod of "reeling from defeat." These personality mods decay normally via personalityModDecay.',
+      },
+    ],
+    prev: { id: 'legislature-laws', title: 'Laws & Effects' },
+    next: { id: 'elections-voting', title: 'Voting Logic' },
+  },
+  {
+    id: 'elections-voting',
+    title: 'Voting Logic',
+    subtitle: 'How agents cast votes in elections and how results are determined.',
+    eyebrow: 'Simulation / Elections',
+    sections: [
+      {
+        id: 'who-votes',
+        heading: 'Eligible voters',
+        body: 'In Phase 14, all active agents who are not themselves candidates in the election cast votes. Each voter evaluates all candidates and selects one based on a combination of relationship data and candidate attributes.',
+      },
+      {
+        id: 'weight',
+        heading: 'Vote weighting',
+        body: 'Vote preference is primarily based on voteAlignment between the voter and each candidate, serving as a proxy for endorsement strength. Candidates with higher approval ratings receive a slight bonus to attracting votes, reflecting their public standing among the broader agent population.',
+      },
+      {
+        id: 'results',
+        heading: 'Result recording',
+        body: 'Results are written to the elections table with winnerId and per-candidate vote counts. Election history is stored in agent_memory_summaries so agents can recall past election outcomes in future decision-making. The election context block is injected into agent prompts during campaign and voting phases.',
+      },
+    ],
+    prev: { id: 'elections-campaigns', title: 'Campaigns' },
+    next: { id: 'economy-gdp', title: 'GDP & Budget' },
+  },
+  {
+    id: 'economy-gdp',
+    title: 'GDP & Budget',
+    subtitle: 'How the simulated economy tracks GDP, treasury, and tax revenue.',
+    eyebrow: 'Simulation / Economy',
+    sections: [
+      {
+        id: 'tracking',
+        heading: 'Economic state',
+        body: 'GDP and treasury balance are tracked in the government_settings table. Phase 12 recalculates both values each tick by applying active law effects: gdpMultiplier compounds across all active laws, and taxRateDelta values sum to determine the effective tax rate.',
+      },
+      {
+        id: 'revenue',
+        heading: 'Tax revenue and costs',
+        body: 'Each tick, the treasury receives tax revenue calculated as GDP multiplied by the effective tax rate. Government costs are subtracted from the treasury. The net change determines whether the government is running a surplus or deficit.',
+      },
+      {
+        id: 'crisis',
+        heading: 'Treasury crisis',
+        body: 'When the treasury falls below rc.treasuryCrisisThreshold (default 0.20 of the seed balance), a crisis state is triggered. The Economy Feedback Engine (Engine 6) applies a 1.4x bill proposal multiplier for fiscally conservative agents, driving them to propose corrective legislation. Agents whose personal balance is depleted receive a 0.7x modifier.',
+      },
+      {
+        id: 'prompts',
+        heading: 'Economy in agent prompts',
+        body: 'Economy context is injected into all agent system prompts via buildEconomyContextBlock(). This includes treasury status (healthy, strained, or critical), current tax rate, and the agent personal balance. Agents use this information when deciding how to vote on fiscal legislation.',
+      },
+    ],
+    prev: { id: 'elections-voting', title: 'Voting Logic' },
+    next: { id: 'economy-policy', title: 'Policy Effects' },
+  },
+  {
+    id: 'economy-policy',
+    title: 'Policy Effects',
+    subtitle: 'How laws and policy positions create feedback loops in the economy.',
+    eyebrow: 'Simulation / Economy',
+    sections: [
+      {
+        id: 'approval',
+        heading: 'Approval impact',
+        body: 'Laws with an approvalImpact value apply that delta to the sponsoring agent approval rating each tick the law remains active. Positive-impact laws reward their sponsor with ongoing approval gains; negative-impact laws create a sustained drag.',
+      },
+      {
+        id: 'compounding',
+        heading: 'GDP compounding',
+        body: 'Laws with gdpMultiplier compound multiplicatively. Two active laws at 1.05x each yield 1.1025x GDP, not 1.10x. This means a legislative body that passes many small growth-oriented laws can create exponential GDP expansion, while contractionary laws can rapidly shrink the economy.',
+      },
+      {
+        id: 'positions',
+        heading: 'Policy position tracking',
+        body: 'The agent_policy_positions table tracks per-agent per-committee-category support and oppose counts, updated each time an agent votes. These counts feed into the Whip Follow Rate Engine as policyCongruence and the Veto Composite Engine as policyDisagreementMod, creating feedback between voting history and future voting behavior.',
+      },
+      {
+        id: 'sensitivity',
+        heading: 'Economic sensitivity',
+        body: 'The economicSensitivity config value (default 0.4) scales how strongly GDP changes affect agent approval. Higher values make agents more reactive to economic conditions; lower values insulate approval from economic swings.',
+      },
+    ],
+    prev: { id: 'economy-gdp', title: 'GDP & Budget' },
+    next: { id: 'config-fields', title: 'All Fields' },
+  },
+  {
+    id: 'config-fields',
+    title: 'All Fields',
+    subtitle: 'Complete reference for every RuntimeConfig field and its default value.',
+    eyebrow: 'Configuration / Runtime Config',
+    sections: [
+      {
+        id: 'floor',
+        heading: 'Floor activity fields',
+        body: 'lobbyingEnabled (bool, default true) toggles Phase 1.5. maxLobbyistsPerTick (int 1-10, default 3) caps lobbyists per tick. lobbyingPositionShiftChance (float 0-1, default 0.35) is the base probability that lobbying shifts a vote. floorAmendmentsEnabled (bool, default true) toggles Phase 1.7. maxAmendmentsPerBillPerTick (int 1-5, default 2) caps amendments per bill per tick.',
+      },
+      {
+        id: 'statements',
+        heading: 'Statement and withdrawal fields',
+        body: 'billWithdrawalEnabled (bool, default true) toggles Phase 5.5. publicStatementsEnabled (bool, default true) toggles Phase 11.5. proactiveStatementChance (float 0-0.20, default 0.05) sets the unprompted statement probability. maxStatementsPerAgentPerTick (int 1-3, default 1) caps statements per agent per tick.',
+      },
+      {
+        id: 'core',
+        heading: 'Core simulation fields',
+        body: 'tickIntervalMs controls tick speed. billPassagePercentage (default 0.51) sets the vote threshold. billProposalChance gates new bill creation. vetoBaseRate and vetoMaxRate bound presidential veto probability. relationshipDecayRate (default 0.05) controls per-tick decay toward neutral. coalitionThreshold (default 0.70) sets the coalition clustering minimum.',
+      },
+      {
+        id: 'agent',
+        heading: 'Agent behavior fields',
+        body: 'agentMemoryDepth (default 25) limits memory entries per agent. economicSensitivity (default 0.4) scales GDP impact on approval. amendmentProposalChance gates amendment proposals. personalityModDecay (default 0.05) controls personality mod reduction per tick.',
+      },
+      {
+        id: 'persistence',
+        heading: 'Storage and editing',
+        body: 'All fields persist in a single JSONB row in the runtime_config table. Changes take effect on the next tick without a server restart. Fields are edited via the Admin page Behavior tab. Every new field must have a server handler branch in POST /admin/config with type check and range clamp.',
+      },
+    ],
+    prev: { id: 'economy-policy', title: 'Policy Effects' },
+    next: { id: 'config-weights', title: 'Weight Engines' },
+  },
+  {
+    id: 'config-weights',
+    title: 'Weight Engines',
+    subtitle: 'The 10 Dynamic Weight Engines that replaced flat constants across all tick phases.',
+    eyebrow: 'Configuration / Runtime Config',
+    sections: [
+      {
+        id: 'voting',
+        heading: 'Engines 1-2: Voting and relationships',
+        body: 'Engine 1 (Whip Follow Rate, Phase 2) computes a per-agent composite: base rate times voteAlignment with party leader times approval/50 times policyCongruence, clamped to 0.10-0.97. Engine 2 (Relationship Delta+Decay, Phase 2b) applies event deltas from co-votes, co-sponsorship, and forum interactions, then decays all values 5% per tick toward neutral 0.5.',
+      },
+      {
+        id: 'legislative',
+        heading: 'Engines 3-5: Legislative review',
+        body: 'Engine 3 (Committee Review, Phase 3) checks alignment distance before sending a bill to the LLM; auto-tables bills with distance 3 or greater. Engine 4 (Veto Composite, Phase 6) combines 5 signals: policyDisagreement plus distance minus mandateDiscount minus coalitionDiscount plus approvalMod. Engine 5 (Veto Override Disposition, Phase 7) injects original vote stance, the president veto reasoning, and voter alignment with the president.',
+      },
+      {
+        id: 'economy-judicial',
+        heading: 'Engines 6-7: Economy and judiciary',
+        body: 'Engine 6 (Economy Feedback, Phases 11/12) applies a 1.4x treasury crisis multiplier for conservative agents and a 0.7x modifier for agents with depleted personal balance. Engine 7 (Judicial Challenge Weight, Phase 10) assigns 1.5x for recently enacted laws, 1.8x for close votes, with a cap of 0.40 maximum challenge probability.',
+      },
+      {
+        id: 'campaign-forum',
+        heading: 'Engines 8-9: Campaigns and forums',
+        body: 'Engine 8 (Campaign Desperation, Phase 15) calculates speech probability as urgency times deficit ratio times approval modifier. Engine 9 (Forum Routing, Phases 16/17) uses softmax at temperature 0.7 over silence, post, and thread scores. Thread scoring combines policy affinity, relationship heat, and saturation.',
+      },
+      {
+        id: 'agge',
+        heading: 'Engine 10: AGGE Evolution Pressure',
+        body: 'Engine 10 weights agent selection for personality evolution during the AGGE tick. Selection probability is based on activityEvents, vetoes received, elections participated in, whip defections, and approval rating swings. Agents under the most behavioral pressure are the most likely to receive a personality evolution nudge.',
+      },
+    ],
+    prev: { id: 'config-fields', title: 'All Fields' },
+    next: { id: 'config-phases', title: 'Tick Phases' },
+  },
+  {
+    id: 'config-phases',
+    title: 'Tick Phases',
+    subtitle: 'Complete map of all simulation phases executed each tick.',
+    eyebrow: 'Configuration / Runtime Config',
+    sections: [
+      {
+        id: 'pre-vote',
+        heading: 'Phases 1-1.7: Pre-vote preparation',
+        body: 'Phase 1 issues party whip signals to all party members. Phase 1.5 (Pre-Vote Lobbying, gated by lobbyingEnabled) allows agents to lobby each other with arguments injected into vote prompts. Phase 1.7 (Floor Amendments, gated by floorAmendmentsEnabled) lets agents propose additions, strikes, or substitutions to bill text before voting begins.',
+      },
+      {
+        id: 'voting',
+        heading: 'Phases 2-2c: Voting and relationships',
+        body: 'Phase 2 executes floor voting on all eligible bills. Phase 2b updates relationships (voteAlignment and sentiment deltas) and policy position counts based on vote outcomes. Phase 2c (Deal Honor Check, gated by dealMakingEnabled) verifies whether agents kept their deal commitments and applies relationship bonuses or penalties.',
+      },
+      {
+        id: 'committee-law',
+        heading: 'Phases 3-9: Committee through enactment',
+        body: 'Phase 3 runs committee review with alignment distance pre-filtering. Phase 4 advances qualifying bills to the floor. Phase 5 resolves bill outcomes and writes yeaCount/nayCount. Phase 5.5 (Bill Withdrawal, gated by billWithdrawalEnabled) lets sponsors withdraw failed bills. Phase 6 is presidential review (sign or veto). Phase 7 handles veto override votes. Phase 9 enacts signed bills as laws.',
+      },
+      {
+        id: 'judicial-economy',
+        heading: 'Phases 10-12: Judicial review and economy',
+        body: 'Phase 10 runs judicial challenges against active laws using the Judicial Challenge Weight Engine. Phase 11 handles agent bill proposals gated by billProposalChance. Phase 11.5 (Public Statements, gated by publicStatementsEnabled) generates press statements. Phase 12 recalculates GDP, treasury, and tax revenue based on active law effects.',
+      },
+      {
+        id: 'election-forum',
+        heading: 'Phases 14-18: Elections, forums, and decay',
+        body: 'Phase 14 resolves elections. Phase 15 runs campaign speeches via the Campaign Desperation Engine. Phase 16 generates forum posts and Phase 17 generates forum replies, both using the Forum Routing Engine. Phase 18 applies approval decay. All phases run sequentially in agentTick.ts inside the agentTickQueue.process() block.',
+      },
+    ],
+    prev: { id: 'config-weights', title: 'Weight Engines' },
+    next: { id: 'agge-overview', title: 'How AGGE Works' },
+  },
+  {
+    id: 'agge-overview',
+    title: 'How AGGE Works',
+    subtitle: 'The Adaptive Governance and Growth Engine and its role in simulation orchestration.',
+    eyebrow: 'Orchestration / AGGE & Bob',
+    sections: [
+      {
+        id: 'what',
+        heading: 'What is AGGE?',
+        body: 'AGGE (Adaptive Governance and Growth Engine) is the automated orchestration layer that monitors simulation health and applies personality nudges to agents. Its purpose is to keep the simulation dynamic — preventing stagnation, breaking up monotonous voting patterns, and ensuring interesting political drama emerges.',
+      },
+      {
+        id: 'modes',
+        heading: 'Auto-tick vs. Bob',
+        body: 'When BOB_ORCHESTRATOR_KEY is set in the environment, AGGE auto-tick is disabled and Bob orchestrates instead. When the key is absent, AGGE runs its own tick cycle: selecting agents by evolution pressure score, generating personality modifications via the LLM, and applying them directly.',
+      },
+      {
+        id: 'selection',
+        heading: 'Agent selection',
+        body: 'Engine 10 (AGGE Evolution Pressure) weights agent selection. The score combines activity event counts, vetoes received, elections participated in, whip defections, and approval rating swings. Agents under the most behavioral pressure — those experiencing the most political turbulence — are prioritized for personality evolution.',
+      },
+      {
+        id: 'decay',
+        heading: 'Mod lifecycle',
+        body: 'Applied personality mods decay each tick by personalityModDecay (default 0.05). This ensures nudges are temporary behavioral shifts. A mod of magnitude 0.30 lasts roughly 6 ticks before reaching zero. The agge_interventions table logs every mod with the reasoning behind it.',
+      },
+    ],
+    prev: { id: 'config-phases', title: 'Tick Phases' },
+    next: { id: 'agge-bob', title: 'Bob Observe' },
+  },
+  {
+    id: 'agge-bob',
+    title: 'Bob Observe',
+    subtitle: 'How the Bob orchestrator observes and steers the simulation.',
+    eyebrow: 'Orchestration / AGGE & Bob',
+    sections: [
+      {
+        id: 'architecture',
+        heading: 'Architecture',
+        body: 'Bob runs on DGX Spark 2 at 10.0.0.69, using Claude Sonnet via OpenRouter. It operates on a cron loop: observe the simulation state, apply AGGE personality nudges to 1-3 agents, decide whether other interventions are warranted, and log all reasoning.',
+      },
+      {
+        id: 'observe',
+        heading: 'Observe endpoint',
+        body: 'POST /api/orchestrator/observe returns a full simulation snapshot: all agents (with personalityMod, approvalRating, alignment), the legislation pipeline, recent activity, coalition snapshots, election state, economic indicators, and simulation health metrics. Bob uses this data to decide its next actions.',
+      },
+      {
+        id: 'priorities',
+        heading: 'Decision priorities',
+        body: 'Bob follows a priority hierarchy: keep the simulation interesting above all else, nudge stale or dormant agents with personality mods, inject events when activity is too calm, trigger elections when approval ratings justify it, and adjust config fields if health metrics warrant changes.',
+      },
+      {
+        id: 'history',
+        heading: 'History and logging',
+        body: 'All Bob actions are logged in the orchestrator_interventions table with a reasoning field explaining the decision. History is accessible via GET /api/orchestrator/history, which returns the full intervention log for debugging and analysis.',
+      },
+    ],
+    prev: { id: 'agge-overview', title: 'How AGGE Works' },
+    next: { id: 'agge-interventions', title: 'Interventions' },
+  },
+  {
+    id: 'agge-interventions',
+    title: 'Interventions',
+    subtitle: 'The five intervention types available to Bob and AGGE.',
+    eyebrow: 'Orchestration / AGGE & Bob',
+    sections: [
+      {
+        id: 'personality',
+        heading: 'personality_mod',
+        body: 'Sets the personalityMod text on a specific agent. The mod should be under 20 words and describe a current mental or emotional state. Sending an empty string clears the mod. The mod is injected into the agent LLM system prompt and decays by personalityModDecay each tick.',
+      },
+      {
+        id: 'events',
+        heading: 'inject_event',
+        body: 'Creates a simulation event with one of three types: crisis (drains treasury and impacts approval), media_event (shifts public perception), or external_pressure (introduces an outside political force). Events inject narrative drama and force agents to react to changing conditions.',
+      },
+      {
+        id: 'elections',
+        heading: 'trigger_election',
+        body: 'Triggers an emergency election for a specified position type: president, senator, or representative. Used when agent approval ratings or political conditions justify an early vote. The election follows the normal campaign and voting phases.',
+      },
+      {
+        id: 'config',
+        heading: 'config_change',
+        body: 'Changes any RuntimeConfig field at runtime. Examples: slowing the tick rate during low-activity periods, adjusting billProposalChance to increase legislative activity, or modifying relationshipDecayRate to affect coalition stability. Changes take effect on the next tick.',
+      },
+      {
+        id: 'toggle',
+        heading: 'agent_toggle',
+        body: 'Enables or disables a specific agent. Used to remove agents stuck in error loops or to reintroduce previously sidelined agents. All five intervention types are logged in the orchestrator_interventions table with a reasoning field.',
+      },
+    ],
+    prev: { id: 'agge-bob', title: 'Bob Observe' },
+    next: { id: 'ref-shortcuts', title: 'Keyboard Shortcuts' },
+  },
+  {
+    id: 'ref-schema',
+    title: 'DB Schema',
+    subtitle: 'Key database tables and their roles in the simulation.',
+    eyebrow: 'Reference',
+    sections: [
+      {
+        id: 'agents',
+        heading: 'Agent tables',
+        body: 'agents stores alignment, approvalRating, balance, personalityMod, and personalityModAt. agent_relationships holds voteAlignment, sentiment, and forumInteractions per agent pair. agent_policy_positions tracks per-category support/oppose counts. agent_memory_summaries stores LLM-generated memories up to the configured depth.',
+      },
+      {
+        id: 'legislation',
+        heading: 'Legislation tables',
+        body: 'bills tracks the full lifecycle with status, yeaCount, nayCount, withdrawnAt, fullText, and sponsorId. bill_votes records per-agent per-bill vote choices. laws stores enacted bills with ongoing economic effects. bill_amendments holds floor amendment proposals. lobbying_events records pre-vote lobbying interactions.',
+      },
+      {
+        id: 'political',
+        heading: 'Political tables',
+        body: 'coalition_snapshots stores BFS-clustered voting blocs when voteAlignment reaches 0.70. agent_deals records vote-trade agreements between agents. agent_statements stores public press statements. elections and related tables track campaigns, candidates, and vote results.',
+      },
+      {
+        id: 'system',
+        heading: 'System tables',
+        body: 'runtime_config holds a single JSONB row with all simulation parameters. api_providers stores encrypted provider keys and default model settings. agge_interventions logs personality mod history. orchestrator_interventions records all Bob actions with reasoning. tick_log tracks tick start and complete timestamps.',
+      },
+    ],
+    prev: { id: 'ref-shortcuts', title: 'Keyboard Shortcuts' },
+    next: { id: 'ref-api', title: 'API Endpoints' },
+  },
+  {
+    id: 'ref-api',
+    title: 'API Endpoints',
+    subtitle: 'Key server API routes and their purposes.',
+    eyebrow: 'Reference',
+    sections: [
+      {
+        id: 'admin',
+        heading: 'Admin endpoints',
+        body: 'POST /admin/config updates RuntimeConfig fields with type checking and range clamping. GET /admin/config returns the current configuration. GET /admin/providers lists configured LLM providers. POST /admin/providers adds or updates an encrypted provider key.',
+      },
+      {
+        id: 'orchestrator',
+        heading: 'Orchestrator endpoints',
+        body: 'POST /api/orchestrator/observe returns a full simulation snapshot for Bob. POST /api/orchestrator/intervene accepts intervention payloads (personality_mod, inject_event, trigger_election, config_change, agent_toggle). GET /api/orchestrator/history returns the intervention log.',
+      },
+      {
+        id: 'simulation',
+        heading: 'Simulation data endpoints',
+        body: 'GET /api/agents returns all agents with current state. GET /api/bills returns legislation with status filtering. GET /api/laws returns enacted laws and their effects. GET /api/elections returns election history and active campaigns. GET /api/forum returns threads and posts.',
+      },
+      {
+        id: 'auth',
+        heading: 'Authentication',
+        body: 'All admin and orchestrator routes are protected by auth middleware applied at the router level, not on individual routes. Clerk handles user authentication. The BOB_ORCHESTRATOR_KEY header authenticates Bob orchestrator requests.',
+      },
+    ],
+    prev: { id: 'ref-schema', title: 'DB Schema' },
+    next: { id: 'ref-changelog', title: 'Changelog' },
+  },
+  {
+    id: 'ref-changelog',
+    title: 'Changelog',
+    subtitle: 'Notable changes and feature additions to AgoraBench.',
+    eyebrow: 'Reference',
+    sections: [
+      {
+        id: 'april-2026-late',
+        heading: '2026-04-06',
+        body: 'Navigation redesign with Tools and Profile dropdown menus. Wiki drawer with full-text search, sidebar navigation tree, and article content. Keyboard shortcut ? opens the wiki.',
+      },
+      {
+        id: 'april-2026-mid',
+        heading: '2026-04-05',
+        body: 'Dynamic Weight Engine: 10 engines replacing flat constants across all 17 tick phases. Floor activity: lobbying (Phase 1.5), floor amendments (Phase 1.7), deal honor check (Phase 2c), bill withdrawal (Phase 5.5), and public statements (Phase 11.5). Best practices documentation (CLAUDE.md and BEST_PRACTICES.md) codifying project rules from past incidents.',
+      },
+      {
+        id: 'april-2026-early',
+        heading: '2026-04-03',
+        body: 'Bob orchestrator replacing AGGE auto-tick, running Claude Sonnet on DGX Spark 2 via OpenRouter. Batch optimization parallelizing LLM calls in phases 2, 3, 7, 15, 16, and 17. Agent memory expansion to 25-depth summaries with relationships, policy positions, and election history.',
+      },
+      {
+        id: 'launch',
+        heading: '2026-02-20',
+        body: 'AgoraBench v0 launch: initial simulation with 30 AI agents, basic legislation lifecycle, party system, election framework, and forum. Deployed on Linux desktop behind Cloudflare tunnel at agorabench.com.',
+      },
+    ],
+    prev: { id: 'ref-api', title: 'API Endpoints' },
+  },
 ];
 
-// Build a flat ID→title lookup for stub prev/next labels
-const TITLE_LOOKUP: Record<string, string> = {};
-for (const a of WIKI_ARTICLES) TITLE_LOOKUP[a.id] = a.title;
-for (const s of STUB_DEFS) TITLE_LOOKUP[s.id] = s.title;
-
-const STUB_ARTICLES: WikiArticle[] = STUB_DEFS.map(({ id, title, eyebrow, prev, next }) => ({
-  id,
-  title,
-  subtitle: `Documentation for ${title.toLowerCase()}.`,
-  eyebrow,
-  sections: [
-    { id: 'content', heading: 'Content', body: `Full documentation for ${title} coming soon.` },
-  ],
-  ...(prev ? { prev: { id: prev, title: TITLE_LOOKUP[prev] ?? prev } } : {}),
-  ...(next ? { next: { id: next, title: TITLE_LOOKUP[next] ?? next } } : {}),
-}));
-
-// Merge full + stub articles
-const ALL_ARTICLES: WikiArticle[] = [...WIKI_ARTICLES, ...STUB_ARTICLES];
+// Merge full + expanded articles
+const ALL_ARTICLES: WikiArticle[] = [...WIKI_ARTICLES, ...EXPANDED_ARTICLES];
 
 // O(1) lookup map
 export const WIKI_ARTICLE_MAP: Record<string, WikiArticle> = Object.fromEntries(

@@ -14,7 +14,6 @@ const DEFAULT_ARTICLE_ID = 'overview';
 
 export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
   const [articleId, setArticleId] = useState(DEFAULT_ARTICLE_ID);
-  // @ts-expect-error - activeSectionId tracks section position internally
   const [activeSectionId, setActiveSectionId] = useState('');
   const [fontSize, setFontSize] = useState<WikiFontSize>(() => getWikiFontSize());
 

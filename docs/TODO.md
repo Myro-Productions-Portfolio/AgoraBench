@@ -1,9 +1,12 @@
 # TODO - Molt Government
 
-Last Updated: 2026-04-05
+Last Updated: 2026-04-06
 
 ## Recently Completed
 
+- [x] 2026-04-06: Wiki drawer — 35vw right-side drawer with file tree, article pane, font scaling (13–17px), full-text search
+- [x] 2026-04-06: Nav redesign — Tools & Profile dropdown replacing flat right-nav links, wiki icon replacing `?` button
+- [x] 2026-04-06: Wiki content — 20 full articles covering agents, legislature, elections, economy, config, orchestration, reference
 - [x] 2026-04-05: Dynamic Weight Engine smoke test passed (90 rel deltas, 30 policy positions, 2 laws, 1 judicial review)
 - [x] 2026-04-05: Dynamic Weight Engine comprehensive documentation (docs/DYNAMIC_WEIGHT_ENGINE.md with Mermaid diagrams)
 - [x] 2026-04-05: Dynamic Weight Engine — all 10 phases implemented
@@ -17,24 +20,20 @@ Last Updated: 2026-04-05
   - Phase 8: Electoral Weight + Campaign Desperation (margin-scaled deltas, totalVotes, personalityMod cascades, desperation gradient)
   - Phase 9: AGGE Evolution Pressure (weighted agent selection, enriched intervention context)
   - Phase 10: Coalition Formation (coalition_snapshots table, BFS clustering, co-sponsor hints)
+- [x] 2026-04-05: Floor activity — lobbying (Phase 1.5), amendments (Phase 1.7), deal honor check (Phase 2c), bill withdrawal (Phase 5.5), public statements (Phase 11.5)
 - [x] 2026-04-05: Admin election management endpoints (trigger, advance, list active)
-- [x] 2026-04-05: API client methods for election management (getActiveElections, triggerElection, advanceElection)
 - [x] 2026-04-05: Tick phase broadcast (tick:phase events in agentTick.ts)
-- [x] 2026-04-05: Admin time-based config fields converted to value+unit dropdown pattern
 - [x] 2026-04-05: TickStageBar component showing live tick phase progress
 - [x] 2026-04-05: Next Tick countdown (MM:SS) with progress bar on Overview and Simulation tabs
 - [x] 2026-04-05: Elections section in admin panel (trigger, active table, advance phase)
-- [x] 2026-04-05: Admin models endpoint for listing available LLM model IDs
-- [x] 2026-04-05: Countdown resets immediately on tick:start via lastTickStartMs state
 - [x] 2026-03-31: Bob orchestrator API (observe, intervene, history endpoints)
-- [x] 2026-03-31: Orchestrator auth middleware and intervention logging table
 - [x] 2026-03-31: AGGE auto-tick disable when BOB_ORCHESTRATOR_KEY is set
 
 ## Active Tasks
 
 ### High Priority
 
-- [ ] Type-check pass on AdminPage.tsx changes (verify zero tsc errors)
+- [ ] Enable cloudflared on boot: `sudo systemctl enable cloudflared` on Linux box — currently dies on reboot
 - [ ] Validate election trigger/advance endpoints with live simulation
 - [ ] Test TickStageBar rendering across all 9 phases
 
@@ -44,6 +43,7 @@ Last Updated: 2026-04-05
 - [ ] Add error toast feedback for failed election operations
 - [ ] E2e test coverage for admin election management flow
 - [ ] Document orchestrator API in docs/
+- [ ] Flesh out wiki articles as simulation matures — current content covers architecture, not live sim state
 
 ### Low Priority
 

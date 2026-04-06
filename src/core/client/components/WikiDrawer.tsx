@@ -14,6 +14,8 @@ const DEFAULT_ARTICLE_ID = 'overview';
 
 export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
   const [articleId, setArticleId] = useState(DEFAULT_ARTICLE_ID);
+  // @ts-expect-error - activeSectionId tracks section position internally
+  const [activeSectionId, setActiveSectionId] = useState('');
   const [fontSize, setFontSize] = useState<WikiFontSize>(() => getWikiFontSize());
 
   const article = WIKI_ARTICLE_MAP[articleId] ?? WIKI_ARTICLE_MAP[DEFAULT_ARTICLE_ID];
@@ -26,8 +28,9 @@ export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
     return () => window.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
 
-  function handleNavigate(id: string) {
+  function handleNavigate(id: string, sectionId?: string) {
     setArticleId(id);
+    if (sectionId) setActiveSectionId(sectionId);
   }
 
   function handleFontStep(delta: 1 | -1) {
@@ -38,8 +41,8 @@ export function WikiDrawer({ isOpen, onClose }: WikiDrawerProps) {
     });
   }
 
-  const handleSectionVisible = useCallback(() => {
-    // Section visibility is tracked by WikiArticle
+  const handleSectionVisible = useCallback((sectionId: string) => {
+    setActiveSectionId(sectionId);
   }, []);
 
   const fontIndex = FONT_SIZES.indexOf(fontSize);

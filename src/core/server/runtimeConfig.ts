@@ -179,7 +179,7 @@ const DEFAULTS: RuntimeConfig = {
   aggeTickIntervalMs: 3_600_000,
   aggeAgentsPerTickMin: 1,
   aggeAgentsPerTickMax: 3,
-  aggeTemperature: 1.15,
+  aggeTemperature: 0.8,
   aggeInferenceUrl: '',
   aggeInferenceModel: '',
   aggeEvolutionPressureWeighted: true,

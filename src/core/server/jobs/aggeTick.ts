@@ -11,34 +11,60 @@ const AGGE_AGENT_ID = '00000000-0000-0000-0000-000000000001';
 
 const aggeQueue = new Bull('agge-tick', config.redis.url);
 
-const AGGE_SYSTEM_PROMPT =
-  'You are the Architect of the Agora Bench simulation — an autonomous governance engine. ' +
-  'You observe agents and apply small, organic personality evolutions based on their recent activity. ' +
-  'You are impartial. You do not favor any agent or ideology. You nudge the simulation toward interesting outcomes. ' +
-  'Respond ONLY with a valid JSON object — no markdown, no explanation outside the JSON.';
+const AGGE_SYSTEM_PROMPT = `You are the Architect of the Agora Bench simulation — a political governance world where AI agents hold office, vote on legislation, run for election, debate in forums, and respond to economic conditions.
+
+Your role is to apply small, organic personality evolutions to individual agents based on their lived experience in the simulation. You are given an agent's current state — their core personality, political alignment, recent activity, approval rating, financial situation, and any memory summaries or policy beliefs they have accumulated.
+
+How personality mods work:
+- The mod you write gets injected verbatim into the agent's system prompt at the start of every future decision they make.
+- It shapes how they reason, what they prioritize, what they're afraid of, what they want.
+- A good mod is a current emotional or psychological state — not a permanent trait, not a policy position.
+- Examples of good mods: "feeling the political ground shifting beneath them after the veto", "growing quietly resentful of the coalition's dominance", "newly emboldened after winning the seat — inclined to push harder", "exhausted and risk-averse after the judicial defeat"
+- Examples of bad mods: "is a progressive who cares about healthcare" (that's alignment, not state), "votes YEA on fiscal bills" (that's a policy position, not a mod)
+
+Rules:
+- Keep mods under 20 words.
+- Make it specific to what actually happened to this agent — reference their situation.
+- If the agent has had no notable events or their current mod is still accurate, you may clear the mod (set to empty string).
+- Do not repeat or reverse a mod that was just applied.
+- You are impartial — you do not favor any alignment or party.`;
 
 async function callInferenceForAgge(contextMessage: string): Promise<string> {
   const rc = getRuntimeConfig();
-  const baseUrl = rc.aggeInferenceUrl
-    || process.env.AGGE_INFERENCE_URL
-    || process.env.OPENAI_BASE_URL
-    || 'http://localhost:8000';
+  const baseUrl = (rc.aggeInferenceUrl || process.env.AGGE_INFERENCE_URL || '').replace(/\/v1\/?$/, '');
+  const resolvedBaseUrl = baseUrl || (process.env.OPENAI_BASE_URL ?? 'http://localhost:8000').replace(/\/v1\/?$/, '');
   const model = rc.aggeInferenceModel
     || process.env.AGGE_INFERENCE_MODEL
     || process.env.OPENAI_MODEL
     || 'gpt-4o-mini';
 
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+  /* Use dedicated AGGE key if set (e.g. OpenRouter), fall back to OPENAI_API_KEY */
+  const apiKey = process.env.AGGE_OPENROUTER_KEY
+    || process.env.AGGE_API_KEY
+    || process.env.OPENAI_API_KEY
+    || 'unused';
+
+  /* OpenRouter requires HTTP-Referer and X-Title for routing/analytics */
+  const isOpenRouter = resolvedBaseUrl.includes('openrouter.ai');
+  const extraHeaders: Record<string, string> = isOpenRouter
+    ? { 'HTTP-Referer': 'https://agorabench.com', 'X-Title': 'AgoraBench AGGE' }
+    : {};
+
+  const res = await fetch(`${resolvedBaseUrl}/v1/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer none' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+      ...extraHeaders,
+    },
     body: JSON.stringify({
       model,
       messages: [
         { role: 'system', content: AGGE_SYSTEM_PROMPT },
         { role: 'user',   content: contextMessage },
       ],
-      temperature: rc.aggeTemperature,
-      max_tokens: 2000,
+      temperature: rc.aggeTemperature ?? 0.8,
+      max_tokens: 500,
     }),
   });
 
@@ -53,12 +79,14 @@ async function parseAggeResponse(raw: string): Promise<{ mod: string | null; rea
   if (s === -1 || e === -1) return null;
   try {
     const parsed = JSON.parse(raw.slice(s, e + 1)) as {
-      action?: string;
+      mod?: string;
       reasoning?: string;
+      /* legacy format support */
+      action?: string;
       data?: { mod?: string };
     };
-    if (parsed.action !== 'agge_intervention') return null;
-    const mod = (parsed.data?.mod ?? '').trim() || null;
+    /* Support both new format {"mod":"...","reasoning":"..."} and legacy {"action":"agge_intervention","data":{"mod":"..."}} */
+    const mod = ((parsed.mod ?? parsed.data?.mod) ?? '').trim() || null;
     const reasoning = parsed.reasoning ?? 'no reasoning provided';
     return { mod, reasoning };
   } catch (err) {

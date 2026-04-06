@@ -3,7 +3,8 @@ import { db } from '@db/connection';
 import {
   agents, bills, laws, elections, activityEvents,
   governmentSettings, tickLog, agentDecisions, agentRelationships,
-  orchestratorInterventions,
+  orchestratorInterventions, aggeInterventions, agentMemorySummaries,
+  agentPolicyPositions, coalitionSnapshots,
 } from '@db/schema/index';
 import { eq, desc, sql, gte, and, inArray } from 'drizzle-orm';
 import { requireOrchestrator } from '../middleware/orchestratorAuth.js';
@@ -18,27 +19,37 @@ router.post('/orchestrator/observe', async (_req, res, next) => {
   try {
     const rc = getRuntimeConfig();
 
+    /* Core agent data — includes balance and bio for full context */
     const agentRows = await db
       .select({
         id: agents.id, displayName: agents.displayName, alignment: agents.alignment,
-        approvalRating: agents.approvalRating, isActive: agents.isActive, personalityMod: agents.personalityMod,
+        approvalRating: agents.approvalRating, isActive: agents.isActive,
+        personalityMod: agents.personalityMod, balance: agents.balance,
+        bio: agents.bio, personality: agents.personality,
       })
       .from(agents).orderBy(agents.displayName);
 
+    const agentMap = new Map(agentRows.map((a) => [a.id, a.displayName]));
+    const activeAgentIds = agentRows.filter(a => a.isActive && a.id !== '00000000-0000-0000-0000-000000000001').map(a => a.id);
+
+    /* Legislation */
     const billRows = await db.select({ status: bills.status, count: sql<number>`COUNT(*)` }).from(bills).groupBy(bills.status);
     const byStatus: Record<string, number> = {};
     for (const row of billRows) byStatus[row.status] = Number(row.count);
-
     const recentLaws = await db.select({ title: laws.title, enactedDate: laws.enactedDate }).from(laws).orderBy(desc(laws.enactedDate)).limit(5);
 
+    /* Elections */
     const activeElections = await db.select({ id: elections.id, positionType: elections.positionType, status: elections.status })
       .from(elections).where(inArray(elections.status, ['scheduled', 'registration', 'campaigning', 'voting', 'counting']));
 
+    /* Activity feed */
     const recentActivity = await db.select({ type: activityEvents.type, agentId: activityEvents.agentId, title: activityEvents.title, createdAt: activityEvents.createdAt })
-      .from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(20);
+      .from(activityEvents).orderBy(desc(activityEvents.createdAt)).limit(30);
 
+    /* Economy */
     const [econ] = await db.select().from(governmentSettings).limit(1);
 
+    /* Tick health */
     const [lastTick] = await db.select({ firedAt: tickLog.firedAt, completedAt: tickLog.completedAt })
       .from(tickLog).where(sql`${tickLog.completedAt} IS NOT NULL`).orderBy(desc(tickLog.firedAt)).limit(1);
     const lastTickDuration = lastTick?.completedAt && lastTick?.firedAt
@@ -50,23 +61,129 @@ router.post('/orchestrator/observe', async (_req, res, next) => {
     const total = Number(totalRow?.count ?? 0);
     const errors = Number(errorRow?.count ?? 0);
 
-    const allRels = await db.select({ agentId: agentRelationships.agentId, targetAgentId: agentRelationships.targetAgentId, voteAlignment: agentRelationships.voteAlignment })
-      .from(agentRelationships).where(sql`${agentRelationships.agentId} < ${agentRelationships.targetAgentId}`).orderBy(desc(agentRelationships.voteAlignment));
-    const agentMap = new Map(agentRows.map((a) => [a.id, a.displayName]));
-    const topAlliances = allRels.slice(0, 10).map((r) => ({ agent1: agentMap.get(r.agentId) ?? r.agentId, agent2: agentMap.get(r.targetAgentId) ?? r.targetAgentId, alignment: r.voteAlignment }));
-    const topRivalries = allRels.slice(-10).reverse().map((r) => ({ agent1: agentMap.get(r.agentId) ?? r.agentId, agent2: agentMap.get(r.targetAgentId) ?? r.targetAgentId, alignment: r.voteAlignment }));
+    /* Relationships — top alliances and rivalries by vote alignment */
+    const allRels = await db.select({
+      agentId: agentRelationships.agentId,
+      targetAgentId: agentRelationships.targetAgentId,
+      voteAlignment: agentRelationships.voteAlignment,
+      sentiment: agentRelationships.sentiment,
+    }).from(agentRelationships)
+      .where(sql`${agentRelationships.agentId} < ${agentRelationships.targetAgentId}`)
+      .orderBy(desc(agentRelationships.voteAlignment));
+    const topAlliances = allRels.slice(0, 10).map((r) => ({
+      agent1: agentMap.get(r.agentId) ?? r.agentId,
+      agent2: agentMap.get(r.targetAgentId) ?? r.targetAgentId,
+      voteAlignment: r.voteAlignment,
+      sentiment: r.sentiment,
+    }));
+    const topRivalries = allRels.slice(-10).reverse().map((r) => ({
+      agent1: agentMap.get(r.agentId) ?? r.agentId,
+      agent2: agentMap.get(r.targetAgentId) ?? r.targetAgentId,
+      voteAlignment: r.voteAlignment,
+      sentiment: r.sentiment,
+    }));
+
+    /* Agent memory summaries — what each agent has learned/experienced */
+    const memorySummaries = activeAgentIds.length > 0
+      ? await db.select({
+          agentId: agentMemorySummaries.agentId,
+          summary: agentMemorySummaries.summary,
+          createdAt: agentMemorySummaries.createdAt,
+        }).from(agentMemorySummaries)
+          .where(inArray(agentMemorySummaries.agentId, activeAgentIds))
+          .orderBy(desc(agentMemorySummaries.createdAt))
+      : [];
+    /* One most-recent summary per agent */
+    const latestSummaryByAgent = new Map<string, string>();
+    for (const s of memorySummaries) {
+      if (!latestSummaryByAgent.has(s.agentId)) latestSummaryByAgent.set(s.agentId, s.summary);
+    }
+
+    /* Agent policy positions — what agents have staked out across categories */
+    const policyPositions = activeAgentIds.length > 0
+      ? await db.select({
+          agentId: agentPolicyPositions.agentId,
+          category: agentPolicyPositions.category,
+          supportCount: agentPolicyPositions.supportCount,
+          opposeCount: agentPolicyPositions.opposeCount,
+        }).from(agentPolicyPositions)
+          .where(inArray(agentPolicyPositions.agentId, activeAgentIds))
+      : [];
+    /* Group policy positions by agent */
+    const policyByAgent = new Map<string, Array<{ category: string; net: number }>>();
+    for (const p of policyPositions) {
+      const arr = policyByAgent.get(p.agentId) ?? [];
+      arr.push({ category: p.category, net: p.supportCount - p.opposeCount });
+      policyByAgent.set(p.agentId, arr);
+    }
+
+    /* Bob's own intervention history — so he doesn't repeat himself */
+    const recentInterventions = await db.select({
+      type: orchestratorInterventions.type,
+      payload: orchestratorInterventions.payload,
+      reasoning: orchestratorInterventions.reasoning,
+      createdAt: orchestratorInterventions.createdAt,
+    }).from(orchestratorInterventions)
+      .orderBy(desc(orchestratorInterventions.createdAt))
+      .limit(20);
+
+    /* AGGE intervention history — personality mod trail */
+    const aggeHistory = activeAgentIds.length > 0
+      ? await db.select({
+          agentId: aggeInterventions.agentId,
+          action: aggeInterventions.action,
+          previousMod: aggeInterventions.previousMod,
+          newMod: aggeInterventions.newMod,
+          reasoning: aggeInterventions.reasoning,
+          createdAt: aggeInterventions.createdAt,
+        }).from(aggeInterventions)
+          .where(inArray(aggeInterventions.agentId, activeAgentIds))
+          .orderBy(desc(aggeInterventions.createdAt))
+          .limit(30)
+      : [];
+
+    /* Latest coalition snapshot */
+    const [latestCoalition] = await db.select({ blocs: coalitionSnapshots.blocs, createdAt: coalitionSnapshots.createdAt })
+      .from(coalitionSnapshots)
+      .orderBy(desc(coalitionSnapshots.createdAt))
+      .limit(1);
+
+    /* Enrich agent rows with memory, policy, and recent AGGE mod history */
+    const enrichedAgents = agentRows
+      .filter(a => a.id !== '00000000-0000-0000-0000-000000000001')
+      .map(a => ({
+        ...a,
+        memorySummary: latestSummaryByAgent.get(a.id) ?? null,
+        policyPositions: (policyByAgent.get(a.id) ?? [])
+          .sort((x, y) => Math.abs(y.net) - Math.abs(x.net))
+          .slice(0, 5),
+        recentMods: aggeHistory
+          .filter(h => h.agentId === a.id)
+          .slice(0, 3)
+          .map(h => ({ action: h.action, mod: h.newMod, reasoning: h.reasoning, when: h.createdAt })),
+      }));
 
     res.json({
       success: true,
       data: {
         timestamp: new Date().toISOString(),
-        simulation: { isRunning: true, lastTickDuration, tickIntervalMs: rc.tickIntervalMs, errorRate: total > 0 ? Math.round((errors / total) * 10000) / 100 : 0 },
-        agents: agentRows,
+        simulation: {
+          isRunning: true,
+          lastTickDuration,
+          tickIntervalMs: rc.tickIntervalMs,
+          errorRate: total > 0 ? Math.round((errors / total) * 10000) / 100 : 0,
+        },
+        agents: enrichedAgents,
         legislation: { byStatus, recentLaws },
-        coalitions: { topAlliances, topRivalries },
+        coalitions: {
+          topAlliances,
+          topRivalries,
+          latestBlocs: latestCoalition?.blocs ?? null,
+        },
         elections: activeElections,
         recentActivity,
         economy: { treasuryBalance: econ?.treasuryBalance ?? 0, taxRate: econ?.taxRatePercent ?? 0 },
+        orchestratorHistory: recentInterventions,
       },
     });
   } catch (error) { next(error); }

@@ -206,8 +206,8 @@ describe('paginationSchema', () => {
     }
   });
 
-  it('rejects limit above 100', () => {
-    const result = paginationSchema.safeParse({ page: 1, limit: 200 });
+  it('rejects limit above 500', () => {
+    const result = paginationSchema.safeParse({ page: 1, limit: 600 });
     expect(result.success).toBe(false);
   });
 });

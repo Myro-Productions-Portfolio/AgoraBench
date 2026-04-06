@@ -285,6 +285,7 @@ export function Layout() {
     return () => {
       window.removeEventListener('keydown', handler);
       if (gTimerRef.current) clearTimeout(gTimerRef.current);
+      if (toolsMenuCloseTimerRef.current) clearTimeout(toolsMenuCloseTimerRef.current);
     };
   }, [navigate]);
 
@@ -469,14 +470,21 @@ export function Layout() {
           </button>
 
           {/* Tools dropdown — researcher + owner */}
-          {isSignedIn && isLoaded && (userRole === 'researcher' || userRole === 'owner') && (
+          {isSignedIn && isLoaded && userRole !== null && (userRole === 'researcher' || userRole === 'owner') && (
             <div
               className="relative"
               onMouseEnter={handleToolsEnter}
               onMouseLeave={handleToolsLeave}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setToolsOpen(false);
+                }
+              }}
             >
               <button
                 className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary uppercase tracking-widest px-3 py-1 rounded border border-border/50 hover:border-border transition-colors"
+                aria-haspopup="true"
+                aria-expanded={toolsOpen}
               >
                 Tools
                 <svg viewBox="0 0 10 6" className="w-2 h-2 opacity-50" aria-hidden="true">
@@ -491,40 +499,36 @@ export function Layout() {
                   onMouseEnter={handleToolsEnter}
                   onMouseLeave={handleToolsLeave}
                 >
-                  {(userRole === 'researcher' || userRole === 'owner') && (
-                    <NavLink
-                      to="/benchmark"
-                      onClick={() => setToolsOpen(false)}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
-                          isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
-                        }`
-                      }
-                    >
-                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚡</span>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider">Benchmark</p>
-                        <p className="text-[10px] text-text-muted mt-0.5">Run agent performance tests</p>
-                      </div>
-                    </NavLink>
-                  )}
-                  {(userRole === 'researcher' || userRole === 'owner') && (
-                    <NavLink
-                      to="/researcher"
-                      onClick={() => setToolsOpen(false)}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
-                          isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
-                        }`
-                      }
-                    >
-                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">🔬</span>
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider">Researcher</p>
-                        <p className="text-[10px] text-text-muted mt-0.5">Deep analysis & data tools</p>
-                      </div>
-                    </NavLink>
-                  )}
+                  <NavLink
+                    to="/benchmark"
+                    onClick={() => setToolsOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
+                        isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                      }`
+                    }
+                  >
+                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚡</span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider">Benchmark</p>
+                      <p className="text-[10px] text-text-muted mt-0.5">Run agent performance tests</p>
+                    </div>
+                  </NavLink>
+                  <NavLink
+                    to="/researcher"
+                    onClick={() => setToolsOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
+                        isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
+                      }`
+                    }
+                  >
+                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">🔬</span>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider">Researcher</p>
+                      <p className="text-[10px] text-text-muted mt-0.5">Deep analysis & data tools</p>
+                    </div>
+                  </NavLink>
                   {userRole === 'owner' && (
                     <NavLink
                       to="/admin"
@@ -564,7 +568,7 @@ export function Layout() {
           )}
 
           {/* Profile link for non-researcher/owner signed-in users */}
-          {isSignedIn && isLoaded && userRole !== 'researcher' && userRole !== 'owner' && (
+          {isSignedIn && isLoaded && userRole !== null && userRole !== 'researcher' && userRole !== 'owner' && (
             <NavLink
               to="/profile"
               className={({ isActive }) =>

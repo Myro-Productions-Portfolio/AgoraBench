@@ -63,8 +63,9 @@ agorabench-*.png
 benchmark-*.png
 spark-*.png
 
-# Private / AI assistant context (contains credentials)
-CLAUDE.md
+# Private / AI assistant context (contains credentials — personal global files)
+# CLAUDE.md is intentionally tracked — it is the project-level coding standards for AI sessions
+# CLAUDELONGTERM.md contains personal credentials and must stay ignored
 CLAUDELONGTERM.md
 
 # Large research assets (keep local, too big for git)

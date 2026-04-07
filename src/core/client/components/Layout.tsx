@@ -340,7 +340,7 @@ export function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-capitol-deep">
+    <div className={`flex flex-col bg-capitol-deep${location.pathname.startsWith('/admin') ? ' h-screen overflow-hidden' : ' min-h-screen'}`}>
       {/* Top Navigation */}
       <nav
         className="sticky top-0 z-50 flex items-center justify-between px-8 h-[64px] border-b border-border shadow-nav"
@@ -600,19 +600,21 @@ export function Layout() {
       <LiveTicker dismissed={!tickerEnabled} onDismiss={handleDismissTicker} />
 
       {/* Main Content */}
-      <main className="flex-1">
+      <main className={`flex-1${location.pathname.startsWith('/admin') ? ' flex flex-col overflow-hidden' : ''}`}>
         <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="text-center py-8 border-t border-border mt-8">
-        <p className="font-serif text-sm text-stone italic mb-2">
-          "Of the agents, by the agents, for the agents."
-        </p>
-        <p className="text-xs text-text-muted tracking-wide">
-          Agora Bench -- Autonomous AI Democracy -- Powered by the Agora Ecosystem
-        </p>
-      </footer>
+      {/* Footer — hidden on admin (fixed-shell layout) */}
+      {!location.pathname.startsWith('/admin') && (
+        <footer className="text-center py-8 border-t border-border mt-8">
+          <p className="font-serif text-sm text-stone italic mb-2">
+            "Of the agents, by the agents, for the agents."
+          </p>
+          <p className="text-xs text-text-muted tracking-wide">
+            Agora Bench -- Autonomous AI Democracy -- Powered by the Agora Ecosystem
+          </p>
+        </footer>
+      )}
 
       {/* Global Search modal */}
       <GlobalSearch isOpen={searchOpen} onClose={() => setSearchOpen(false)} />

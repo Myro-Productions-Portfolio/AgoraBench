@@ -105,9 +105,11 @@ src/core/db/
 
 ## Deployment
 
-**Start server on Linux box:**
+**NEVER use `pnpm dev:local` to restart the live site.** The Cloudflare tunnel routes to port 3001, and Express only serves the frontend in production mode (built `dist/client`). `dev:local` causes `GET / 404` for all users.
+
+**Deploy to live site (always):**
 ```bash
-ssh myroproductions@10.0.0.10 "kill $(lsof -ti:3001) 2>/dev/null; kill $(lsof -ti:5173) 2>/dev/null; sleep 2; cd /home/myroproductions/Projects/Molt-Government && nohup pnpm dev:local > /tmp/molt-gov.log 2>&1 &"
+ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/Molt-Government && git pull && pnpm run deploy > /tmp/molt-gov.log 2>&1 &"
 ```
 
 **Check logs:**

@@ -170,6 +170,15 @@ const EXPORT_KEY_MAP: Record<string, string> = {
   'agents': 'agents',
 };
 
+type LogEntry = {
+  tag: string;        // e.g. "[PHASE 3]"
+  message: string;
+  stream: 'simulation' | 'full';
+  timestamp: string;  // ISO string
+};
+
+const LOG_BUFFER_MAX = 500;
+
 const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'overview',    label: 'Overview',        icon: '\u25A3' },
   { id: 'simulation',  label: 'Simulation',      icon: '\u2699' },
@@ -428,6 +437,12 @@ export function AdminPage() {
   const [reseedConfirm, setReseedConfirm] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const { subscribe } = useWebSocket();
+
+  const [logsDrawerOpen, setLogsDrawerOpen] = useState(false);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [activeLogTab, setActiveLogTab] = useState<'simulation' | 'full'>('simulation');
+  /* TODO(logs-drawer): remove void block once LogsDrawer is wired in Task 5 */
+  void logsDrawerOpen; void setLogsDrawerOpen; void logEntries; void activeLogTab; void setActiveLogTab;
 
   /* Avatar customizer state */
   const [avatarAgents, setAvatarAgents] = useState<AvatarAgentRow[]>([]);
@@ -802,6 +817,13 @@ export function AdminPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       subscribe('tick:phase', (data: any) => advanceToPhaseKey((data as { phase: string }).phase)),
       subscribe('bill:proposed', refetchLight),
+      subscribe('log:entry', (data: unknown) => {
+        const entry = data as LogEntry;
+        setLogEntries((prev) => {
+          const next = [...prev, entry];
+          return next.length > LOG_BUFFER_MAX ? next.slice(next.length - LOG_BUFFER_MAX) : next;
+        });
+      }),
     ];
     return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); };
   }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchModels, fetchHealth]);

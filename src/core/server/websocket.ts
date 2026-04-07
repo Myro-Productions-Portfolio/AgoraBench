@@ -65,3 +65,32 @@ export function broadcast(event: string, data: unknown): void {
     }
   });
 }
+
+/* ── Log broadcasting ──────────────────────────────────────────────────── */
+
+const SIM_TAG_RE = /^\[(SIMULATION|TICK|PHASE|AGGE|ELECTION|ECONOMY)/i;
+const TAG_RE = /^\[([^\]]+)\]\s*/;
+
+export function broadcastLog(tag: string, message: string): void {
+  if (!wss || wss.clients.size === 0) return;
+  const stream: 'simulation' | 'full' = SIM_TAG_RE.test(`[${tag}]`) ? 'simulation' : 'full';
+  broadcast(WS_EVENTS.LOG_ENTRY, {
+    tag: `[${tag}]`,
+    message,
+    stream,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/* Intercept console.warn (the project's logging convention) once at startup */
+const _originalWarn = console.warn.bind(console);
+console.warn = (...args: unknown[]) => {
+  _originalWarn(...args);
+  const raw = args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ');
+  const match = TAG_RE.exec(raw);
+  if (match) {
+    const tag = match[1];
+    const msg = raw.slice(match[0].length);
+    broadcastLog(tag, msg);
+  }
+};

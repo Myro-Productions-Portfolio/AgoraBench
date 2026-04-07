@@ -42,7 +42,7 @@ Add `GET /api/admin/providers` route to `admin.ts` that queries the `apiProvider
 
 ### Root Cause
 
-`aggeTick.ts` line 23: `const baseUrl = process.env.AGGE_INFERENCE_URL ?? 'http://192.168.3.20:8000'`. The fallback is Ross's DGX Spark 2, which is not where the simulation inference runs.
+`aggeTick.ts` line 23: `const baseUrl = process.env.AGGE_INFERENCE_URL ?? 'http://10.0.0.69:8000'`. The fallback is Ross's DGX Spark 2, which is not where the simulation inference runs.
 
 ### Fix
 

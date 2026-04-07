@@ -9,12 +9,12 @@
   Request:
   {
     scenarioId: "polarized-legislature",
-    modelEndpoint: "http://192.168.3.20:8000/v1/chat/completions",  // or any OpenAI-compatible API
+    modelEndpoint: "http://10.0.0.69:8000/v1/chat/completions",  // or any OpenAI-compatible API
     modelName: "gpt-oss-20b-finetune-v3",
     modelBackend: "vllm",
     agentAssignment: "all" | "designated" | [list of agent IDs],
     runs: 3,          // repeat for statistical significance
-    callbackUrl: "http://192.168.3.30:9010/api/pipeline/{id}/advance"  // optional: notify when done
+    callbackUrl: "http://10.0.0.169:9010/api/pipeline/{id}/advance"  // optional: notify when done
   }
 
   Response:

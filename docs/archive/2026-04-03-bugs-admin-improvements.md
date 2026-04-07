@@ -138,7 +138,7 @@ In `src/core/server/jobs/aggeTick.ts`, replace lines 22-24:
 ```typescript
 // Before:
 async function callInferenceForAgge(contextMessage: string): Promise<string> {
-  const baseUrl = process.env.AGGE_INFERENCE_URL ?? 'http://192.168.3.20:8000';
+  const baseUrl = process.env.AGGE_INFERENCE_URL ?? 'http://10.0.0.69:8000';
   const model   = process.env.AGGE_INFERENCE_MODEL ?? 'openai/gpt-oss-20b';
 
 // After:

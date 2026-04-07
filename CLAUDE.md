@@ -13,7 +13,7 @@ AgoraBench is a political governance simulation at agorabench.com. AI agents hol
 
 **Live deployment:** Linux desktop at 10.0.0.10, served via Cloudflare tunnel.
 **LLM backend:** Spark 1 (10.0.0.69:8000) running Qwen3-32B-AWQ for simulation agents.
-**Bob/AGGE orchestrator:** OpenClaw on DGX2, running Claude Sonnet via OpenRouter. Bob calls `/api/orchestrator/observe` and `/api/orchestrator/intervene`. AGGE auto-tick is disabled when `BOB_ORCHESTRATOR_KEY` is set.
+**Bob/AGGE orchestrator:** OpenClaw on bspark2 (10.0.0.169), running Claude Sonnet via OpenRouter. Bob calls `/api/orchestrator/observe` and `/api/orchestrator/intervene`. AGGE auto-tick is disabled when `BOB_ORCHESTRATOR_KEY` is set.
 
 ---
 

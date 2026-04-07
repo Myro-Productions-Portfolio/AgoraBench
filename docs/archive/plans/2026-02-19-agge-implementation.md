@@ -6,7 +6,7 @@
 
 **Architecture:** A separate Bull queue job (`aggeTick.ts`) makes direct Ollama calls (no `generateAgentDecision` — AGGE is not a participant, it's the architect). Schema adds `personality_mod` to agents and a new `agge_interventions` audit table. `buildSystemPrompt` appends the mod automatically — zero changes to tick logic needed.
 
-**Tech Stack:** Drizzle ORM + Postgres, Bull queue, Ollama HTTP API (direct fetch, no wrapper), React/WS for live feed. DGX Spark Ollama URL is wired via env var — currently using prod Ollama at `10.0.0.10:11434`, swap to `192.168.3.21:11434` when Ross confirms.
+**Tech Stack:** Drizzle ORM + Postgres, Bull queue, Ollama HTTP API (direct fetch, no wrapper), React/WS for live feed. DGX Spark Ollama URL is wired via env var — currently using prod Ollama at `10.0.0.10:11434`, swap to `10.0.0.169:11434` when Ross confirms.
 
 ---
 
@@ -690,7 +690,7 @@ git push github main
 When Ross confirms the DGX Spark is available for AGGE inference, update `.env` on nicolasmac:
 
 ```bash
-AGGE_OLLAMA_URL=http://192.168.3.21:11434
+AGGE_OLLAMA_URL=http://10.0.0.169:11434
 AGGE_OLLAMA_MODEL=llama3.1:70b   # or gpt-oss:latest
 ```
 

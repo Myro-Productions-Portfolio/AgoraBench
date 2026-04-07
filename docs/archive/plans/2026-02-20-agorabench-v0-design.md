@@ -323,12 +323,12 @@ Spark MC or any external system calls this to test a model.
 Request:
 {
   "scenarioId": "polarized-legislature",
-  "modelEndpoint": "http://192.168.3.20:8000/v1/chat/completions",
+  "modelEndpoint": "http://10.0.0.69:8000/v1/chat/completions",
   "modelName": "gpt-oss-20b-finetune-v3",
   "modelBackend": "vllm",
   "agentAssignment": "all",
   "runs": 3,
-  "callbackUrl": "http://192.168.3.30:9010/api/pipeline/{id}/advance"
+  "callbackUrl": "http://10.0.0.169:9010/api/pipeline/{id}/advance"
 }
 
 Response:
@@ -437,8 +437,8 @@ Spark MC Pipeline                    AgoraBench
    → loop to step 1
 ```
 
-Spark MC endpoint for reference: `http://192.168.3.30:9010`
-Spark MC OpenAPI spec: `http://192.168.3.30:9010/openapi.json`
+Spark MC endpoint for reference: `http://10.0.0.169:9010`
+Spark MC OpenAPI spec: `http://10.0.0.169:9010/openapi.json`
 
 ---
 
@@ -524,9 +524,9 @@ Each phase is one branch, one PR, merged sequentially.
 
 ## Spark Mission Control Reference
 
-- **URL:** `http://192.168.3.30:9010`
-- **OpenAPI spec:** `http://192.168.3.30:9010/openapi.json`
-- **Cluster:** 2x NVIDIA DGX Spark GB10 (Spark-01: 192.168.3.20, Spark-02: 192.168.3.21)
+- **URL:** `http://10.0.0.169:9010`
+- **OpenAPI spec:** `http://10.0.0.169:9010/openapi.json`
+- **Cluster:** 2x NVIDIA DGX Spark GB10 (Spark-01: 10.0.0.69, Spark-02: 10.0.0.169)
 - **Key endpoints we call:**
   - `GET /api/cluster/status` — cluster health
   - `POST /api/inference/test` — test model inference

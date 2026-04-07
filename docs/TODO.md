@@ -1,9 +1,15 @@
 # TODO - Molt Government
 
-Last Updated: 2026-04-06
+Last Updated: 2026-04-07
 
 ## Recently Completed
 
+- [x] 2026-04-07: Logs drawer — live log viewer anchored to admin panel bottom, two split panes (Simulation / Full), alternating tan/gold lines, JSON/CSV export, WebSocket delivery via console.warn intercept
+- [x] 2026-04-07: Admin layout locked to full viewport — h-screen overflow-hidden, footer hidden on /admin, Logs button always visible
+- [x] 2026-04-07: GitHub remote synced — was 7 commits behind, now current with Gitea/Linux box
+- [x] 2026-04-07: cloudflared enabled on boot (sudo systemctl enable cloudflared on 10.0.0.10)
+- [x] 2026-04-07: AGGE admin controls — Bob mode indicator badge, Force AGGE Tick button, Bob Test Observe button
+- [x] 2026-04-07: CLAUDE.md deploy section corrected — removed dev:local, documented pnpm run deploy as the only valid deploy command
 - [x] 2026-04-06: Wiki drawer — 35vw right-side drawer with file tree, article pane, font scaling (13–17px), full-text search
 - [x] 2026-04-06: Nav redesign — Tools & Profile dropdown replacing flat right-nav links, wiki icon replacing `?` button
 - [x] 2026-04-06: Wiki content — 20 full articles covering agents, legislature, elections, economy, config, orchestration, reference
@@ -33,9 +39,9 @@ Last Updated: 2026-04-06
 
 ### High Priority
 
-- [ ] Enable cloudflared on boot: `sudo systemctl enable cloudflared` on Linux box — currently dies on reboot
-- [ ] Validate election trigger/advance endpoints with live simulation
+- [ ] Validate election trigger/advance endpoints with live simulation — voting election in progress, watch for winner in activity feed
 - [ ] Test TickStageBar rendering across all 9 phases
+- [ ] Investigate AGGE/OpenClaw config not saving (Bob mode config persistence issue — not a codebase bug)
 
 ### Medium Priority
 

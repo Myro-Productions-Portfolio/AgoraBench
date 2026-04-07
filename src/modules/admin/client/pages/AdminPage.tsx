@@ -590,8 +590,6 @@ export function AdminPage() {
   const [logsDrawerOpen, setLogsDrawerOpen] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [activeLogTab, setActiveLogTab] = useState<'simulation' | 'full'>('simulation');
-  /* TODO(logs-drawer): remove void block once LogsDrawer is wired in Task 5 */
-  void logsDrawerOpen; void setLogsDrawerOpen; void logEntries; void activeLogTab; void setActiveLogTab; void LogsDrawer;
 
   /* Avatar customizer state */
   const [avatarAgents, setAvatarAgents] = useState<AvatarAgentRow[]>([]);
@@ -1213,6 +1211,22 @@ export function AdminPage() {
             );
           })}
         </nav>
+
+        {/* Logs toggle */}
+        <div className="border-t border-border">
+          <button
+            onClick={() => setLogsDrawerOpen((v) => !v)}
+            title={sidebarOpen ? undefined : 'Logs'}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
+              logsDrawerOpen
+                ? 'text-gold bg-gold/5'
+                : 'text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <span className="text-base flex-shrink-0">{'\u{1F4CB}'}</span>
+            {sidebarOpen && <span className="flex-1 text-left">Logs</span>}
+          </button>
+        </div>
       </div>
 
       {/* Main content */}
@@ -3561,6 +3575,15 @@ export function AdminPage() {
               )}
             </CollapsibleSection>
           </div>
+        )}
+
+        {logsDrawerOpen && (
+          <LogsDrawer
+            entries={logEntries}
+            activeTab={activeLogTab}
+            onTabChange={setActiveLogTab}
+            onClose={() => setLogsDrawerOpen(false)}
+          />
         )}
       </div>
     </div>

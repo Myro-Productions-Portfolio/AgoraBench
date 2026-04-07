@@ -1,0 +1,40 @@
+name: Forge Archivist Sync
+
+on:
+  push:
+    paths:
+      - '.forge/**'
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Checkout forge-archivist
+        uses: actions/checkout@v4
+        with:
+          repository: husky2466-codo/forge-archivist
+          token: ${{ secrets.ARCHIVIST_TOKEN }}
+          path: forge-archivist
+
+      - name: Sync .forge folder to archivist
+        run: |
+          REPO_NAME="${{ github.event.repository.name }}"
+          DEST="forge-archivist/projects/${REPO_NAME}"
+          mkdir -p "$DEST"
+          cp -r .forge/. "$DEST/"
+          echo "Synced .forge/ → projects/${REPO_NAME}/"
+
+      - name: Commit and push to forge-archivist
+        run: |
+          cd forge-archivist
+          git config user.name "forge-archivist[bot]"
+          git config user.email "forge-archivist@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet && echo "No changes to sync" && exit 0
+          git commit -m "sync(${{ github.event.repository.name }}): update .forge from ${{ github.sha }}"
+          git push

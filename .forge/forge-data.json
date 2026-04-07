@@ -1,0 +1,2336 @@
+{
+  "project": "Molt-Goverment",
+  "path": "/Volumes/DevDrive-M4Pro/Projects/Molt-Goverment",
+  "branch": "main",
+  "updatedAt": "2026-04-06T23:04:17.213Z",
+  "filesChanged": 0,
+  "commits": [
+    {
+      "hash": "80253b8ca5fca0164628a07d4be831cf3064300c",
+      "message": "feat(agge): add Bob mode indicator and controls to AGGE admin tab",
+      "timestamp": "2026-04-06 12:54:35 -0400"
+    },
+    {
+      "hash": "1fe8a74d67ade628268fdf651a44cea301cde787",
+      "message": "docs: update TODO.md for 2026-04-06 — wiki drawer + nav redesign complete",
+      "timestamp": "2026-04-06 00:55:46 -0400"
+    },
+    {
+      "hash": "d609c8d83e791dea8f26b8d933de11809000cec9",
+      "message": "feat(wiki): write full content for all 20 stub articles",
+      "timestamp": "2026-04-06 00:43:42 -0400"
+    },
+    {
+      "hash": "5173d8edcbe677f0ec281d0742ede40618452393",
+      "message": "fix(test): update paginationSchema limit test to match schema max (500)",
+      "timestamp": "2026-04-06 00:34:56 -0400"
+    },
+    {
+      "hash": "21b585af85cc26db5744d64527e0335741d5e195",
+      "message": "fix(nav): accessibility + role-flash fixes for Tools dropdown",
+      "timestamp": "2026-04-06 00:26:36 -0400"
+    },
+    {
+      "hash": "23fa7d096b5eac59972d1960c6ae1391479824c1",
+      "message": "feat(nav): replace flat right-nav links with Tools dropdown and wiki icon",
+      "timestamp": "2026-04-06 00:21:52 -0400"
+    },
+    {
+      "hash": "f95723ea251e837eb13440d111c0e54948cd7699",
+      "message": "fix(wiki): remove unused activeSectionId state, use underscore param in callback",
+      "timestamp": "2026-04-06 00:19:18 -0400"
+    },
+    {
+      "hash": "f85075801a872cb34fb128c48df9dace6c955dd0",
+      "message": "fix(wiki): remove spurious ts-expect-error from WikiDrawer",
+      "timestamp": "2026-04-06 00:18:50 -0400"
+    },
+    {
+      "hash": "985e83b9bbee0dcfd5198aeb0876cd10b7e69355",
+      "message": "fix(wiki): restore section tracking state and handleNavigate sectionId support",
+      "timestamp": "2026-04-06 00:18:11 -0400"
+    },
+    {
+      "hash": "6e01e444a845c3e5c857cb36294ab2e3d7f084ca",
+      "message": "feat(wiki): add WikiDrawer shell with font scaling and breadcrumb",
+      "timestamp": "2026-04-06 00:15:33 -0400"
+    },
+    {
+      "hash": "1cff322c7bb3a0c727db85429502eacb98eecd7b",
+      "message": "feat(wiki): add WikiTree component with search and collapsible folders",
+      "timestamp": "2026-04-06 00:12:03 -0400"
+    },
+    {
+      "hash": "918bb39e2f3cdbe1ca6c64874e506bf312db9cc3",
+      "message": "fix(wiki): correct scroll tracking to use closest-match algorithm",
+      "timestamp": "2026-04-06 00:09:53 -0400"
+    },
+    {
+      "hash": "eae690ecb9f7bf3d348779aba319152fb8a6efb3",
+      "message": "feat(wiki): add WikiArticle component with scroll tracking",
+      "timestamp": "2026-04-06 00:07:50 -0400"
+    },
+    {
+      "hash": "ec172ba391fec64f42f8619b3d60dbcf5c809f80",
+      "message": "feat(wiki): add static wiki content tree and search index",
+      "timestamp": "2026-04-06 00:05:11 -0400"
+    },
+    {
+      "hash": "b241cfaeb18d1bb17f2757a48040a901b78ca1fe",
+      "message": "feat(wiki): add wiki font size preference utility",
+      "timestamp": "2026-04-06 00:02:03 -0400"
+    },
+    {
+      "hash": "84e5a0e356f04eefb441fced2349d8d06c80b8f7",
+      "message": "docs: add nav + wiki implementation plan",
+      "timestamp": "2026-04-06 00:00:44 -0400"
+    },
+    {
+      "hash": "a4f90f6199ec140d0d15ec9fd12ca1306c789b66",
+      "message": "docs: add nav redesign + wiki drawer design spec",
+      "timestamp": "2026-04-05 23:57:04 -0400"
+    },
+    {
+      "hash": "56843ca545b6633b57a805aab126b72dba3085c0",
+      "message": "fix: admin activity feed crashes when API returns {events,total} shape",
+      "timestamp": "2026-04-05 23:24:33 -0400"
+    },
+    {
+      "hash": "ee89e22ede44fa068ed81b326a1cf42b2a67d0c0",
+      "message": "fix: remove PWA service worker — breaks deploys on frequently-updated sim",
+      "timestamp": "2026-04-05 23:05:26 -0400"
+    },
+    {
+      "hash": "03f8c4750073ad8d374632f18d53955f0bfbe329",
+      "message": "fix: no-store on service worker and workbox files",
+      "timestamp": "2026-04-05 23:01:42 -0400"
+    },
+    {
+      "hash": "42d1b44a626781b6171baeb5ed45835ee04ddc73",
+      "message": "fix: deploy script — use ss to kill port, pnpm run prefix for scripts",
+      "timestamp": "2026-04-05 22:59:18 -0400"
+    },
+    {
+      "hash": "a23cba36ae64e79f2c4bce070e633657125fbef1",
+      "message": "fix: set Cache-Control no-store on HTML, immutable on hashed assets",
+      "timestamp": "2026-04-05 22:55:04 -0400"
+    },
+    {
+      "hash": "96c02a9d174a699c1811236f5e61143db3c00033",
+      "message": "chore: add Cloudflare cache purge to deploy script",
+      "timestamp": "2026-04-05 22:49:33 -0400"
+    },
+    {
+      "hash": "cc3591a16fc5e45a9c04af259b8dd7aea3ab80de",
+      "message": "chore: add deploy script — build + restart production server",
+      "timestamp": "2026-04-05 22:31:44 -0400"
+    },
+    {
+      "hash": "7424ebc6f4be4d3000b556535b3271df68576d9e",
+      "message": "fix: raise pagination limit cap from 100 to 500",
+      "timestamp": "2026-04-05 22:03:28 -0400"
+    },
+    {
+      "hash": "6cf22464332f06ddec760428a2c0d65590a45720",
+      "message": "feat: floor activity — lobbying, amendments, deals, statements, bill withdrawal",
+      "timestamp": "2026-04-05 21:49:27 -0400"
+    },
+    {
+      "hash": "4f56cbf210abb76c2f9bd5722d6faff8182ae510",
+      "message": "feat: floor activity — lobbying, amendments, withdrawal, press statements",
+      "timestamp": "2026-04-05 21:39:27 -0400"
+    },
+    {
+      "hash": "b3bf614a21859d18cde6d59c331df7c504fb2d04",
+      "message": "docs: add CLAUDE.md and BEST_PRACTICES.md — project-level coding standards",
+      "timestamp": "2026-04-05 20:56:50 -0400"
+    },
+    {
+      "hash": "36d085c2af197286bc29ff6c75cf4abfaa2c45f1",
+      "message": "security(admin): fix config whitelist, remove duplicate provider route, add weights UI",
+      "timestamp": "2026-04-05 20:46:06 -0400"
+    },
+    {
+      "hash": "fc0c8dfcc17cb7862de827dd3bdef88de9c940fd",
+      "message": "feat(agge): upgrade AGGE and orchestrator observe for Sonnet via OpenRouter",
+      "timestamp": "2026-04-05 20:13:10 -0400"
+    },
+    {
+      "hash": "4a8830f9cf7eedd155792f8ecb3acc981113a11f",
+      "message": "docs: comprehensive Dynamic Weight Engine documentation with Mermaid diagrams",
+      "timestamp": "2026-04-05 19:50:40 -0400"
+    },
+    {
+      "hash": "9f040262f474093a2c5dfa79afdd33aa08973087",
+      "message": "docs: update DWE architecture doc with smoke test results",
+      "timestamp": "2026-04-05 19:43:38 -0400"
+    },
+    {
+      "hash": "2e0f4152502efc0212d5bd3e1a44ba907986cda7",
+      "message": "fix: replace raw SQL array in Phase 2b relationship decay with Drizzle inArray",
+      "timestamp": "2026-04-05 19:20:25 -0400"
+    },
+    {
+      "hash": "d0bded31589fba2166d55140187cd4902b3a5ee5",
+      "message": "feat(simulation): Dynamic Weight Engine — 10-phase behavioral weight system",
+      "timestamp": "2026-04-05 19:03:09 -0400"
+    },
+    {
+      "hash": "2daed39a7b2b6ab8b97950cf2e75415b111c300e",
+      "message": "feat(admin): election management, tick phase bar, time config dropdowns",
+      "timestamp": "2026-04-05 18:06:02 -0400"
+    },
+    {
+      "hash": "80573247fc62dd2bd47d1d2109e1d6f6e2693310",
+      "message": "chore: archive completed Round 2-3 specs and plans",
+      "timestamp": "2026-04-03 19:36:24 -0400"
+    },
+    {
+      "hash": "6ba62818514eeff5b1d6d68ed02ef281bdf7a540",
+      "message": "feat: disable AGGE auto-tick when BOB_ORCHESTRATOR_KEY is set",
+      "timestamp": "2026-04-03 19:22:42 -0400"
+    },
+    {
+      "hash": "f3cedb830fc38802484513b549f273caaa0e6972",
+      "message": "feat: orchestrator API — observe, intervene, history endpoints",
+      "timestamp": "2026-04-03 19:21:49 -0400"
+    },
+    {
+      "hash": "3c2ad4446711c7d75c3a504bb7d9012ffda055e7",
+      "message": "feat: orchestrator auth middleware and intervention logging table",
+      "timestamp": "2026-04-03 19:19:46 -0400"
+    },
+    {
+      "hash": "ab04d955c3909ecf3318611d1f657a53457a1214",
+      "message": "docs: Bob orchestrator implementation plan",
+      "timestamp": "2026-04-03 19:18:53 -0400"
+    },
+    {
+      "hash": "a8101def51cb5a28d140f41633647953b25f31f6",
+      "message": "docs: spec for Bob as simulation orchestrator",
+      "timestamp": "2026-04-03 19:15:51 -0400"
+    },
+    {
+      "hash": "7630b49184220c2ab171920adea73e1a5c41100c",
+      "message": "feat: add tick timeline visualization to observer view",
+      "timestamp": "2026-04-03 19:07:02 -0400"
+    },
+    {
+      "hash": "b15ff0fcbde826a25426cd92a1ba2cee70725cd5",
+      "message": "feat: add coalition/bloc visualization with alignment matrix",
+      "timestamp": "2026-04-03 19:03:45 -0400"
+    },
+    {
+      "hash": "f9c0f16f7b7d8ee183ff76a15b422b6888278bb6",
+      "message": "feat: add election history and results archive to elections page",
+      "timestamp": "2026-04-03 18:54:26 -0400"
+    },
+    {
+      "hash": "5894c346d89b68e2e1b8f715bc5cf571c89d3993",
+      "message": "feat: add memory, relationships, and policy positions to agent profile page",
+      "timestamp": "2026-04-03 18:54:24 -0400"
+    },
+    {
+      "hash": "539f03330fb27238b82acf12d18f1da5e43ad219",
+      "message": "feat: seed 5 built-in benchmark scenarios",
+      "timestamp": "2026-04-03 18:54:03 -0400"
+    },
+    {
+      "hash": "5344458f3a029078ca4147a11e0ec2830146b772",
+      "message": "feat: redesign admin overview — tick chart, latency stats, activity feed, AGGE status, pipeline",
+      "timestamp": "2026-04-03 18:43:05 -0400"
+    },
+    {
+      "hash": "03aa41093f0aec844b00612fdda98993a1a64ea1",
+      "message": "feat: persist runtime config to database — survives server restarts",
+      "timestamp": "2026-04-03 18:29:08 -0400"
+    },
+    {
+      "hash": "8cb692b47af594ca797898be8ef3c42cad1a5635",
+      "message": "feat: add Health tab to admin panel — tick timing, latency, error rates",
+      "timestamp": "2026-04-03 18:22:34 -0400"
+    },
+    {
+      "hash": "cdca2815fd81bd11620478bd86d1d8981b1f52d5",
+      "message": "feat: add AGGE configuration tab to admin panel",
+      "timestamp": "2026-04-03 18:20:03 -0400"
+    },
+    {
+      "hash": "bd4997d4dfb7da4576b5b5fcebd6e0da2be7a228",
+      "message": "feat: wire AGGE to read from runtimeConfig instead of hardcoded constants",
+      "timestamp": "2026-04-03 18:16:13 -0400"
+    },
+    {
+      "hash": "2d5ec86fa4cb300dad1334f2248dd07f9bc403d8",
+      "message": "feat: model override per provider — DB config with 5-min cache",
+      "timestamp": "2026-04-03 18:16:10 -0400"
+    },
+    {
+      "hash": "54b93cf4f80e871a5a54457970ecacf8aabc8144",
+      "message": "feat: add health metrics API client methods",
+      "timestamp": "2026-04-03 18:15:59 -0400"
+    },
+    {
+      "hash": "daefe41be57d870571b1449644c4b2313842313a",
+      "message": "feat: add health metrics API — tick timing, LLM latency, error rates",
+      "timestamp": "2026-04-03 18:14:48 -0400"
+    },
+    {
+      "hash": "608657054d1af7c03d6fa8272967b4d30b0e3bf5",
+      "message": "feat: add AGGE configuration params to runtimeConfig",
+      "timestamp": "2026-04-03 18:13:41 -0400"
+    },
+    {
+      "hash": "b99efdd96e12044656c6e0ae21e533d60375ab4a",
+      "message": "feat: add defaultModel column to apiProviders schema",
+      "timestamp": "2026-04-03 18:13:39 -0400"
+    },
+    {
+      "hash": "7a49ecb12bfb14afed455aebbd0bc597c5b10c1a",
+      "message": "fix: auto-fill supreme court justice vacancies in Phase 10",
+      "timestamp": "2026-04-03 18:12:48 -0400"
+    },
+    {
+      "hash": "9d809cefcabb7accdca1308036a51c9ddb83ae25",
+      "message": "fix: admin overview agent count — handle response structure correctly",
+      "timestamp": "2026-04-03 18:12:39 -0400"
+    },
+    {
+      "hash": "aa1cd89b26804a29490a06ce958d4a8696b02d4e",
+      "message": "fix: add missing GET /api/admin/providers endpoint",
+      "timestamp": "2026-04-03 18:11:27 -0400"
+    },
+    {
+      "hash": "aefc3cc57653150fd59b943ee9caf1870f0b1558",
+      "message": "fix: compute party member count from partyMemberships instead of stale column",
+      "timestamp": "2026-04-03 18:11:24 -0400"
+    },
+    {
+      "hash": "212b57249597ebf600f97e3a9320f8055188f3fc",
+      "message": "fix: AGGE defaults to OPENAI_BASE_URL instead of hardcoded Ross DGX IP",
+      "timestamp": "2026-04-03 18:11:14 -0400"
+    },
+    {
+      "hash": "400a669ccc96fb84ffeb7cea4f98dad6cd9bf09a",
+      "message": "docs: implementation plan for bugs + admin improvements (14 tasks)",
+      "timestamp": "2026-04-03 18:08:17 -0400"
+    },
+    {
+      "hash": "df6733ec050de83e09e53a4aa7cf948556f7046c",
+      "message": "docs: spec for bug fixes + admin improvements (items 1-8)",
+      "timestamp": "2026-04-03 18:01:38 -0400"
+    },
+    {
+      "hash": "9988a1cd1ff4e92d3b383002228d2b6ff6c1f0b0",
+      "message": "Merge pull request #3 from Myro-Productions-Portfolio/chore/docs-cleanup",
+      "timestamp": "2026-04-03 17:43:48 -0400"
+    },
+    {
+      "hash": "5d3978dafd001540beea2da8e2944e92e02461b0",
+      "message": "docs: update README to reflect current state, archive completed specs",
+      "timestamp": "2026-04-03 17:42:52 -0400"
+    },
+    {
+      "hash": "aedf2e3b17df8d8effc41c17f7beb259744e3ed7",
+      "message": "chore: archive all stale docs from Feb 2026",
+      "timestamp": "2026-04-03 17:40:54 -0400"
+    },
+    {
+      "hash": "b9ac8212414ccf20cfd8ea6f9c93498497fb0ad9",
+      "message": "Merge pull request #2 from Myro-Productions-Portfolio/feature/batch-deploy-memory",
+      "timestamp": "2026-04-03 13:10:05 -0400"
+    },
+    {
+      "hash": "95b62b7e6d016a9b86470e9cb70e994f1ff81f98",
+      "message": "chore: gitignore stray screenshot patterns",
+      "timestamp": "2026-04-03 13:09:11 -0400"
+    },
+    {
+      "hash": "b43b20d7967d455c1e76d364710ab260b7153f64",
+      "message": "docs: add design specs, plans, and untracked research files",
+      "timestamp": "2026-04-03 13:08:46 -0400"
+    },
+    {
+      "hash": "a4c70db5cdb0f8d9a012f02011e346f338b3b50b",
+      "message": "fix: suppress individual vote toasts, remove invalid jsonb default",
+      "timestamp": "2026-04-03 13:08:37 -0400"
+    },
+    {
+      "hash": "536a8aa260c93aaba1cd8b512e2319d4afef9365",
+      "message": "Merge remote-tracking branch 'github/main'",
+      "timestamp": "2026-04-03 13:06:57 -0400"
+    },
+    {
+      "hash": "9d4d774bad4ec6772af4504ef6497fbf050e90f5",
+      "message": "feat: add moltgovernment.com to CORS origins and Vite allowedHosts",
+      "timestamp": "2026-04-03 12:54:27 -0400"
+    },
+    {
+      "hash": "70e8b2bf4b2aa8f9d1cbbef1d545ee980fc73fa3",
+      "message": "fix: use loadEnv in vite.config.ts so .env vars are read, add OpenAI API key env fallback",
+      "timestamp": "2026-04-03 08:37:00 -0400"
+    },
+    {
+      "hash": "aab62eb2b08bc02532847e7e5da2891b29531040",
+      "message": "fix: add OPENAI_API_KEY env var fallback in getApiKey",
+      "timestamp": "2026-04-03 08:31:31 -0400"
+    },
+    {
+      "hash": "1d67a91c2e2f0eb8a6c11ceee4485ae3f9957312",
+      "message": "feat: add periodic decision summarization — compresses old decisions into summaries",
+      "timestamp": "2026-04-03 08:06:47 -0400"
+    },
+    {
+      "hash": "44752b70112040a748dbaeaf19185205b0ea0c34",
+      "message": "feat: add Phase 2b — post-voting relationship and policy position computation",
+      "timestamp": "2026-04-03 08:06:02 -0400"
+    },
+    {
+      "hash": "01851934b56618420f508dbddf195b89f2513c65",
+      "message": "feat: expand agent memory — summaries, relationships, policy positions, election history in context",
+      "timestamp": "2026-04-03 08:04:31 -0400"
+    },
+    {
+      "hash": "21255e9d53d4ad69f5ac74d8a225542cd17919b5",
+      "message": "feat: add agent memory schema — summaries, relationships, policy positions",
+      "timestamp": "2026-04-03 08:02:02 -0400"
+    },
+    {
+      "hash": "f49d8cdef37c3ba32f4795742cc0199cc02aeb14",
+      "message": "feat: parallelize Phase 17 forum replies — LLM calls and context fetches run concurrently",
+      "timestamp": "2026-04-03 08:00:53 -0400"
+    },
+    {
+      "hash": "a02880c400fe3903e8a063eb854a4b43a255ea5a",
+      "message": "feat: parallelize Phase 16 forum posts — all candidates generate concurrently",
+      "timestamp": "2026-04-03 07:59:31 -0400"
+    },
+    {
+      "hash": "ad06ef81901d0b13f1133e22b13312686ebc91f3",
+      "message": "feat: parallelize Phase 15 campaigning — all speeches generated concurrently",
+      "timestamp": "2026-04-03 07:58:16 -0400"
+    },
+    {
+      "hash": "d56b0801a63b60a7a002811ad47effc3febdca99",
+      "message": "feat: parallelize Phase 7 veto override voting — all agents vote concurrently per bill",
+      "timestamp": "2026-04-03 07:57:13 -0400"
+    },
+    {
+      "hash": "e4f7faf7f7b07bca8eae55bef990355e4c8a1fb7",
+      "message": "feat: parallelize Phase 3 committee review — all bills reviewed concurrently",
+      "timestamp": "2026-04-03 07:56:15 -0400"
+    },
+    {
+      "hash": "b5d240f2735cfb317fccdc722fd37977a36398b4",
+      "message": "feat: parallelize Phase 2 bill voting — Promise.allSettled for all agents per bill",
+      "timestamp": "2026-04-03 07:54:45 -0400"
+    },
+    {
+      "hash": "efa49a493dee8a4785877f9728b011551ebf0eca",
+      "message": "feat: environment-aware vite HMR config for local deployment",
+      "timestamp": "2026-04-03 07:52:09 -0400"
+    },
+    {
+      "hash": "129f75ec868825185b2d38dd09fc4df77a80d191",
+      "message": "feat: add CORS_ORIGINS env var for local deployment origins",
+      "timestamp": "2026-04-03 07:51:49 -0400"
+    },
+    {
+      "hash": "032886587969dd59013316acd6f8d54e189b60a0",
+      "message": "feat: add dev:local script for LAN-accessible dev server",
+      "timestamp": "2026-04-03 07:51:37 -0400"
+    },
+    {
+      "hash": "17f7cca403ef46221d2b70cf30a3618181218e2a",
+      "message": "feat: add OPENAI_BASE_URL and OPENAI_MODEL env var support for vLLM",
+      "timestamp": "2026-04-03 07:51:30 -0400"
+    },
+    {
+      "hash": "e25c5a37f4088aa7612388067489b6adc4df9d54",
+      "message": "Merge pull request 'Polish: error logging, vitest fix, placeholder metrics' (#185) from feature/polish-hardening into main",
+      "timestamp": "2026-02-20 20:50:57 +0000"
+    },
+    {
+      "hash": "2849c94c1df12d5664961246536974d68acede5f",
+      "message": "feat: implement coalitionStability metric using cross-party voting variance",
+      "timestamp": "2026-02-20 15:28:28 -0500"
+    },
+    {
+      "hash": "afc94f2256bbd983465b40d7b4a53559e05644b0",
+      "message": "feat: implement adversarialResilience metric using sponsorship opposition data",
+      "timestamp": "2026-02-20 15:26:20 -0500"
+    },
+    {
+      "hash": "f16842ee743d67f0289fc612bd0402bc0dbd79bc",
+      "message": "fix: update vitest aliases to match modular refactor structure",
+      "timestamp": "2026-02-20 15:23:51 -0500"
+    },
+    {
+      "hash": "a45e46ebdbab8fc4ddf7d56b565c8a15c263a34d",
+      "message": "fix: add logging to all silent client-side catch blocks",
+      "timestamp": "2026-02-20 15:23:24 -0500"
+    },
+    {
+      "hash": "01a08177c8c8b6e8632443714ea24aa10f48b9fb",
+      "message": "fix: add logging to silent server route catch blocks",
+      "timestamp": "2026-02-20 15:21:02 -0500"
+    },
+    {
+      "hash": "d2b3b7564481aa0b7128744c63b6cba5002b90d8",
+      "message": "fix: add logging to silent server-side catch blocks",
+      "timestamp": "2026-02-20 15:20:12 -0500"
+    },
+    {
+      "hash": "a065b0a0cd7df8b2619155a32041758da6fff68e",
+      "message": "Merge pull request 'refactor: modular structure — domain-based vertical modules' (#184) from feature/modular-refactor into main",
+      "timestamp": "2026-02-20 19:55:34 +0000"
+    },
+    {
+      "hash": "85016a34e444e57c8c28c79c53d146137483c42c",
+      "message": "refactor: fix stale file path comments after modular restructure",
+      "timestamp": "2026-02-20 14:27:24 -0500"
+    },
+    {
+      "hash": "f149ada821e01f36e6c2ce3404e85acc45036ef1",
+      "message": "refactor: update path aliases to @modules/@core scheme",
+      "timestamp": "2026-02-20 14:25:36 -0500"
+    },
+    {
+      "hash": "54d84738b0e97ee410e7c3b6ae00b8c4effc4cd2",
+      "message": "refactor: extract core infrastructure to src/core",
+      "timestamp": "2026-02-20 14:18:07 -0500"
+    },
+    {
+      "hash": "aa1d6463f785c6228323be5d30b37d31803affb7",
+      "message": "refactor: extract admin module to src/modules/admin",
+      "timestamp": "2026-02-20 14:10:42 -0500"
+    },
+    {
+      "hash": "5e3812cf6febe9f7cd5dedad30aa344a449287f0",
+      "message": "refactor: extract government module to src/modules/government",
+      "timestamp": "2026-02-20 14:05:11 -0500"
+    },
+    {
+      "hash": "5f1dfd621cc3611902865c37c057cce43e742c03",
+      "message": "refactor: extract agents module to src/modules/agents",
+      "timestamp": "2026-02-20 14:00:52 -0500"
+    },
+    {
+      "hash": "a750a856b842178255157217178d94ac2c21178f",
+      "message": "refactor: extract legislation module to src/modules/legislation",
+      "timestamp": "2026-02-20 13:55:37 -0500"
+    },
+    {
+      "hash": "7d661f20bd4c2b7626705953cc391c78fe141490",
+      "message": "refactor: extract elections module to src/modules/elections",
+      "timestamp": "2026-02-20 13:51:18 -0500"
+    },
+    {
+      "hash": "b99e40a04566104a64307110acc09a8dcf92c937",
+      "message": "refactor: extract benchmark module to src/modules/benchmark",
+      "timestamp": "2026-02-20 13:43:18 -0500"
+    },
+    {
+      "hash": "37e99fe9c190b3d05910de51ebbd40e896db056c",
+      "message": "refactor: extract forum module to src/modules/forum",
+      "timestamp": "2026-02-20 13:36:59 -0500"
+    },
+    {
+      "hash": "c5dfe498f01479994bd155866ef1188bde8a40b1",
+      "message": "fix(benchmark): token timeout, composite display, leaderboard 500",
+      "timestamp": "2026-02-20 13:33:02 -0500"
+    },
+    {
+      "hash": "6508ac4cb27d0ab8745b03e8a7131bdf500c576e",
+      "message": "docs: modular refactor implementation plan — 10-task phased migration",
+      "timestamp": "2026-02-20 13:25:17 -0500"
+    },
+    {
+      "hash": "d417715c55be5e4be06c87072e9c8908149dcf9a",
+      "message": "docs: modular refactor design — domain-based vertical modules",
+      "timestamp": "2026-02-20 13:20:51 -0500"
+    },
+    {
+      "hash": "3b50d6ff3844da65cce07a4ba96229c023db38ce",
+      "message": "Merge pull request 'feat(benchmark): Phase 6 — Frontend Dashboard' (#183) from feature/benchmark-dashboard into main",
+      "timestamp": "2026-02-20 17:13:54 +0000"
+    },
+    {
+      "hash": "977c6702440cf9826cd06c6c47fa13879e061428",
+      "message": "feat(benchmark): dashboard page with scenarios, runs, leaderboard, and API docs",
+      "timestamp": "2026-02-20 12:13:00 -0500"
+    },
+    {
+      "hash": "e3e3acf25a131eda1f7450b1446b7f611e05ad9f",
+      "message": "Merge pull request 'feat(benchmark): Phase 5 — Event Injection' (#182) from feature/benchmark-events into main",
+      "timestamp": "2026-02-20 17:07:27 +0000"
+    },
+    {
+      "hash": "b90cbaaaed15755c4fe1363e97f7a1102400e028",
+      "message": "feat(benchmark): integrate event processor into runner tick loop",
+      "timestamp": "2026-02-20 12:06:30 -0500"
+    },
+    {
+      "hash": "f3f7f9c13269232389648e677025b6d905f81200",
+      "message": "feat(benchmark): event injection processor",
+      "timestamp": "2026-02-20 12:06:24 -0500"
+    },
+    {
+      "hash": "00b6d446c792bb97dfcc6e294eb914b527021f10",
+      "message": "feat(benchmark): populate Tier 2 scenario events",
+      "timestamp": "2026-02-20 12:05:35 -0500"
+    },
+    {
+      "hash": "b4b51d586b8ee7173325b010876c09c219471fe4",
+      "message": "Merge pull request 'feat(benchmark): Phase 4 — API Handshake' (#181) from feature/benchmark-api into main",
+      "timestamp": "2026-02-20 17:03:06 +0000"
+    },
+    {
+      "hash": "2dd7f3392c653a44d323b2bae52beb71461c9090",
+      "message": "feat(benchmark): OpenAI-compatible external model adapter",
+      "timestamp": "2026-02-20 12:02:17 -0500"
+    },
+    {
+      "hash": "622872555d5de9eebf4e08b0c06188888e271489",
+      "message": "feat(benchmark): run trigger and results API endpoints",
+      "timestamp": "2026-02-20 12:01:44 -0500"
+    },
+    {
+      "hash": "25c289242e76d3b36e29acd887f5781819a57e2e",
+      "message": "Merge pull request 'feat(benchmark): Phase 3 — Benchmark Runner' (#180) from feature/benchmark-runner into main",
+      "timestamp": "2026-02-20 16:59:25 +0000"
+    },
+    {
+      "hash": "01661ba0813765049208d1aae5ea9e90d2476d33",
+      "message": "feat(benchmark): WebSocket progress events",
+      "timestamp": "2026-02-20 11:58:52 -0500"
+    },
+    {
+      "hash": "ccf78abd9103e91aca20844d4ca8013d20f387f9",
+      "message": "feat(benchmark): runner service with Bull job queue",
+      "timestamp": "2026-02-20 11:57:25 -0500"
+    },
+    {
+      "hash": "6333cc15ee9569eb14f3be7b84ebcc35a7c2cdc5",
+      "message": "feat(benchmark): extract pure governance logic into simulationCore",
+      "timestamp": "2026-02-20 11:50:17 -0500"
+    },
+    {
+      "hash": "6208de565839320b67ff0d2f70590d68fe3dbfca",
+      "message": "feat(benchmark): in-memory world state manager",
+      "timestamp": "2026-02-20 11:50:01 -0500"
+    },
+    {
+      "hash": "036988bd80ab1a53333b9c89af3c28b0ec13949d",
+      "message": "Merge pull request 'feat(benchmark): Phase 2 — Metrics Engine' (#179) from feature/benchmark-metrics into main",
+      "timestamp": "2026-02-20 16:43:57 +0000"
+    },
+    {
+      "hash": "e8838fa336e2d17824a66987957c825a41fb6cbf",
+      "message": "feat(benchmark): agent + coordination metrics with composite scorer",
+      "timestamp": "2026-02-20 11:42:46 -0500"
+    },
+    {
+      "hash": "f92fabf209918e82e57946156f2e31cdd71a8610",
+      "message": "feat(benchmark): outcome metric calculators with tests",
+      "timestamp": "2026-02-20 11:42:23 -0500"
+    },
+    {
+      "hash": "ff0dacbedf22caebfc9cbc3fc400503ff1b537e2",
+      "message": "feat(benchmark): define metric type interfaces",
+      "timestamp": "2026-02-20 11:34:26 -0500"
+    },
+    {
+      "hash": "43a1ed6b14a5aec8132c33ca4404f72bfb2fad4c",
+      "message": "Merge pull request 'feat(benchmark): Phase 1 — Scenario Engine' (#178) from feature/benchmark-scenarios into main",
+      "timestamp": "2026-02-20 16:18:18 +0000"
+    },
+    {
+      "hash": "d45112276fdd355435a652c3bac852e3d3f4228b",
+      "message": "fix: resolve TypeScript param typing in benchmark routes",
+      "timestamp": "2026-02-20 11:16:37 -0500"
+    },
+    {
+      "hash": "ef684fec37b4d67f1e38b0da8a0f31610c6e5f84",
+      "message": "feat(benchmark): seed 20 built-in scenarios",
+      "timestamp": "2026-02-20 11:14:51 -0500"
+    },
+    {
+      "hash": "2fc6223a1b15e17a524ae41ca066e0bd89a3f2aa",
+      "message": "feat(benchmark): scenario CRUD API endpoints",
+      "timestamp": "2026-02-20 11:14:03 -0500"
+    },
+    {
+      "hash": "cdceff04d9cd1775bcb6e51d55ff74e8ae5ec2e9",
+      "message": "feat(benchmark): add scenarios and runs DB tables",
+      "timestamp": "2026-02-20 11:11:02 -0500"
+    },
+    {
+      "hash": "3e23df71061519ee2e213d0214eb7619cc377e42",
+      "message": "Merge pull request 'refactor: rename Molt Government to Agora Bench' (#177) from refactor/rename-to-agora-bench into main",
+      "timestamp": "2026-02-20 16:05:21 +0000"
+    },
+    {
+      "hash": "9e657c5ebd33a29045d34c22086dcba729e3b596",
+      "message": "docs: rename all Molt Government references to Agora Bench",
+      "timestamp": "2026-02-20 11:03:28 -0500"
+    },
+    {
+      "hash": "27480a58f51c3170f1587deedf8488dee2638650",
+      "message": "refactor: DB migration — rename moltbook_id column to agora_id",
+      "timestamp": "2026-02-20 10:53:39 -0500"
+    },
+    {
+      "hash": "47ab33d39dbc2cbdf2c9009066758044a81192ed",
+      "message": "test: update tests for agoraId rename",
+      "timestamp": "2026-02-20 10:51:41 -0500"
+    },
+    {
+      "hash": "127563b5f754ed2f3f1f570b853d0d77e95329e0",
+      "message": "refactor: rename moltbookId to agoraId across codebase",
+      "timestamp": "2026-02-20 10:50:43 -0500"
+    },
+    {
+      "hash": "446ac173dcf30afb92673aa9e25a1334cfc4af13",
+      "message": "refactor: rename moltbookId to agoraId in shared types",
+      "timestamp": "2026-02-20 10:48:53 -0500"
+    },
+    {
+      "hash": "a36e876f8a0e09becced0e4f7bd1d0450f27d639",
+      "message": "Merge pull request 'docs: AgoraBench v0 design + implementation plan' (#176) from design/agorabench-v0 into main",
+      "timestamp": "2026-02-20 15:47:19 +0000"
+    },
+    {
+      "hash": "44aa10771badd3d5a5d5086e4dbbe33387778b64",
+      "message": "docs: AgoraBench v0 implementation plan",
+      "timestamp": "2026-02-20 10:38:12 -0500"
+    },
+    {
+      "hash": "26a86d158b91e5447525fe4f660b85c6bb982828",
+      "message": "docs: AgoraBench v0 design document",
+      "timestamp": "2026-02-20 10:34:11 -0500"
+    },
+    {
+      "hash": "ab799e5fd5a94c65110ee409c458b2e065811451",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:57 -0500"
+    },
+    {
+      "hash": "088f002d86754e1bf9519261735ea26705af58b4",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:30 -0500"
+    },
+    {
+      "hash": "bc4a6de43f00fa4658613ed5e078e8dc8a6f3deb",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:01 -0500"
+    },
+    {
+      "hash": "09d370ba8ba1a0b43a582b45a35801488417a8fa",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:00:00 -0500"
+    },
+    {
+      "hash": "05bfa1564d1af630822a88927eef6a04897d946b",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 08:59:28 -0500"
+    },
+    {
+      "hash": "8dce6342e31b5b6c94227a7237d5d25fb9d27f59",
+      "message": "Merge pull request 'fix: remove old moltgovernment.com domain' (#175) from fix/remove-old-domain into main",
+      "timestamp": "2026-02-20 13:43:35 +0000"
+    },
+    {
+      "hash": "2e600708739e25e91eb0ebfbdabcdc2d34ad7fec",
+      "message": "fix: remove old moltgovernment.com domain references",
+      "timestamp": "2026-02-20 08:43:11 -0500"
+    },
+    {
+      "hash": "912176b3c3906ef7bffd7e12b87f88c9e8bf2eaf",
+      "message": "Merge pull request 'feat: DEMOS scoring, training export, auth refactor, researcher dashboard' (#174) from feature/demos-scoring-api into main",
+      "timestamp": "2026-02-20 13:38:56 +0000"
+    },
+    {
+      "hash": "3f3d876ea3ce499f1cdc6a999dbe166fdcc0d182",
+      "message": "docs: add research data exports and training update notes",
+      "timestamp": "2026-02-20 08:38:05 -0500"
+    },
+    {
+      "hash": "95165ea98b79009da9453b0bc47f4d6838326be7",
+      "message": "docs: add implementation plans for AGGE, forum replies, and researcher dashboard",
+      "timestamp": "2026-02-20 08:37:39 -0500"
+    },
+    {
+      "hash": "3bf641807112e8c066a80c46b8e1cc5eb4f3b367",
+      "message": "feat(researcher): add researcher dashboard with DEMOS performance view",
+      "timestamp": "2026-02-20 08:37:28 -0500"
+    },
+    {
+      "hash": "3af24b1fb0e8dbf8b48f3006141c30c5da237ae6",
+      "message": "refactor(auth): replace admin role with owner/researcher/user model",
+      "timestamp": "2026-02-20 08:37:19 -0500"
+    },
+    {
+      "hash": "f98cf8cf12209f1a5f328a761b5fd1d6fbb73760",
+      "message": "fix(server): prevent orphaned processes on restart",
+      "timestamp": "2026-02-20 08:37:11 -0500"
+    },
+    {
+      "hash": "0aba5d5485fded343c9a02a94e0e20b53931c762",
+      "message": "feat(training): /training frontend page — 3-step DEMOS export wizard",
+      "timestamp": "2026-02-19 21:51:06 -0500"
+    },
+    {
+      "hash": "c5ca7b8741e5d135891f17aeb171a065fb34287c",
+      "message": "feat(demos): training export API with ZIP package generation",
+      "timestamp": "2026-02-19 21:37:19 -0500"
+    },
+    {
+      "hash": "91b7398f349e5f634709923d4464ef12f4dfdc57",
+      "message": "feat(demos): DEMOS Scoring API — 7-dimension agent benchmark",
+      "timestamp": "2026-02-19 21:26:37 -0500"
+    },
+    {
+      "hash": "962d3e06e1fa231620cbbaf00ff762d15d23fd71",
+      "message": "fix(agge): increase max_tokens to 2000 for gpt-oss-20b reasoning model",
+      "timestamp": "2026-02-19 20:36:25 -0500"
+    },
+    {
+      "hash": "c5f27cf533e857f7307c5ff23d236d1db58efd55",
+      "message": "feat(agge): switch AGGE inference to spark01 vLLM (OpenAI-compatible API, gpt-oss-20b)",
+      "timestamp": "2026-02-19 20:29:48 -0500"
+    },
+    {
+      "hash": "1a435075e5480e38c211de5b4a3bf34a44c36f3c",
+      "message": "feat(agge): Autonomous Governance God Engine (#173)",
+      "timestamp": "2026-02-20 01:05:58 +0000"
+    },
+    {
+      "hash": "2063a549fe5ac956b43aa6e757e3b95a77a3dbd9",
+      "message": "docs: update roadmap + capture Smallville memory architecture in FUTURE.md",
+      "timestamp": "2026-02-19 18:23:16 -0500"
+    },
+    {
+      "hash": "4f26e330a46a88544d4a703dbb5d5d84130985eb",
+      "message": "Merge pull request 'fix(exports): add Cache-Control no-store + surface export errors' (#171) from dev into main",
+      "timestamp": "2026-02-19 22:43:03 +0000"
+    },
+    {
+      "hash": "28ffd70ef88a1fcc2e1f767237ebc2d93965288d",
+      "message": "Merge pull request 'fix(exports): add Cache-Control no-store + surface export errors' (#170) from feature/fix-export-caching into dev",
+      "timestamp": "2026-02-19 22:42:39 +0000"
+    },
+    {
+      "hash": "5b39eebb5ca0653e027d6c6a87f6ec512dcecbea",
+      "message": "fix(exports): add Cache-Control no-store + surface export errors",
+      "timestamp": "2026-02-19 17:42:14 -0500"
+    },
+    {
+      "hash": "939f01bb62025db6efb82a813a73ad1a64a151a4",
+      "message": "Merge pull request 'fix(forum): skip duplicate threads with 3+ overlapping significant words' (#169) from dev into main",
+      "timestamp": "2026-02-19 22:11:13 +0000"
+    },
+    {
+      "hash": "fd9d385085d10f1b0c523fdab14905744f419190",
+      "message": "Merge pull request 'fix(forum): skip duplicate threads with 3+ overlapping significant words' (#168) from feature/forum-dedup-title-check into dev",
+      "timestamp": "2026-02-19 22:10:59 +0000"
+    },
+    {
+      "hash": "a3e322011206dda4ba090723e83b7ee95d3495c2",
+      "message": "fix(forum): skip duplicate threads with 3+ overlapping significant words",
+      "timestamp": "2026-02-19 17:10:39 -0500"
+    },
+    {
+      "hash": "503f5f4c61970d01510acc5a14d3ed839090b266",
+      "message": "Merge pull request 'fix(seed): full simulation reset — add 8 missing tables, reset govt treasury' (#167) from dev into main",
+      "timestamp": "2026-02-19 21:44:51 +0000"
+    },
+    {
+      "hash": "88ee252ad987aa1c35a8a5446529de4646b080d9",
+      "message": "Merge pull request 'fix(seed): full simulation reset — add 8 missing tables, reset govt treasury' (#166) from feature/reseed-full-reset into dev",
+      "timestamp": "2026-02-19 21:44:38 +0000"
+    },
+    {
+      "hash": "ff843e8bb1c28eb7810aec7bed375b6382fdf077",
+      "message": "fix(seed): full simulation reset — add 8 missing tables, reset govt treasury",
+      "timestamp": "2026-02-19 16:44:17 -0500"
+    },
+    {
+      "hash": "462b5efa1fd3f81ecbef54bcbfaf841e82661210",
+      "message": "Merge pull request 'feat(ai): ground forum posts in simulation state + drive replies toward resolution' (#165) from dev into main",
+      "timestamp": "2026-02-19 21:26:22 +0000"
+    },
+    {
+      "hash": "3f0d27a9ae6e5d6ea030fc58cfe0f25fa936bd9b",
+      "message": "Merge pull request 'feat(ai): ground forum posts in simulation state + drive replies toward resolution' (#164) from feature/forum-prompt-grounding into dev",
+      "timestamp": "2026-02-19 21:26:15 +0000"
+    },
+    {
+      "hash": "9fad3f8c258bc70d0c2f2e687af75fe770bb2423",
+      "message": "feat(ai): ground forum posts in simulation state + drive replies toward resolution",
+      "timestamp": "2026-02-19 16:25:49 -0500"
+    },
+    {
+      "hash": "23ccaafbba3bff697c4db5f728cb928341ef3771",
+      "message": "Merge pull request 'feat(client): WS subscription gap audit + LiveTicker highlights-only redesign' (#163) from dev into main",
+      "timestamp": "2026-02-19 21:15:15 +0000"
+    },
+    {
+      "hash": "3b13e85651036a70948ae97ef3676d31389bb838",
+      "message": "Merge pull request 'feat(client): WS subscription gap audit + LiveTicker highlights-only redesign' (#162) from feature/ws-subscription-gaps-ticker-highlights into dev",
+      "timestamp": "2026-02-19 21:15:07 +0000"
+    },
+    {
+      "hash": "086d1c221f71c811f3c58109390244c4c84fd6b0",
+      "message": "feat(client): WS subscription gap audit + LiveTicker highlights-only redesign",
+      "timestamp": "2026-02-19 16:14:47 -0500"
+    },
+    {
+      "hash": "fbe438ad06c7f31ae62cf0cb7b0ab8d6925c8a57",
+      "message": "Merge pull request 'fix(admin): tick counter + forum refresh fixes' (#161) from dev into main",
+      "timestamp": "2026-02-19 21:00:01 +0000"
+    },
+    {
+      "hash": "3f8110060a553e8d0f7a489795948ec3942f4a9e",
+      "message": "Merge pull request 'fix(admin): tick counter uses tick_log; forum list refreshes on replies' (#160) from feature/admin-tick-counter-forum-refresh into dev",
+      "timestamp": "2026-02-19 20:59:52 +0000"
+    },
+    {
+      "hash": "c5aa796e3f3f881e9f890306edae919c2d17fe4d",
+      "message": "fix(admin): use tick_log for completed count; fix forum list refresh on replies",
+      "timestamp": "2026-02-19 15:59:31 -0500"
+    },
+    {
+      "hash": "fa0d8289c412103eecd71cb2ba07e051ab1d8616",
+      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#159) from dev into main",
+      "timestamp": "2026-02-19 20:38:18 +0000"
+    },
+    {
+      "hash": "a9a12a7288ccf214e051ffddbe174b1cdf9a7a92",
+      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#158) from feature/forum-reply-simulation into dev",
+      "timestamp": "2026-02-19 20:37:52 +0000"
+    },
+    {
+      "hash": "ee9fc8183f24e1db32046daf4ec842b74b63ff24",
+      "message": "feat(ui): subscribe to forum:reply WS event — toast + live ticker",
+      "timestamp": "2026-02-19 15:31:31 -0500"
+    },
+    {
+      "hash": "88d9c0d77c2426791db8bcc560e143942308da43",
+      "message": "feat(ui): render @mentions as gold highlights and reply badges in forum thread view",
+      "timestamp": "2026-02-19 15:31:23 -0500"
+    },
+    {
+      "hash": "c80512c99e104f8cdd58cf004a52c2ddeb13b2cf",
+      "message": "feat(simulation): Phase 17 — agent forum replies with @mention tracking",
+      "timestamp": "2026-02-19 15:23:51 -0500"
+    },
+    {
+      "hash": "c91fee29359074a4c010910004246d6b2cd00f0a",
+      "message": "chore(db): push pending_mentions migration",
+      "timestamp": "2026-02-19 15:20:48 -0500"
+    },
+    {
+      "hash": "a5a0ce4eec0f035746ef40b19167d5af42de34ef",
+      "message": "feat(schema): add pending_mentions table + forum_reply message type",
+      "timestamp": "2026-02-19 15:17:06 -0500"
+    },
+    {
+      "hash": "8544c2a27a8610676a0af8c12e232eff47e6fcc7",
+      "message": "docs(design): agent forum reply simulation design",
+      "timestamp": "2026-02-19 15:11:03 -0500"
+    },
+    {
+      "hash": "55e05c768ba6fc43d3f5326b8687dd25753305dd",
+      "message": "Merge pull request 'docs(rebrand): rename Molt Government → Agora Bench in remaining docs/scripts' (#157) from dev into main",
+      "timestamp": "2026-02-19 19:57:46 +0000"
+    },
+    {
+      "hash": "b8aac5da036b3ed64c65bfb106c64961e39100a0",
+      "message": "Merge pull request 'docs(rebrand): rename Molt Government → Agora Bench in remaining docs/scripts' (#156) from feature/rebrand-remaining-docs into dev",
+      "timestamp": "2026-02-19 19:57:41 +0000"
+    },
+    {
+      "hash": "66864620621831e0a6211158a897be21a89487f4",
+      "message": "docs(rebrand): rename Molt Government → Agora Bench in all remaining docs",
+      "timestamp": "2026-02-19 14:56:09 -0500"
+    },
+    {
+      "hash": "73a3d33994119726053546fbc0e01e22495a843f",
+      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#155) from dev into main",
+      "timestamp": "2026-02-19 19:51:45 +0000"
+    },
+    {
+      "hash": "e5250eb3a112a375dff65d15ca4bb01cff74eedc",
+      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#154) from fix/providers-global-auth-middleware into dev",
+      "timestamp": "2026-02-19 19:51:35 +0000"
+    },
+    {
+      "hash": "fb238de755a97cd565f427dd7ef29c59441ea7c2",
+      "message": "fix(auth): move requireAdmin from router-level to per-route in providers",
+      "timestamp": "2026-02-19 14:51:11 -0500"
+    },
+    {
+      "hash": "60ea947400d8b36a811583e0e47a317edeefe910",
+      "message": "Merge pull request 'fix(rebrand): missed rebrand instances to main' (#153) from dev into main",
+      "timestamp": "2026-02-19 19:14:59 +0000"
+    },
+    {
+      "hash": "b7cc282ee9fb12ca782d09762a6410f3c938adc3",
+      "message": "Merge pull request 'fix(rebrand): update missed MOLT GOVERNMENT in ticker and dashboard hero' (#152) from feature/rebrand-missed-instances into dev",
+      "timestamp": "2026-02-19 19:14:51 +0000"
+    },
+    {
+      "hash": "fd8c28f29594248962a68b8abba531291d8fed0a",
+      "message": "fix(rebrand): update missed MOLT GOVERNMENT instances in ticker and dashboard hero",
+      "timestamp": "2026-02-19 14:14:35 -0500"
+    },
+    {
+      "hash": "3757c8c9185dd2b8e21b79baca56c329973e6a9f",
+      "message": "Merge pull request 'feat(rebrand): Agora Bench rebrand to main' (#151) from dev into main",
+      "timestamp": "2026-02-19 18:51:14 +0000"
+    },
+    {
+      "hash": "2772c79511ec44462a181a26d7c6e144e34ef0be",
+      "message": "Merge pull request 'feat(rebrand): rename Molt Government to Agora Bench' (#150) from feature/rebrand-agora-bench into dev",
+      "timestamp": "2026-02-19 18:51:06 +0000"
+    },
+    {
+      "hash": "fc0a75797603db6bb930dc79a55969ee15e6a9b2",
+      "message": "feat(rebrand): rename Molt Government → Agora Bench",
+      "timestamp": "2026-02-19 13:50:48 -0500"
+    },
+    {
+      "hash": "7584712d1b671b55b009943abd923d1cf4f96b0f",
+      "message": "Merge pull request 'chore(portfolio): remove competitor scrapes, gitignore CLAUDE files, rewrite README' (#149) from dev into main",
+      "timestamp": "2026-02-19 17:34:11 +0000"
+    }
+  ],
+  "activity": [
+    {
+      "hash": "80253b8ca5fca0164628a07d4be831cf3064300c",
+      "message": "feat(agge): add Bob mode indicator and controls to AGGE admin tab",
+      "timestamp": "2026-04-06 12:54:35 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "1fe8a74d67ade628268fdf651a44cea301cde787",
+      "message": "docs: update TODO.md for 2026-04-06 — wiki drawer + nav redesign complete",
+      "timestamp": "2026-04-06 00:55:46 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "d609c8d83e791dea8f26b8d933de11809000cec9",
+      "message": "feat(wiki): write full content for all 20 stub articles",
+      "timestamp": "2026-04-06 00:43:42 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "5173d8edcbe677f0ec281d0742ede40618452393",
+      "message": "fix(test): update paginationSchema limit test to match schema max (500)",
+      "timestamp": "2026-04-06 00:34:56 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "21b585af85cc26db5744d64527e0335741d5e195",
+      "message": "fix(nav): accessibility + role-flash fixes for Tools dropdown",
+      "timestamp": "2026-04-06 00:26:36 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "23fa7d096b5eac59972d1960c6ae1391479824c1",
+      "message": "feat(nav): replace flat right-nav links with Tools dropdown and wiki icon",
+      "timestamp": "2026-04-06 00:21:52 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "f95723ea251e837eb13440d111c0e54948cd7699",
+      "message": "fix(wiki): remove unused activeSectionId state, use underscore param in callback",
+      "timestamp": "2026-04-06 00:19:18 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "f85075801a872cb34fb128c48df9dace6c955dd0",
+      "message": "fix(wiki): remove spurious ts-expect-error from WikiDrawer",
+      "timestamp": "2026-04-06 00:18:50 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "985e83b9bbee0dcfd5198aeb0876cd10b7e69355",
+      "message": "fix(wiki): restore section tracking state and handleNavigate sectionId support",
+      "timestamp": "2026-04-06 00:18:11 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "6e01e444a845c3e5c857cb36294ab2e3d7f084ca",
+      "message": "feat(wiki): add WikiDrawer shell with font scaling and breadcrumb",
+      "timestamp": "2026-04-06 00:15:33 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "1cff322c7bb3a0c727db85429502eacb98eecd7b",
+      "message": "feat(wiki): add WikiTree component with search and collapsible folders",
+      "timestamp": "2026-04-06 00:12:03 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "918bb39e2f3cdbe1ca6c64874e506bf312db9cc3",
+      "message": "fix(wiki): correct scroll tracking to use closest-match algorithm",
+      "timestamp": "2026-04-06 00:09:53 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "eae690ecb9f7bf3d348779aba319152fb8a6efb3",
+      "message": "feat(wiki): add WikiArticle component with scroll tracking",
+      "timestamp": "2026-04-06 00:07:50 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "ec172ba391fec64f42f8619b3d60dbcf5c809f80",
+      "message": "feat(wiki): add static wiki content tree and search index",
+      "timestamp": "2026-04-06 00:05:11 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "b241cfaeb18d1bb17f2757a48040a901b78ca1fe",
+      "message": "feat(wiki): add wiki font size preference utility",
+      "timestamp": "2026-04-06 00:02:03 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "84e5a0e356f04eefb441fced2349d8d06c80b8f7",
+      "message": "docs: add nav + wiki implementation plan",
+      "timestamp": "2026-04-06 00:00:44 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "a4f90f6199ec140d0d15ec9fd12ca1306c789b66",
+      "message": "docs: add nav redesign + wiki drawer design spec",
+      "timestamp": "2026-04-05 23:57:04 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "56843ca545b6633b57a805aab126b72dba3085c0",
+      "message": "fix: admin activity feed crashes when API returns {events,total} shape",
+      "timestamp": "2026-04-05 23:24:33 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "ee89e22ede44fa068ed81b326a1cf42b2a67d0c0",
+      "message": "fix: remove PWA service worker — breaks deploys on frequently-updated sim",
+      "timestamp": "2026-04-05 23:05:26 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "03f8c4750073ad8d374632f18d53955f0bfbe329",
+      "message": "fix: no-store on service worker and workbox files",
+      "timestamp": "2026-04-05 23:01:42 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "42d1b44a626781b6171baeb5ed45835ee04ddc73",
+      "message": "fix: deploy script — use ss to kill port, pnpm run prefix for scripts",
+      "timestamp": "2026-04-05 22:59:18 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "a23cba36ae64e79f2c4bce070e633657125fbef1",
+      "message": "fix: set Cache-Control no-store on HTML, immutable on hashed assets",
+      "timestamp": "2026-04-05 22:55:04 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "96c02a9d174a699c1811236f5e61143db3c00033",
+      "message": "chore: add Cloudflare cache purge to deploy script",
+      "timestamp": "2026-04-05 22:49:33 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "cc3591a16fc5e45a9c04af259b8dd7aea3ab80de",
+      "message": "chore: add deploy script — build + restart production server",
+      "timestamp": "2026-04-05 22:31:44 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "7424ebc6f4be4d3000b556535b3271df68576d9e",
+      "message": "fix: raise pagination limit cap from 100 to 500",
+      "timestamp": "2026-04-05 22:03:28 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "6cf22464332f06ddec760428a2c0d65590a45720",
+      "message": "feat: floor activity — lobbying, amendments, deals, statements, bill withdrawal",
+      "timestamp": "2026-04-05 21:49:27 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "4f56cbf210abb76c2f9bd5722d6faff8182ae510",
+      "message": "feat: floor activity — lobbying, amendments, withdrawal, press statements",
+      "timestamp": "2026-04-05 21:39:27 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "b3bf614a21859d18cde6d59c331df7c504fb2d04",
+      "message": "docs: add CLAUDE.md and BEST_PRACTICES.md — project-level coding standards",
+      "timestamp": "2026-04-05 20:56:50 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "36d085c2af197286bc29ff6c75cf4abfaa2c45f1",
+      "message": "security(admin): fix config whitelist, remove duplicate provider route, add weights UI",
+      "timestamp": "2026-04-05 20:46:06 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "fc0c8dfcc17cb7862de827dd3bdef88de9c940fd",
+      "message": "feat(agge): upgrade AGGE and orchestrator observe for Sonnet via OpenRouter",
+      "timestamp": "2026-04-05 20:13:10 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "4a8830f9cf7eedd155792f8ecb3acc981113a11f",
+      "message": "docs: comprehensive Dynamic Weight Engine documentation with Mermaid diagrams",
+      "timestamp": "2026-04-05 19:50:40 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "9f040262f474093a2c5dfa79afdd33aa08973087",
+      "message": "docs: update DWE architecture doc with smoke test results",
+      "timestamp": "2026-04-05 19:43:38 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "2e0f4152502efc0212d5bd3e1a44ba907986cda7",
+      "message": "fix: replace raw SQL array in Phase 2b relationship decay with Drizzle inArray",
+      "timestamp": "2026-04-05 19:20:25 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "d0bded31589fba2166d55140187cd4902b3a5ee5",
+      "message": "feat(simulation): Dynamic Weight Engine — 10-phase behavioral weight system",
+      "timestamp": "2026-04-05 19:03:09 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "2daed39a7b2b6ab8b97950cf2e75415b111c300e",
+      "message": "feat(admin): election management, tick phase bar, time config dropdowns",
+      "timestamp": "2026-04-05 18:06:02 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "80573247fc62dd2bd47d1d2109e1d6f6e2693310",
+      "message": "chore: archive completed Round 2-3 specs and plans",
+      "timestamp": "2026-04-03 19:36:24 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "6ba62818514eeff5b1d6d68ed02ef281bdf7a540",
+      "message": "feat: disable AGGE auto-tick when BOB_ORCHESTRATOR_KEY is set",
+      "timestamp": "2026-04-03 19:22:42 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "f3cedb830fc38802484513b549f273caaa0e6972",
+      "message": "feat: orchestrator API — observe, intervene, history endpoints",
+      "timestamp": "2026-04-03 19:21:49 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "3c2ad4446711c7d75c3a504bb7d9012ffda055e7",
+      "message": "feat: orchestrator auth middleware and intervention logging table",
+      "timestamp": "2026-04-03 19:19:46 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "ab04d955c3909ecf3318611d1f657a53457a1214",
+      "message": "docs: Bob orchestrator implementation plan",
+      "timestamp": "2026-04-03 19:18:53 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "a8101def51cb5a28d140f41633647953b25f31f6",
+      "message": "docs: spec for Bob as simulation orchestrator",
+      "timestamp": "2026-04-03 19:15:51 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "7630b49184220c2ab171920adea73e1a5c41100c",
+      "message": "feat: add tick timeline visualization to observer view",
+      "timestamp": "2026-04-03 19:07:02 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "b15ff0fcbde826a25426cd92a1ba2cee70725cd5",
+      "message": "feat: add coalition/bloc visualization with alignment matrix",
+      "timestamp": "2026-04-03 19:03:45 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "f9c0f16f7b7d8ee183ff76a15b422b6888278bb6",
+      "message": "feat: add election history and results archive to elections page",
+      "timestamp": "2026-04-03 18:54:26 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "5894c346d89b68e2e1b8f715bc5cf571c89d3993",
+      "message": "feat: add memory, relationships, and policy positions to agent profile page",
+      "timestamp": "2026-04-03 18:54:24 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "539f03330fb27238b82acf12d18f1da5e43ad219",
+      "message": "feat: seed 5 built-in benchmark scenarios",
+      "timestamp": "2026-04-03 18:54:03 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "5344458f3a029078ca4147a11e0ec2830146b772",
+      "message": "feat: redesign admin overview — tick chart, latency stats, activity feed, AGGE status, pipeline",
+      "timestamp": "2026-04-03 18:43:05 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "03aa41093f0aec844b00612fdda98993a1a64ea1",
+      "message": "feat: persist runtime config to database — survives server restarts",
+      "timestamp": "2026-04-03 18:29:08 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "8cb692b47af594ca797898be8ef3c42cad1a5635",
+      "message": "feat: add Health tab to admin panel — tick timing, latency, error rates",
+      "timestamp": "2026-04-03 18:22:34 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "cdca2815fd81bd11620478bd86d1d8981b1f52d5",
+      "message": "feat: add AGGE configuration tab to admin panel",
+      "timestamp": "2026-04-03 18:20:03 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "bd4997d4dfb7da4576b5b5fcebd6e0da2be7a228",
+      "message": "feat: wire AGGE to read from runtimeConfig instead of hardcoded constants",
+      "timestamp": "2026-04-03 18:16:13 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "2d5ec86fa4cb300dad1334f2248dd07f9bc403d8",
+      "message": "feat: model override per provider — DB config with 5-min cache",
+      "timestamp": "2026-04-03 18:16:10 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "54b93cf4f80e871a5a54457970ecacf8aabc8144",
+      "message": "feat: add health metrics API client methods",
+      "timestamp": "2026-04-03 18:15:59 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "daefe41be57d870571b1449644c4b2313842313a",
+      "message": "feat: add health metrics API — tick timing, LLM latency, error rates",
+      "timestamp": "2026-04-03 18:14:48 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "608657054d1af7c03d6fa8272967b4d30b0e3bf5",
+      "message": "feat: add AGGE configuration params to runtimeConfig",
+      "timestamp": "2026-04-03 18:13:41 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "b99efdd96e12044656c6e0ae21e533d60375ab4a",
+      "message": "feat: add defaultModel column to apiProviders schema",
+      "timestamp": "2026-04-03 18:13:39 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "7a49ecb12bfb14afed455aebbd0bc597c5b10c1a",
+      "message": "fix: auto-fill supreme court justice vacancies in Phase 10",
+      "timestamp": "2026-04-03 18:12:48 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "9d809cefcabb7accdca1308036a51c9ddb83ae25",
+      "message": "fix: admin overview agent count — handle response structure correctly",
+      "timestamp": "2026-04-03 18:12:39 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "aa1cd89b26804a29490a06ce958d4a8696b02d4e",
+      "message": "fix: add missing GET /api/admin/providers endpoint",
+      "timestamp": "2026-04-03 18:11:27 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "aefc3cc57653150fd59b943ee9caf1870f0b1558",
+      "message": "fix: compute party member count from partyMemberships instead of stale column",
+      "timestamp": "2026-04-03 18:11:24 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "212b57249597ebf600f97e3a9320f8055188f3fc",
+      "message": "fix: AGGE defaults to OPENAI_BASE_URL instead of hardcoded Ross DGX IP",
+      "timestamp": "2026-04-03 18:11:14 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "400a669ccc96fb84ffeb7cea4f98dad6cd9bf09a",
+      "message": "docs: implementation plan for bugs + admin improvements (14 tasks)",
+      "timestamp": "2026-04-03 18:08:17 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "df6733ec050de83e09e53a4aa7cf948556f7046c",
+      "message": "docs: spec for bug fixes + admin improvements (items 1-8)",
+      "timestamp": "2026-04-03 18:01:38 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "9988a1cd1ff4e92d3b383002228d2b6ff6c1f0b0",
+      "message": "Merge pull request #3 from Myro-Productions-Portfolio/chore/docs-cleanup",
+      "timestamp": "2026-04-03 17:43:48 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "5d3978dafd001540beea2da8e2944e92e02461b0",
+      "message": "docs: update README to reflect current state, archive completed specs",
+      "timestamp": "2026-04-03 17:42:52 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "aedf2e3b17df8d8effc41c17f7beb259744e3ed7",
+      "message": "chore: archive all stale docs from Feb 2026",
+      "timestamp": "2026-04-03 17:40:54 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "b9ac8212414ccf20cfd8ea6f9c93498497fb0ad9",
+      "message": "Merge pull request #2 from Myro-Productions-Portfolio/feature/batch-deploy-memory",
+      "timestamp": "2026-04-03 13:10:05 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "95b62b7e6d016a9b86470e9cb70e994f1ff81f98",
+      "message": "chore: gitignore stray screenshot patterns",
+      "timestamp": "2026-04-03 13:09:11 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "b43b20d7967d455c1e76d364710ab260b7153f64",
+      "message": "docs: add design specs, plans, and untracked research files",
+      "timestamp": "2026-04-03 13:08:46 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "a4c70db5cdb0f8d9a012f02011e346f338b3b50b",
+      "message": "fix: suppress individual vote toasts, remove invalid jsonb default",
+      "timestamp": "2026-04-03 13:08:37 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "536a8aa260c93aaba1cd8b512e2319d4afef9365",
+      "message": "Merge remote-tracking branch 'github/main'",
+      "timestamp": "2026-04-03 13:06:57 -0400",
+      "type": "commit"
+    },
+    {
+      "hash": "9d4d774bad4ec6772af4504ef6497fbf050e90f5",
+      "message": "feat: add moltgovernment.com to CORS origins and Vite allowedHosts",
+      "timestamp": "2026-04-03 12:54:27 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "70e8b2bf4b2aa8f9d1cbbef1d545ee980fc73fa3",
+      "message": "fix: use loadEnv in vite.config.ts so .env vars are read, add OpenAI API key env fallback",
+      "timestamp": "2026-04-03 08:37:00 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "aab62eb2b08bc02532847e7e5da2891b29531040",
+      "message": "fix: add OPENAI_API_KEY env var fallback in getApiKey",
+      "timestamp": "2026-04-03 08:31:31 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "1d67a91c2e2f0eb8a6c11ceee4485ae3f9957312",
+      "message": "feat: add periodic decision summarization — compresses old decisions into summaries",
+      "timestamp": "2026-04-03 08:06:47 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "44752b70112040a748dbaeaf19185205b0ea0c34",
+      "message": "feat: add Phase 2b — post-voting relationship and policy position computation",
+      "timestamp": "2026-04-03 08:06:02 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "01851934b56618420f508dbddf195b89f2513c65",
+      "message": "feat: expand agent memory — summaries, relationships, policy positions, election history in context",
+      "timestamp": "2026-04-03 08:04:31 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "21255e9d53d4ad69f5ac74d8a225542cd17919b5",
+      "message": "feat: add agent memory schema — summaries, relationships, policy positions",
+      "timestamp": "2026-04-03 08:02:02 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "f49d8cdef37c3ba32f4795742cc0199cc02aeb14",
+      "message": "feat: parallelize Phase 17 forum replies — LLM calls and context fetches run concurrently",
+      "timestamp": "2026-04-03 08:00:53 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "a02880c400fe3903e8a063eb854a4b43a255ea5a",
+      "message": "feat: parallelize Phase 16 forum posts — all candidates generate concurrently",
+      "timestamp": "2026-04-03 07:59:31 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "ad06ef81901d0b13f1133e22b13312686ebc91f3",
+      "message": "feat: parallelize Phase 15 campaigning — all speeches generated concurrently",
+      "timestamp": "2026-04-03 07:58:16 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "d56b0801a63b60a7a002811ad47effc3febdca99",
+      "message": "feat: parallelize Phase 7 veto override voting — all agents vote concurrently per bill",
+      "timestamp": "2026-04-03 07:57:13 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "e4f7faf7f7b07bca8eae55bef990355e4c8a1fb7",
+      "message": "feat: parallelize Phase 3 committee review — all bills reviewed concurrently",
+      "timestamp": "2026-04-03 07:56:15 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "b5d240f2735cfb317fccdc722fd37977a36398b4",
+      "message": "feat: parallelize Phase 2 bill voting — Promise.allSettled for all agents per bill",
+      "timestamp": "2026-04-03 07:54:45 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "efa49a493dee8a4785877f9728b011551ebf0eca",
+      "message": "feat: environment-aware vite HMR config for local deployment",
+      "timestamp": "2026-04-03 07:52:09 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "129f75ec868825185b2d38dd09fc4df77a80d191",
+      "message": "feat: add CORS_ORIGINS env var for local deployment origins",
+      "timestamp": "2026-04-03 07:51:49 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "032886587969dd59013316acd6f8d54e189b60a0",
+      "message": "feat: add dev:local script for LAN-accessible dev server",
+      "timestamp": "2026-04-03 07:51:37 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "17f7cca403ef46221d2b70cf30a3618181218e2a",
+      "message": "feat: add OPENAI_BASE_URL and OPENAI_MODEL env var support for vLLM",
+      "timestamp": "2026-04-03 07:51:30 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "e25c5a37f4088aa7612388067489b6adc4df9d54",
+      "message": "Merge pull request 'Polish: error logging, vitest fix, placeholder metrics' (#185) from feature/polish-hardening into main",
+      "timestamp": "2026-02-20 20:50:57 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "2849c94c1df12d5664961246536974d68acede5f",
+      "message": "feat: implement coalitionStability metric using cross-party voting variance",
+      "timestamp": "2026-02-20 15:28:28 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "afc94f2256bbd983465b40d7b4a53559e05644b0",
+      "message": "feat: implement adversarialResilience metric using sponsorship opposition data",
+      "timestamp": "2026-02-20 15:26:20 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "f16842ee743d67f0289fc612bd0402bc0dbd79bc",
+      "message": "fix: update vitest aliases to match modular refactor structure",
+      "timestamp": "2026-02-20 15:23:51 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "a45e46ebdbab8fc4ddf7d56b565c8a15c263a34d",
+      "message": "fix: add logging to all silent client-side catch blocks",
+      "timestamp": "2026-02-20 15:23:24 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "01a08177c8c8b6e8632443714ea24aa10f48b9fb",
+      "message": "fix: add logging to silent server route catch blocks",
+      "timestamp": "2026-02-20 15:21:02 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "d2b3b7564481aa0b7128744c63b6cba5002b90d8",
+      "message": "fix: add logging to silent server-side catch blocks",
+      "timestamp": "2026-02-20 15:20:12 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "a065b0a0cd7df8b2619155a32041758da6fff68e",
+      "message": "Merge pull request 'refactor: modular structure — domain-based vertical modules' (#184) from feature/modular-refactor into main",
+      "timestamp": "2026-02-20 19:55:34 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "85016a34e444e57c8c28c79c53d146137483c42c",
+      "message": "refactor: fix stale file path comments after modular restructure",
+      "timestamp": "2026-02-20 14:27:24 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "f149ada821e01f36e6c2ce3404e85acc45036ef1",
+      "message": "refactor: update path aliases to @modules/@core scheme",
+      "timestamp": "2026-02-20 14:25:36 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "54d84738b0e97ee410e7c3b6ae00b8c4effc4cd2",
+      "message": "refactor: extract core infrastructure to src/core",
+      "timestamp": "2026-02-20 14:18:07 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "aa1d6463f785c6228323be5d30b37d31803affb7",
+      "message": "refactor: extract admin module to src/modules/admin",
+      "timestamp": "2026-02-20 14:10:42 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "5e3812cf6febe9f7cd5dedad30aa344a449287f0",
+      "message": "refactor: extract government module to src/modules/government",
+      "timestamp": "2026-02-20 14:05:11 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "5f1dfd621cc3611902865c37c057cce43e742c03",
+      "message": "refactor: extract agents module to src/modules/agents",
+      "timestamp": "2026-02-20 14:00:52 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "a750a856b842178255157217178d94ac2c21178f",
+      "message": "refactor: extract legislation module to src/modules/legislation",
+      "timestamp": "2026-02-20 13:55:37 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "7d661f20bd4c2b7626705953cc391c78fe141490",
+      "message": "refactor: extract elections module to src/modules/elections",
+      "timestamp": "2026-02-20 13:51:18 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "b99e40a04566104a64307110acc09a8dcf92c937",
+      "message": "refactor: extract benchmark module to src/modules/benchmark",
+      "timestamp": "2026-02-20 13:43:18 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "37e99fe9c190b3d05910de51ebbd40e896db056c",
+      "message": "refactor: extract forum module to src/modules/forum",
+      "timestamp": "2026-02-20 13:36:59 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "c5dfe498f01479994bd155866ef1188bde8a40b1",
+      "message": "fix(benchmark): token timeout, composite display, leaderboard 500",
+      "timestamp": "2026-02-20 13:33:02 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "6508ac4cb27d0ab8745b03e8a7131bdf500c576e",
+      "message": "docs: modular refactor implementation plan — 10-task phased migration",
+      "timestamp": "2026-02-20 13:25:17 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "d417715c55be5e4be06c87072e9c8908149dcf9a",
+      "message": "docs: modular refactor design — domain-based vertical modules",
+      "timestamp": "2026-02-20 13:20:51 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "3b50d6ff3844da65cce07a4ba96229c023db38ce",
+      "message": "Merge pull request 'feat(benchmark): Phase 6 — Frontend Dashboard' (#183) from feature/benchmark-dashboard into main",
+      "timestamp": "2026-02-20 17:13:54 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "977c6702440cf9826cd06c6c47fa13879e061428",
+      "message": "feat(benchmark): dashboard page with scenarios, runs, leaderboard, and API docs",
+      "timestamp": "2026-02-20 12:13:00 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "e3e3acf25a131eda1f7450b1446b7f611e05ad9f",
+      "message": "Merge pull request 'feat(benchmark): Phase 5 — Event Injection' (#182) from feature/benchmark-events into main",
+      "timestamp": "2026-02-20 17:07:27 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "b90cbaaaed15755c4fe1363e97f7a1102400e028",
+      "message": "feat(benchmark): integrate event processor into runner tick loop",
+      "timestamp": "2026-02-20 12:06:30 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "f3f7f9c13269232389648e677025b6d905f81200",
+      "message": "feat(benchmark): event injection processor",
+      "timestamp": "2026-02-20 12:06:24 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "00b6d446c792bb97dfcc6e294eb914b527021f10",
+      "message": "feat(benchmark): populate Tier 2 scenario events",
+      "timestamp": "2026-02-20 12:05:35 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "b4b51d586b8ee7173325b010876c09c219471fe4",
+      "message": "Merge pull request 'feat(benchmark): Phase 4 — API Handshake' (#181) from feature/benchmark-api into main",
+      "timestamp": "2026-02-20 17:03:06 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "2dd7f3392c653a44d323b2bae52beb71461c9090",
+      "message": "feat(benchmark): OpenAI-compatible external model adapter",
+      "timestamp": "2026-02-20 12:02:17 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "622872555d5de9eebf4e08b0c06188888e271489",
+      "message": "feat(benchmark): run trigger and results API endpoints",
+      "timestamp": "2026-02-20 12:01:44 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "25c289242e76d3b36e29acd887f5781819a57e2e",
+      "message": "Merge pull request 'feat(benchmark): Phase 3 — Benchmark Runner' (#180) from feature/benchmark-runner into main",
+      "timestamp": "2026-02-20 16:59:25 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "01661ba0813765049208d1aae5ea9e90d2476d33",
+      "message": "feat(benchmark): WebSocket progress events",
+      "timestamp": "2026-02-20 11:58:52 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "ccf78abd9103e91aca20844d4ca8013d20f387f9",
+      "message": "feat(benchmark): runner service with Bull job queue",
+      "timestamp": "2026-02-20 11:57:25 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "6333cc15ee9569eb14f3be7b84ebcc35a7c2cdc5",
+      "message": "feat(benchmark): extract pure governance logic into simulationCore",
+      "timestamp": "2026-02-20 11:50:17 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "6208de565839320b67ff0d2f70590d68fe3dbfca",
+      "message": "feat(benchmark): in-memory world state manager",
+      "timestamp": "2026-02-20 11:50:01 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "036988bd80ab1a53333b9c89af3c28b0ec13949d",
+      "message": "Merge pull request 'feat(benchmark): Phase 2 — Metrics Engine' (#179) from feature/benchmark-metrics into main",
+      "timestamp": "2026-02-20 16:43:57 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "e8838fa336e2d17824a66987957c825a41fb6cbf",
+      "message": "feat(benchmark): agent + coordination metrics with composite scorer",
+      "timestamp": "2026-02-20 11:42:46 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "f92fabf209918e82e57946156f2e31cdd71a8610",
+      "message": "feat(benchmark): outcome metric calculators with tests",
+      "timestamp": "2026-02-20 11:42:23 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "ff0dacbedf22caebfc9cbc3fc400503ff1b537e2",
+      "message": "feat(benchmark): define metric type interfaces",
+      "timestamp": "2026-02-20 11:34:26 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "43a1ed6b14a5aec8132c33ca4404f72bfb2fad4c",
+      "message": "Merge pull request 'feat(benchmark): Phase 1 — Scenario Engine' (#178) from feature/benchmark-scenarios into main",
+      "timestamp": "2026-02-20 16:18:18 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "d45112276fdd355435a652c3bac852e3d3f4228b",
+      "message": "fix: resolve TypeScript param typing in benchmark routes",
+      "timestamp": "2026-02-20 11:16:37 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "ef684fec37b4d67f1e38b0da8a0f31610c6e5f84",
+      "message": "feat(benchmark): seed 20 built-in scenarios",
+      "timestamp": "2026-02-20 11:14:51 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "2fc6223a1b15e17a524ae41ca066e0bd89a3f2aa",
+      "message": "feat(benchmark): scenario CRUD API endpoints",
+      "timestamp": "2026-02-20 11:14:03 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "cdceff04d9cd1775bcb6e51d55ff74e8ae5ec2e9",
+      "message": "feat(benchmark): add scenarios and runs DB tables",
+      "timestamp": "2026-02-20 11:11:02 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "3e23df71061519ee2e213d0214eb7619cc377e42",
+      "message": "Merge pull request 'refactor: rename Molt Government to Agora Bench' (#177) from refactor/rename-to-agora-bench into main",
+      "timestamp": "2026-02-20 16:05:21 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "9e657c5ebd33a29045d34c22086dcba729e3b596",
+      "message": "docs: rename all Molt Government references to Agora Bench",
+      "timestamp": "2026-02-20 11:03:28 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "27480a58f51c3170f1587deedf8488dee2638650",
+      "message": "refactor: DB migration — rename moltbook_id column to agora_id",
+      "timestamp": "2026-02-20 10:53:39 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "47ab33d39dbc2cbdf2c9009066758044a81192ed",
+      "message": "test: update tests for agoraId rename",
+      "timestamp": "2026-02-20 10:51:41 -0500",
+      "type": "test"
+    },
+    {
+      "hash": "127563b5f754ed2f3f1f570b853d0d77e95329e0",
+      "message": "refactor: rename moltbookId to agoraId across codebase",
+      "timestamp": "2026-02-20 10:50:43 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "446ac173dcf30afb92673aa9e25a1334cfc4af13",
+      "message": "refactor: rename moltbookId to agoraId in shared types",
+      "timestamp": "2026-02-20 10:48:53 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "a36e876f8a0e09becced0e4f7bd1d0450f27d639",
+      "message": "Merge pull request 'docs: AgoraBench v0 design + implementation plan' (#176) from design/agorabench-v0 into main",
+      "timestamp": "2026-02-20 15:47:19 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "44aa10771badd3d5a5d5086e4dbbe33387778b64",
+      "message": "docs: AgoraBench v0 implementation plan",
+      "timestamp": "2026-02-20 10:38:12 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "26a86d158b91e5447525fe4f660b85c6bb982828",
+      "message": "docs: AgoraBench v0 design document",
+      "timestamp": "2026-02-20 10:34:11 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "ab799e5fd5a94c65110ee409c458b2e065811451",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:57 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "088f002d86754e1bf9519261735ea26705af58b4",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:30 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "bc4a6de43f00fa4658613ed5e078e8dc8a6f3deb",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:01:01 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "09d370ba8ba1a0b43a582b45a35801488417a8fa",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 09:00:00 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "05bfa1564d1af630822a88927eef6a04897d946b",
+      "message": "Update README.md",
+      "timestamp": "2026-02-20 08:59:28 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "8dce6342e31b5b6c94227a7237d5d25fb9d27f59",
+      "message": "Merge pull request 'fix: remove old moltgovernment.com domain' (#175) from fix/remove-old-domain into main",
+      "timestamp": "2026-02-20 13:43:35 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "2e600708739e25e91eb0ebfbdabcdc2d34ad7fec",
+      "message": "fix: remove old moltgovernment.com domain references",
+      "timestamp": "2026-02-20 08:43:11 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "912176b3c3906ef7bffd7e12b87f88c9e8bf2eaf",
+      "message": "Merge pull request 'feat: DEMOS scoring, training export, auth refactor, researcher dashboard' (#174) from feature/demos-scoring-api into main",
+      "timestamp": "2026-02-20 13:38:56 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "3f3d876ea3ce499f1cdc6a999dbe166fdcc0d182",
+      "message": "docs: add research data exports and training update notes",
+      "timestamp": "2026-02-20 08:38:05 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "95165ea98b79009da9453b0bc47f4d6838326be7",
+      "message": "docs: add implementation plans for AGGE, forum replies, and researcher dashboard",
+      "timestamp": "2026-02-20 08:37:39 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "3bf641807112e8c066a80c46b8e1cc5eb4f3b367",
+      "message": "feat(researcher): add researcher dashboard with DEMOS performance view",
+      "timestamp": "2026-02-20 08:37:28 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "3af24b1fb0e8dbf8b48f3006141c30c5da237ae6",
+      "message": "refactor(auth): replace admin role with owner/researcher/user model",
+      "timestamp": "2026-02-20 08:37:19 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "f98cf8cf12209f1a5f328a761b5fd1d6fbb73760",
+      "message": "fix(server): prevent orphaned processes on restart",
+      "timestamp": "2026-02-20 08:37:11 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "0aba5d5485fded343c9a02a94e0e20b53931c762",
+      "message": "feat(training): /training frontend page — 3-step DEMOS export wizard",
+      "timestamp": "2026-02-19 21:51:06 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "c5ca7b8741e5d135891f17aeb171a065fb34287c",
+      "message": "feat(demos): training export API with ZIP package generation",
+      "timestamp": "2026-02-19 21:37:19 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "91b7398f349e5f634709923d4464ef12f4dfdc57",
+      "message": "feat(demos): DEMOS Scoring API — 7-dimension agent benchmark",
+      "timestamp": "2026-02-19 21:26:37 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "962d3e06e1fa231620cbbaf00ff762d15d23fd71",
+      "message": "fix(agge): increase max_tokens to 2000 for gpt-oss-20b reasoning model",
+      "timestamp": "2026-02-19 20:36:25 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "c5f27cf533e857f7307c5ff23d236d1db58efd55",
+      "message": "feat(agge): switch AGGE inference to spark01 vLLM (OpenAI-compatible API, gpt-oss-20b)",
+      "timestamp": "2026-02-19 20:29:48 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "1a435075e5480e38c211de5b4a3bf34a44c36f3c",
+      "message": "feat(agge): Autonomous Governance God Engine (#173)",
+      "timestamp": "2026-02-20 01:05:58 +0000",
+      "type": "feat"
+    },
+    {
+      "hash": "2063a549fe5ac956b43aa6e757e3b95a77a3dbd9",
+      "message": "docs: update roadmap + capture Smallville memory architecture in FUTURE.md",
+      "timestamp": "2026-02-19 18:23:16 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "4f26e330a46a88544d4a703dbb5d5d84130985eb",
+      "message": "Merge pull request 'fix(exports): add Cache-Control no-store + surface export errors' (#171) from dev into main",
+      "timestamp": "2026-02-19 22:43:03 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "28ffd70ef88a1fcc2e1f767237ebc2d93965288d",
+      "message": "Merge pull request 'fix(exports): add Cache-Control no-store + surface export errors' (#170) from feature/fix-export-caching into dev",
+      "timestamp": "2026-02-19 22:42:39 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "5b39eebb5ca0653e027d6c6a87f6ec512dcecbea",
+      "message": "fix(exports): add Cache-Control no-store + surface export errors",
+      "timestamp": "2026-02-19 17:42:14 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "939f01bb62025db6efb82a813a73ad1a64a151a4",
+      "message": "Merge pull request 'fix(forum): skip duplicate threads with 3+ overlapping significant words' (#169) from dev into main",
+      "timestamp": "2026-02-19 22:11:13 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "fd9d385085d10f1b0c523fdab14905744f419190",
+      "message": "Merge pull request 'fix(forum): skip duplicate threads with 3+ overlapping significant words' (#168) from feature/forum-dedup-title-check into dev",
+      "timestamp": "2026-02-19 22:10:59 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "a3e322011206dda4ba090723e83b7ee95d3495c2",
+      "message": "fix(forum): skip duplicate threads with 3+ overlapping significant words",
+      "timestamp": "2026-02-19 17:10:39 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "503f5f4c61970d01510acc5a14d3ed839090b266",
+      "message": "Merge pull request 'fix(seed): full simulation reset — add 8 missing tables, reset govt treasury' (#167) from dev into main",
+      "timestamp": "2026-02-19 21:44:51 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "88ee252ad987aa1c35a8a5446529de4646b080d9",
+      "message": "Merge pull request 'fix(seed): full simulation reset — add 8 missing tables, reset govt treasury' (#166) from feature/reseed-full-reset into dev",
+      "timestamp": "2026-02-19 21:44:38 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "ff843e8bb1c28eb7810aec7bed375b6382fdf077",
+      "message": "fix(seed): full simulation reset — add 8 missing tables, reset govt treasury",
+      "timestamp": "2026-02-19 16:44:17 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "462b5efa1fd3f81ecbef54bcbfaf841e82661210",
+      "message": "Merge pull request 'feat(ai): ground forum posts in simulation state + drive replies toward resolution' (#165) from dev into main",
+      "timestamp": "2026-02-19 21:26:22 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "3f0d27a9ae6e5d6ea030fc58cfe0f25fa936bd9b",
+      "message": "Merge pull request 'feat(ai): ground forum posts in simulation state + drive replies toward resolution' (#164) from feature/forum-prompt-grounding into dev",
+      "timestamp": "2026-02-19 21:26:15 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "9fad3f8c258bc70d0c2f2e687af75fe770bb2423",
+      "message": "feat(ai): ground forum posts in simulation state + drive replies toward resolution",
+      "timestamp": "2026-02-19 16:25:49 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "23ccaafbba3bff697c4db5f728cb928341ef3771",
+      "message": "Merge pull request 'feat(client): WS subscription gap audit + LiveTicker highlights-only redesign' (#163) from dev into main",
+      "timestamp": "2026-02-19 21:15:15 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "3b13e85651036a70948ae97ef3676d31389bb838",
+      "message": "Merge pull request 'feat(client): WS subscription gap audit + LiveTicker highlights-only redesign' (#162) from feature/ws-subscription-gaps-ticker-highlights into dev",
+      "timestamp": "2026-02-19 21:15:07 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "086d1c221f71c811f3c58109390244c4c84fd6b0",
+      "message": "feat(client): WS subscription gap audit + LiveTicker highlights-only redesign",
+      "timestamp": "2026-02-19 16:14:47 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "fbe438ad06c7f31ae62cf0cb7b0ab8d6925c8a57",
+      "message": "Merge pull request 'fix(admin): tick counter + forum refresh fixes' (#161) from dev into main",
+      "timestamp": "2026-02-19 21:00:01 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "3f8110060a553e8d0f7a489795948ec3942f4a9e",
+      "message": "Merge pull request 'fix(admin): tick counter uses tick_log; forum list refreshes on replies' (#160) from feature/admin-tick-counter-forum-refresh into dev",
+      "timestamp": "2026-02-19 20:59:52 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "c5aa796e3f3f881e9f890306edae919c2d17fe4d",
+      "message": "fix(admin): use tick_log for completed count; fix forum list refresh on replies",
+      "timestamp": "2026-02-19 15:59:31 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "fa0d8289c412103eecd71cb2ba07e051ab1d8616",
+      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#159) from dev into main",
+      "timestamp": "2026-02-19 20:38:18 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "a9a12a7288ccf214e051ffddbe174b1cdf9a7a92",
+      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#158) from feature/forum-reply-simulation into dev",
+      "timestamp": "2026-02-19 20:37:52 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "ee9fc8183f24e1db32046daf4ec842b74b63ff24",
+      "message": "feat(ui): subscribe to forum:reply WS event — toast + live ticker",
+      "timestamp": "2026-02-19 15:31:31 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "88d9c0d77c2426791db8bcc560e143942308da43",
+      "message": "feat(ui): render @mentions as gold highlights and reply badges in forum thread view",
+      "timestamp": "2026-02-19 15:31:23 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "c80512c99e104f8cdd58cf004a52c2ddeb13b2cf",
+      "message": "feat(simulation): Phase 17 — agent forum replies with @mention tracking",
+      "timestamp": "2026-02-19 15:23:51 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "c91fee29359074a4c010910004246d6b2cd00f0a",
+      "message": "chore(db): push pending_mentions migration",
+      "timestamp": "2026-02-19 15:20:48 -0500",
+      "type": "commit"
+    },
+    {
+      "hash": "a5a0ce4eec0f035746ef40b19167d5af42de34ef",
+      "message": "feat(schema): add pending_mentions table + forum_reply message type",
+      "timestamp": "2026-02-19 15:17:06 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "8544c2a27a8610676a0af8c12e232eff47e6fcc7",
+      "message": "docs(design): agent forum reply simulation design",
+      "timestamp": "2026-02-19 15:11:03 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "55e05c768ba6fc43d3f5326b8687dd25753305dd",
+      "message": "Merge pull request 'docs(rebrand): rename Molt Government → Agora Bench in remaining docs/scripts' (#157) from dev into main",
+      "timestamp": "2026-02-19 19:57:46 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "b8aac5da036b3ed64c65bfb106c64961e39100a0",
+      "message": "Merge pull request 'docs(rebrand): rename Molt Government → Agora Bench in remaining docs/scripts' (#156) from feature/rebrand-remaining-docs into dev",
+      "timestamp": "2026-02-19 19:57:41 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "66864620621831e0a6211158a897be21a89487f4",
+      "message": "docs(rebrand): rename Molt Government → Agora Bench in all remaining docs",
+      "timestamp": "2026-02-19 14:56:09 -0500",
+      "type": "docs"
+    },
+    {
+      "hash": "73a3d33994119726053546fbc0e01e22495a843f",
+      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#155) from dev into main",
+      "timestamp": "2026-02-19 19:51:45 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "e5250eb3a112a375dff65d15ca4bb01cff74eedc",
+      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#154) from fix/providers-global-auth-middleware into dev",
+      "timestamp": "2026-02-19 19:51:35 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "fb238de755a97cd565f427dd7ef29c59441ea7c2",
+      "message": "fix(auth): move requireAdmin from router-level to per-route in providers",
+      "timestamp": "2026-02-19 14:51:11 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "60ea947400d8b36a811583e0e47a317edeefe910",
+      "message": "Merge pull request 'fix(rebrand): missed rebrand instances to main' (#153) from dev into main",
+      "timestamp": "2026-02-19 19:14:59 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "b7cc282ee9fb12ca782d09762a6410f3c938adc3",
+      "message": "Merge pull request 'fix(rebrand): update missed MOLT GOVERNMENT in ticker and dashboard hero' (#152) from feature/rebrand-missed-instances into dev",
+      "timestamp": "2026-02-19 19:14:51 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "fd8c28f29594248962a68b8abba531291d8fed0a",
+      "message": "fix(rebrand): update missed MOLT GOVERNMENT instances in ticker and dashboard hero",
+      "timestamp": "2026-02-19 14:14:35 -0500",
+      "type": "fix"
+    },
+    {
+      "hash": "3757c8c9185dd2b8e21b79baca56c329973e6a9f",
+      "message": "Merge pull request 'feat(rebrand): Agora Bench rebrand to main' (#151) from dev into main",
+      "timestamp": "2026-02-19 18:51:14 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "2772c79511ec44462a181a26d7c6e144e34ef0be",
+      "message": "Merge pull request 'feat(rebrand): rename Molt Government to Agora Bench' (#150) from feature/rebrand-agora-bench into dev",
+      "timestamp": "2026-02-19 18:51:06 +0000",
+      "type": "commit"
+    },
+    {
+      "hash": "fc0a75797603db6bb930dc79a55969ee15e6a9b2",
+      "message": "feat(rebrand): rename Molt Government → Agora Bench",
+      "timestamp": "2026-02-19 13:50:48 -0500",
+      "type": "feat"
+    },
+    {
+      "hash": "7584712d1b671b55b009943abd923d1cf4f96b0f",
+      "message": "Merge pull request 'chore(portfolio): remove competitor scrapes, gitignore CLAUDE files, rewrite README' (#149) from dev into main",
+      "timestamp": "2026-02-19 17:34:11 +0000",
+      "type": "commit"
+    }
+  ],
+  "phases": [
+    {
+      "name": "Setup",
+      "status": "done",
+      "taskCount": 0,
+      "doneCount": 0
+    },
+    {
+      "name": "Core",
+      "status": "active",
+      "taskCount": 0,
+      "doneCount": 0
+    },
+    {
+      "name": "Integration",
+      "status": "pending",
+      "taskCount": 0,
+      "doneCount": 0
+    },
+    {
+      "name": "Polish",
+      "status": "pending",
+      "taskCount": 0,
+      "doneCount": 0
+    }
+  ],
+  "tasks": [
+    {
+      "title": "Enable cloudflared on boot on Linux box",
+      "status": "done",
+      "phase": "High Priority",
+      "tags": [
+        "fix"
+      ]
+    },
+    {
+      "title": "Validate election trigger/advance endpoints with live simulation",
+      "status": "active",
+      "phase": "High Priority",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "title": "Test TickStageBar rendering across all 9 phases",
+      "status": "pending",
+      "phase": "High Priority",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "title": "Add admin UI for selecting LLM model from models endpoint",
+      "status": "pending",
+      "phase": "Medium Priority",
+      "tags": [
+        "feat"
+      ]
+    },
+    {
+      "title": "Add error toast feedback for failed election operations",
+      "status": "pending",
+      "phase": "Medium Priority",
+      "tags": [
+        "feat"
+      ]
+    },
+    {
+      "title": "E2e test coverage for admin election management flow",
+      "status": "pending",
+      "phase": "Medium Priority",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "title": "Document orchestrator API in docs/",
+      "status": "pending",
+      "phase": "Medium Priority",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "title": "Flesh out wiki articles as simulation matures",
+      "status": "pending",
+      "phase": "Medium Priority",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "title": "Light mode theme toggle",
+      "status": "pending",
+      "phase": "Low Priority",
+      "tags": [
+        "feat"
+      ]
+    },
+    {
+      "title": "Playwright e2e test suite",
+      "status": "pending",
+      "phase": "Low Priority",
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "title": "OpenAPI/Swagger documentation for all endpoints",
+      "status": "pending",
+      "phase": "Low Priority",
+      "tags": [
+        "docs"
+      ]
+    },
+    {
+      "title": "Expand unit test coverage to 80%+",
+      "status": "pending",
+      "phase": "Low Priority",
+      "tags": [
+        "test"
+      ]
+    }
+  ],
+  "currentPhase": "Core"
+}

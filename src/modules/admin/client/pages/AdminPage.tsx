@@ -393,6 +393,155 @@ function AccessRequestsPanel({
   );
 }
 
+function LogsDrawer({
+  entries,
+  activeTab,
+  onTabChange,
+  onClose,
+}: {
+  entries: LogEntry[];
+  activeTab: 'simulation' | 'full';
+  onTabChange: (tab: 'simulation' | 'full') => void;
+  onClose: () => void;
+}) {
+  const simRef = useRef<HTMLDivElement>(null);
+  const fullRef = useRef<HTMLDivElement>(null);
+  const simAutoScroll = useRef(true);
+  const fullAutoScroll = useRef(true);
+
+  const simEntries = entries.filter((e) => e.stream === 'simulation');
+  const fullEntries = entries;
+
+  useEffect(() => {
+    if (simAutoScroll.current && simRef.current) {
+      simRef.current.scrollTop = simRef.current.scrollHeight;
+    }
+  }, [simEntries.length]);
+
+  useEffect(() => {
+    if (fullAutoScroll.current && fullRef.current) {
+      fullRef.current.scrollTop = fullRef.current.scrollHeight;
+    }
+  }, [fullEntries.length]);
+
+  function handleScroll(
+    ref: React.RefObject<HTMLDivElement>,
+    autoRef: React.MutableRefObject<boolean>,
+  ) {
+    const el = ref.current;
+    if (!el) return;
+    autoRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+  }
+
+  function exportLogs(format: 'json' | 'csv') {
+    const data = activeTab === 'simulation' ? simEntries : fullEntries;
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `agorabench-logs-${activeTab}-${dateStr}`;
+    const rows = data.map(({ tag, message, timestamp }) => ({ timestamp, tag, message }));
+
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${filename}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const header = 'timestamp,tag,message';
+      const lines = rows.map((r) => `${r.timestamp},${r.tag},${r.message.replace(/,/g, ' ')}`);
+      const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${filename}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  const lineClass = (i: number) =>
+    i % 2 === 0 ? 'text-text-primary' : 'text-gold';
+
+  const renderPane = (
+    paneEntries: LogEntry[],
+    label: string,
+    ref: React.RefObject<HTMLDivElement>,
+    autoRef: React.MutableRefObject<boolean>,
+  ) => (
+    <div
+      ref={ref}
+      onScroll={() => handleScroll(ref, autoRef)}
+      className="flex-1 overflow-y-auto py-2 min-w-0"
+    >
+      <div className="px-3 pb-1.5 text-[10px] uppercase tracking-widest text-text-muted/60">
+        {label}
+      </div>
+      {paneEntries.map((entry, i) => (
+        <div
+          key={i}
+          className={`px-3 py-0.5 text-xs font-mono leading-relaxed whitespace-nowrap overflow-hidden text-ellipsis ${lineClass(i)}`}
+        >
+          <span className="text-[#7a8fa3] text-[10px] mr-2">
+            {entry.timestamp.slice(11, 19)}
+          </span>
+          <span className="mr-1.5 opacity-80">{entry.tag}</span>
+          {entry.message}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="flex-shrink-0 h-[300px] flex flex-col border-t-2 border-border bg-capitol-deep shadow-[0_-8px_32px_rgba(0,0,0,0.5)]">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-3 h-[38px] border-b border-border flex-shrink-0">
+        <span className="text-badge text-text-muted uppercase tracking-widest flex-1">
+          Logs
+        </span>
+
+        <div className="flex gap-1">
+          {(['simulation', 'full'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => onTabChange(tab)}
+              className={`px-2.5 py-0.5 text-badge uppercase tracking-wider rounded border transition-colors ${
+                activeTab === tab
+                  ? 'bg-gold/10 border-gold/40 text-gold'
+                  : 'border-border text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-1">
+          {(['json', 'csv'] as const).map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => exportLogs(fmt)}
+              className="px-2.5 py-0.5 text-badge uppercase tracking-wider rounded border border-border text-text-muted hover:text-text-primary hover:border-text-muted transition-colors"
+            >
+              {fmt.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded text-text-muted hover:text-text-primary transition-colors"
+        >
+          x
+        </button>
+      </div>
+
+      {/* Split panes */}
+      <div className="flex flex-1 overflow-hidden">
+        {renderPane(simEntries, 'Simulation', simRef, simAutoScroll)}
+        <div className="w-1 flex-shrink-0 bg-[#1a2330]" />
+        {renderPane(fullEntries, 'Full', fullRef, fullAutoScroll)}
+      </div>
+    </div>
+  );
+}
+
 export function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     return (localStorage.getItem('admin_active_tab') as AdminTab) ?? 'overview';
@@ -442,7 +591,7 @@ export function AdminPage() {
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [activeLogTab, setActiveLogTab] = useState<'simulation' | 'full'>('simulation');
   /* TODO(logs-drawer): remove void block once LogsDrawer is wired in Task 5 */
-  void logsDrawerOpen; void setLogsDrawerOpen; void logEntries; void activeLogTab; void setActiveLogTab;
+  void logsDrawerOpen; void setLogsDrawerOpen; void logEntries; void activeLogTab; void setActiveLogTab; void LogsDrawer;
 
   /* Avatar customizer state */
   const [avatarAgents, setAvatarAgents] = useState<AvatarAgentRow[]>([]);

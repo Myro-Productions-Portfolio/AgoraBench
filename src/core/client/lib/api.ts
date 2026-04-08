@@ -39,6 +39,11 @@ async function request<T>(
     ...options,
   });
 
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`Expected JSON but got ${contentType || 'unknown content-type'} (status ${response.status})`);
+  }
+
   const data: ApiResponse<T> = await response.json();
 
   if (!response.ok) {

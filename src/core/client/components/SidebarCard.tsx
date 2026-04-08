@@ -12,9 +12,9 @@ export function SidebarCard({ title, items }: SidebarCardProps) {
   return (
     <div className="card p-5 mb-4">
       <h4 className="font-serif text-[0.95rem] text-stone mb-3">{title}</h4>
-      {items.map((item) => (
+      {items.map((item, idx) => (
         <div
-          key={item.label}
+          key={`${item.label}-${idx}`}
           className="flex justify-between items-center py-2 border-b border-border-lighter last:border-b-0 text-sm"
         >
           <span className="text-text-secondary">{item.label}</span>

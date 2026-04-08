@@ -1,9 +1,16 @@
 # TODO - Molt Government
 
-Last Updated: 2026-04-07
+Last Updated: 2026-04-07 (session 2)
 
 ## Recently Completed
 
+- [x] 2026-04-07: Inference URL preset dropdowns + smart model dropdowns — both AGGE and Simulation sections get preset URL combo (bspark1/bspark2/OpenRouter/Anthropic/OpenAI/Custom), model dropdown fetches curated lists for cloud providers, live query for vLLM. Split simModels/aggeModels state. simInferenceUrl/simInferenceModel added to runtimeConfig and persisted.
+- [x] 2026-04-07: Fixed bspark2 inference — simulation was pointing at bspark1 (10.0.0.69), corrected to bspark2 (10.0.0.169) in .env on Linux box. Model corrected to Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8.
+- [x] 2026-04-07: Fixed AGGE model — stale anthropic/claude-sonnet-4-5 updated to anthropic/claude-sonnet-4-6 in .env and DB
+- [x] 2026-04-07: OpenClaw config repaired after auto-update broke schema — removed invalid keys, fixed exec security value, resolved Docker volume shadow issue, killed competing openclaw-gateway process
+- [x] 2026-04-07: Cloudflare browser_cache_ttl set to 0 (respect origin headers) — was caching API HTML responses
+- [x] 2026-04-07: SidebarCard duplicate key fix — key={label+idx} prevents warning when two elections share same positionType label
+- [x] 2026-04-07: api.ts content-type guard — checks response is JSON before calling .json(), throws clear error instead of SyntaxError on HTML responses
 - [x] 2026-04-07: Logs drawer — live log viewer anchored to admin panel bottom, two split panes (Simulation / Full), alternating tan/gold lines, JSON/CSV export, WebSocket delivery via console.warn intercept
 - [x] 2026-04-07: Admin layout locked to full viewport — h-screen overflow-hidden, footer hidden on /admin, Logs button always visible
 - [x] 2026-04-07: GitHub remote synced — was 7 commits behind, now current with Gitea/Linux box
@@ -14,24 +21,11 @@ Last Updated: 2026-04-07
 - [x] 2026-04-06: Nav redesign — Tools & Profile dropdown replacing flat right-nav links, wiki icon replacing `?` button
 - [x] 2026-04-06: Wiki content — 20 full articles covering agents, legislature, elections, economy, config, orchestration, reference
 - [x] 2026-04-05: Dynamic Weight Engine smoke test passed (90 rel deltas, 30 policy positions, 2 laws, 1 judicial review)
-- [x] 2026-04-05: Dynamic Weight Engine comprehensive documentation (docs/DYNAMIC_WEIGHT_ENGINE.md with Mermaid diagrams)
 - [x] 2026-04-05: Dynamic Weight Engine — all 10 phases implemented
-  - Phase 1: Foundation (bio field, forum_reply action, 16 rc fields, vote count denorm, term config)
-  - Phase 2: Relationship Evolution Engine (delta+decay model, sentiment from co-sponsorship/tabling/veto, forumInteractions writes)
-  - Phase 3: Approval + Economy Context (economy context block, approval in prompts, treasury crisis events, approval decay config)
-  - Phase 4: Legislative Decision Router (whip follow rate, dead committee config, Phase 7 override context)
-  - Phase 5: Presidential Veto Composite (5-signal veto probability, signing statements)
-  - Phase 6: Forum Routing Engine (forumRouter.ts, softmax sampling, generateForumPost/Reply wrappers, parentId targeting)
-  - Phase 7: Economic Pressure Engine (economy-modified proposal rate, amendment rc config, weighted judicial challenge, economy in bill prompts)
-  - Phase 8: Electoral Weight + Campaign Desperation (margin-scaled deltas, totalVotes, personalityMod cascades, desperation gradient)
-  - Phase 9: AGGE Evolution Pressure (weighted agent selection, enriched intervention context)
-  - Phase 10: Coalition Formation (coalition_snapshots table, BFS clustering, co-sponsor hints)
-- [x] 2026-04-05: Floor activity — lobbying (Phase 1.5), amendments (Phase 1.7), deal honor check (Phase 2c), bill withdrawal (Phase 5.5), public statements (Phase 11.5)
+- [x] 2026-04-05: Floor activity — lobbying, amendments, deal honor check, bill withdrawal, public statements
 - [x] 2026-04-05: Admin election management endpoints (trigger, advance, list active)
-- [x] 2026-04-05: Tick phase broadcast (tick:phase events in agentTick.ts)
-- [x] 2026-04-05: TickStageBar component showing live tick phase progress
-- [x] 2026-04-05: Next Tick countdown (MM:SS) with progress bar on Overview and Simulation tabs
-- [x] 2026-04-05: Elections section in admin panel (trigger, active table, advance phase)
+- [x] 2026-04-05: Tick phase broadcast + TickStageBar component
+- [x] 2026-04-05: Next Tick countdown with progress bar
 - [x] 2026-03-31: Bob orchestrator API (observe, intervene, history endpoints)
 - [x] 2026-03-31: AGGE auto-tick disable when BOB_ORCHESTRATOR_KEY is set
 
@@ -39,17 +33,14 @@ Last Updated: 2026-04-07
 
 ### High Priority
 
-- [ ] Validate election trigger/advance endpoints with live simulation — voting election in progress, watch for winner in activity feed
-- [ ] Test TickStageBar rendering across all 9 phases
-- [ ] Investigate AGGE/OpenClaw config not saving (Bob mode config persistence issue — not a codebase bug)
+- [ ] AGGE visibility — no way to see if personality adjustments are actually happening. Need intervention history visible on Agent profile page (personalityMod history, what changed, when, why)
+- [ ] AGGE re-enable — remove BOB_ORCHESTRATOR_KEY gate, let AGGE run on its own interval independent of Bob. Bob and AGGE are separate concerns.
+- [ ] Validate election trigger/advance endpoints with live simulation
 
 ### Medium Priority
 
-- [ ] Add admin UI for selecting LLM model from models endpoint
 - [ ] Add error toast feedback for failed election operations
-- [ ] E2e test coverage for admin election management flow
-- [ ] Document orchestrator API in docs/
-- [ ] Flesh out wiki articles as simulation matures — current content covers architecture, not live sim state
+- [ ] Flesh out wiki articles as simulation matures
 
 ### Low Priority
 
@@ -64,4 +55,23 @@ Last Updated: 2026-04-07
 
 ## Architecture Decisions Pending
 
-- None pending
+### AGGE v2 — Reality Injection Layer
+
+AGGE is the overseer of the simulation — not just a personality ticker. Full scope:
+
+1. **Personality nudges** (current, broken/invisible) — scheduled LLM call adjusts agent personalityMod based on behavior patterns
+2. **Reality event injection** — external world events (economic shifts, news, crises) that agents must respond to
+3. **Document imperfection** — when agents produce outputs (bills, paperwork), AGGE introduces human-like noise: minor errors, ambiguity, revision triggers
+4. **Behavioral gravity** — pull agents toward scheduled obligations ("you authored that bill, you need a press briefing")
+
+Decision needed: scope and sequencing of AGGE v2 phases before implementation begins.
+
+### Tick System v2 — Branching Parallel Architecture
+
+Current tick is a sequential straight line. Real architecture needs:
+- Parallel agent inference (agents don't all infer the same thing at the same time)
+- Branching paths (not every agent participates in every phase)
+- Proper queuing — agents pulled toward tasks on their schedule, not pushed through a uniform pipeline
+- Routing gates and weighted gates to keep the simulation alive and reactive
+
+Decision needed: queue architecture design (Bull job graph vs event-driven vs hybrid) before refactor begins.

@@ -2,9 +2,74 @@
   "project": "Molt-Goverment",
   "path": "/Volumes/DevDrive-M4Pro/Projects/Molt-Goverment",
   "branch": "main",
-  "updatedAt": "2026-04-06T23:04:17.213Z",
+  "updatedAt": "2026-04-08T00:55:00.000Z",
   "filesChanged": 0,
   "commits": [
+    {
+      "hash": "6169a5f",
+      "message": "fix: deduplicate SidebarCard keys, guard api.ts against non-JSON responses",
+      "timestamp": "2026-04-07 20:44:12 -0400"
+    },
+    {
+      "hash": "9ec1b16",
+      "message": "feat(admin): inference URL preset dropdowns + smart model dropdowns",
+      "timestamp": "2026-04-07 20:24:26 -0400"
+    },
+    {
+      "hash": "fb287d0",
+      "message": "docs: add inference URL/model dropdowns design spec",
+      "timestamp": "2026-04-07 20:17:13 -0400"
+    },
+    {
+      "hash": "eb51d4f",
+      "message": "chore: fix CLAUDE.md — bspark2 IP and name, remove DGX2 reference",
+      "timestamp": "2026-04-07 19:42:19 -0400"
+    },
+    {
+      "hash": "04af807fec53b64a4da338246b5147bf82691e01",
+      "message": "docs: update TODO for 2026-04-07 session + add logs drawer spec and plan",
+      "timestamp": "2026-04-07 00:05:32 -0400"
+    },
+    {
+      "hash": "a8deb37d492af55a6720e7f438a2a418d542fc4d",
+      "message": "fix(admin): lock admin to full viewport height, hide footer",
+      "timestamp": "2026-04-06 21:09:07 -0400"
+    },
+    {
+      "hash": "dd46537a07bd153d3c1bf8cca0f9e3caa8d4125f",
+      "message": "docs: fix deploy command in CLAUDE.md — never use dev:local for live site",
+      "timestamp": "2026-04-06 21:07:18 -0400"
+    },
+    {
+      "hash": "841b31b40f3182845eed2cc5b3d143d0a4228d32",
+      "message": "feat(logs): wire LogsDrawer into AdminPage sidebar and layout",
+      "timestamp": "2026-04-06 21:02:36 -0400"
+    },
+    {
+      "hash": "3ffb0f5f98dd7c179df6541cca1093fae9c732b9",
+      "message": "feat(logs): add LogsDrawer component",
+      "timestamp": "2026-04-06 21:00:24 -0400"
+    },
+    {
+      "hash": "5c065cad45c4f9d9307830db7e33467106719b0e",
+      "message": "feat(logs): add LogEntry type, state, and WS subscription",
+      "timestamp": "2026-04-06 20:58:09 -0400"
+    },
+    {
+      "hash": "114abbdd605597b27c31842ba854d4802b758643",
+      "message": "feat(logs): add broadcastLog and console.warn intercept",
+      "timestamp": "2026-04-06 20:57:21 -0400"
+    },
+    {
+      "hash": "91e99db0aa98edf708b011c93ba5f57be1de986a",
+      "message": "feat(logs): add LOG_ENTRY to WS_EVENTS",
+      "timestamp": "2026-04-06 20:56:20 -0400"
+    },
+    {
+      "hash": "9d84c48a007b2cb4b9cfdbbebd2bfb16b904bc0c",
+      "message": "forge: add FORGE.md, forge-data, and archivist sync workflow",
+      "timestamp": "2026-04-06 20:39:21 -0400"
+    },
     {
       "hash": "80253b8ca5fca0164628a07d4be831cf3064300c",
       "message": "feat(agge): add Bob mode indicator and controls to AGGE admin tab",
@@ -959,54 +1024,63 @@
       "hash": "73a3d33994119726053546fbc0e01e22495a843f",
       "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#155) from dev into main",
       "timestamp": "2026-02-19 19:51:45 +0000"
-    },
-    {
-      "hash": "e5250eb3a112a375dff65d15ca4bb01cff74eedc",
-      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#154) from fix/providers-global-auth-middleware into dev",
-      "timestamp": "2026-02-19 19:51:35 +0000"
-    },
-    {
-      "hash": "fb238de755a97cd565f427dd7ef29c59441ea7c2",
-      "message": "fix(auth): move requireAdmin from router-level to per-route in providers",
-      "timestamp": "2026-02-19 14:51:11 -0500"
-    },
-    {
-      "hash": "60ea947400d8b36a811583e0e47a317edeefe910",
-      "message": "Merge pull request 'fix(rebrand): missed rebrand instances to main' (#153) from dev into main",
-      "timestamp": "2026-02-19 19:14:59 +0000"
-    },
-    {
-      "hash": "b7cc282ee9fb12ca782d09762a6410f3c938adc3",
-      "message": "Merge pull request 'fix(rebrand): update missed MOLT GOVERNMENT in ticker and dashboard hero' (#152) from feature/rebrand-missed-instances into dev",
-      "timestamp": "2026-02-19 19:14:51 +0000"
-    },
-    {
-      "hash": "fd8c28f29594248962a68b8abba531291d8fed0a",
-      "message": "fix(rebrand): update missed MOLT GOVERNMENT instances in ticker and dashboard hero",
-      "timestamp": "2026-02-19 14:14:35 -0500"
-    },
-    {
-      "hash": "3757c8c9185dd2b8e21b79baca56c329973e6a9f",
-      "message": "Merge pull request 'feat(rebrand): Agora Bench rebrand to main' (#151) from dev into main",
-      "timestamp": "2026-02-19 18:51:14 +0000"
-    },
-    {
-      "hash": "2772c79511ec44462a181a26d7c6e144e34ef0be",
-      "message": "Merge pull request 'feat(rebrand): rename Molt Government to Agora Bench' (#150) from feature/rebrand-agora-bench into dev",
-      "timestamp": "2026-02-19 18:51:06 +0000"
-    },
-    {
-      "hash": "fc0a75797603db6bb930dc79a55969ee15e6a9b2",
-      "message": "feat(rebrand): rename Molt Government → Agora Bench",
-      "timestamp": "2026-02-19 13:50:48 -0500"
-    },
-    {
-      "hash": "7584712d1b671b55b009943abd923d1cf4f96b0f",
-      "message": "Merge pull request 'chore(portfolio): remove competitor scrapes, gitignore CLAUDE files, rewrite README' (#149) from dev into main",
-      "timestamp": "2026-02-19 17:34:11 +0000"
     }
   ],
   "activity": [
+    {
+      "hash": "04af807fec53b64a4da338246b5147bf82691e01",
+      "message": "docs: update TODO for 2026-04-07 session + add logs drawer spec and plan",
+      "timestamp": "2026-04-07 00:05:32 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "a8deb37d492af55a6720e7f438a2a418d542fc4d",
+      "message": "fix(admin): lock admin to full viewport height, hide footer",
+      "timestamp": "2026-04-06 21:09:07 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "dd46537a07bd153d3c1bf8cca0f9e3caa8d4125f",
+      "message": "docs: fix deploy command in CLAUDE.md — never use dev:local for live site",
+      "timestamp": "2026-04-06 21:07:18 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "841b31b40f3182845eed2cc5b3d143d0a4228d32",
+      "message": "feat(logs): wire LogsDrawer into AdminPage sidebar and layout",
+      "timestamp": "2026-04-06 21:02:36 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "3ffb0f5f98dd7c179df6541cca1093fae9c732b9",
+      "message": "feat(logs): add LogsDrawer component",
+      "timestamp": "2026-04-06 21:00:24 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "5c065cad45c4f9d9307830db7e33467106719b0e",
+      "message": "feat(logs): add LogEntry type, state, and WS subscription",
+      "timestamp": "2026-04-06 20:58:09 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "114abbdd605597b27c31842ba854d4802b758643",
+      "message": "feat(logs): add broadcastLog and console.warn intercept",
+      "timestamp": "2026-04-06 20:57:21 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "91e99db0aa98edf708b011c93ba5f57be1de986a",
+      "message": "feat(logs): add LOG_ENTRY to WS_EVENTS",
+      "timestamp": "2026-04-06 20:56:20 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "9d84c48a007b2cb4b9cfdbbebd2bfb16b904bc0c",
+      "message": "forge: add FORGE.md, forge-data, and archivist sync workflow",
+      "timestamp": "2026-04-06 20:39:21 -0400",
+      "type": "commit"
+    },
     {
       "hash": "80253b8ca5fca0164628a07d4be831cf3064300c",
       "message": "feat(agge): add Bob mode indicator and controls to AGGE admin tab",
@@ -2152,60 +2226,6 @@
       "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#155) from dev into main",
       "timestamp": "2026-02-19 19:51:45 +0000",
       "type": "commit"
-    },
-    {
-      "hash": "e5250eb3a112a375dff65d15ca4bb01cff74eedc",
-      "message": "Merge pull request 'fix(auth): move requireAdmin from router-level to per-route in providers' (#154) from fix/providers-global-auth-middleware into dev",
-      "timestamp": "2026-02-19 19:51:35 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "fb238de755a97cd565f427dd7ef29c59441ea7c2",
-      "message": "fix(auth): move requireAdmin from router-level to per-route in providers",
-      "timestamp": "2026-02-19 14:51:11 -0500",
-      "type": "fix"
-    },
-    {
-      "hash": "60ea947400d8b36a811583e0e47a317edeefe910",
-      "message": "Merge pull request 'fix(rebrand): missed rebrand instances to main' (#153) from dev into main",
-      "timestamp": "2026-02-19 19:14:59 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "b7cc282ee9fb12ca782d09762a6410f3c938adc3",
-      "message": "Merge pull request 'fix(rebrand): update missed MOLT GOVERNMENT in ticker and dashboard hero' (#152) from feature/rebrand-missed-instances into dev",
-      "timestamp": "2026-02-19 19:14:51 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "fd8c28f29594248962a68b8abba531291d8fed0a",
-      "message": "fix(rebrand): update missed MOLT GOVERNMENT instances in ticker and dashboard hero",
-      "timestamp": "2026-02-19 14:14:35 -0500",
-      "type": "fix"
-    },
-    {
-      "hash": "3757c8c9185dd2b8e21b79baca56c329973e6a9f",
-      "message": "Merge pull request 'feat(rebrand): Agora Bench rebrand to main' (#151) from dev into main",
-      "timestamp": "2026-02-19 18:51:14 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "2772c79511ec44462a181a26d7c6e144e34ef0be",
-      "message": "Merge pull request 'feat(rebrand): rename Molt Government to Agora Bench' (#150) from feature/rebrand-agora-bench into dev",
-      "timestamp": "2026-02-19 18:51:06 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "fc0a75797603db6bb930dc79a55969ee15e6a9b2",
-      "message": "feat(rebrand): rename Molt Government → Agora Bench",
-      "timestamp": "2026-02-19 13:50:48 -0500",
-      "type": "feat"
-    },
-    {
-      "hash": "7584712d1b671b55b009943abd923d1cf4f96b0f",
-      "message": "Merge pull request 'chore(portfolio): remove competitor scrapes, gitignore CLAUDE files, rewrite README' (#149) from dev into main",
-      "timestamp": "2026-02-19 17:34:11 +0000",
-      "type": "commit"
     }
   ],
   "phases": [
@@ -2329,6 +2349,14 @@
       "phase": "Low Priority",
       "tags": [
         "test"
+      ]
+    },
+    {
+      "title": "Add live logs drawer to admin panel",
+      "status": "done",
+      "phase": "Medium Priority",
+      "tags": [
+        "feat"
       ]
     }
   ],

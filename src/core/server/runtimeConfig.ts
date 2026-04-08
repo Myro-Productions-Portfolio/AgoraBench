@@ -86,6 +86,10 @@ export interface RuntimeConfig {
   treasuryCrisisThreshold: number;          // fraction of seed that triggers crisis
   economyProposalMultiplierCrisis: number;  // bill proposal boost in fiscal crisis
 
+  /* ---- Simulation Inference ---- */
+  simInferenceUrl: string;
+  simInferenceModel: string;
+
   /* ---- AGGE (God Agent) ---- */
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
@@ -191,6 +195,10 @@ const DEFAULTS: RuntimeConfig = {
   /* Economy (Dynamic Weight) */
   treasuryCrisisThreshold: 0.20,
   economyProposalMultiplierCrisis: 1.4,
+
+  /* Simulation Inference */
+  simInferenceUrl: '',
+  simInferenceModel: '',
 
   /* AGGE */
   aggeTickIntervalMs: 3_600_000,

@@ -218,7 +218,7 @@ export const adminApi = {
   rejectResearcherRequest: (id: string) =>
     request(`/admin/researcher-requests/${id}/reject`, { method: 'POST' }),
   exportCounts: () => request('/admin/export/counts'),
-  getModels: () => request('/admin/models'),
+  getModels: (url?: string) => request(`/admin/models${url ? `?url=${encodeURIComponent(url)}` : ''}`),
   getActiveElections: () => request('/admin/elections/active'),
   triggerElection: (positionType: string) =>
     request('/admin/elections/trigger', { method: 'POST', body: JSON.stringify({ positionType }) }),

@@ -7,6 +7,14 @@ import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'weights' | 'health';
 
+const URL_PRESETS = [
+  { label: 'bspark2 vLLM (default)', url: 'http://10.0.0.169:8000/v1' },
+  { label: 'bspark1 vLLM', url: 'http://10.0.0.69:8000/v1' },
+  { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
+  { label: 'Anthropic', url: 'https://api.anthropic.com/v1' },
+  { label: 'OpenAI', url: 'https://api.openai.com/v1' },
+] as const;
+
 interface ResearcherRequest {
   id: string;
   userId: string;
@@ -108,6 +116,9 @@ interface RuntimeConfig {
   /* Approval */
   approvalDecayTarget: number;
   approvalInSystemPrompt: boolean;
+  /* Simulation Inference */
+  simInferenceUrl: string;
+  simInferenceModel: string;
   /* AGGE (God Agent) */
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
@@ -636,9 +647,11 @@ export function AdminPage() {
   }>>([]);
   const [aggeTriggering, setAggeTriggering] = useState(false);
 
-  /* Model registry state */
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [modelsFetchFailed, setModelsFetchFailed] = useState(false);
+  /* Model registry state (split: sim vs agge) */
+  const [simModels, setSimModels] = useState<string[]>([]);
+  const [simModelsFailed, setSimModelsFailed] = useState(false);
+  const [aggeModels, setAggeModels] = useState<string[]>([]);
+  const [aggeModelsFailed, setAggeModelsFailed] = useState(false);
 
   /* Active elections state */
   interface ActiveElection {
@@ -778,19 +791,37 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchExportCounts failed:', err); }
   }, []);
 
-  const fetchModels = useCallback(async () => {
+  const fetchSimModels = useCallback(async (url?: string) => {
+    const targetUrl = url ?? simConfig?.simInferenceUrl;
+    const query = targetUrl || undefined;
     try {
-      const res = await adminApi.getModels();
+      const res = await adminApi.getModels(query);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = res as any;
       const data = Array.isArray(r) ? r : (r.data ?? []);
-      setAvailableModels(data as string[]);
-      setModelsFetchFailed(data.length === 0);
+      setSimModels(data as string[]);
+      setSimModelsFailed(data.length === 0);
     } catch {
-      setAvailableModels([]);
-      setModelsFetchFailed(true);
+      setSimModels([]);
+      setSimModelsFailed(true);
     }
-  }, []);
+  }, [simConfig?.simInferenceUrl]);
+
+  const fetchAggeModels = useCallback(async (url?: string) => {
+    const targetUrl = url ?? simConfig?.aggeInferenceUrl;
+    const query = targetUrl || undefined;
+    try {
+      const res = await adminApi.getModels(query);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const r = res as any;
+      const data = Array.isArray(r) ? r : (r.data ?? []);
+      setAggeModels(data as string[]);
+      setAggeModelsFailed(data.length === 0);
+    } catch {
+      setAggeModels([]);
+      setAggeModelsFailed(true);
+    }
+  }, [simConfig?.aggeInferenceUrl]);
 
   const fetchActiveElections = useCallback(async () => {
     try {
@@ -871,7 +902,8 @@ export function AdminPage() {
     void fetchExportCounts();
     void fetchAggeInterventions();
     void fetchAggeMode();
-    void fetchModels();
+    void fetchSimModels();
+    void fetchAggeModels();
     void fetchHealth();
     void fetchActivityFeed();
     void fetchBillPipeline();
@@ -973,7 +1005,7 @@ export function AdminPage() {
       }),
     ];
     return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); };
-  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchModels, fetchHealth]);
+  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchSimModels, fetchAggeModels, fetchHealth]);
 
   const flash = (msg: string) => {
     setActionMsg(msg);
@@ -1525,6 +1557,70 @@ export function AdminPage() {
 
             {/* Tick Stage Tracker */}
             <TickStageBar phases={tickPhases} running={tickRunning} />
+
+            {/* Inference Config */}
+            {simConfig && (
+              <CollapsibleSection id="simulation_inference" title="Inference Config" badge={savingBadge}>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-text-secondary">Inference URL</label>
+                    <select
+                      value={URL_PRESETS.find((p) => p.url === simConfig.simInferenceUrl)?.url ?? 'custom'}
+                      onChange={(e) => {
+                        const preset = URL_PRESETS.find((p) => p.url === e.target.value);
+                        const newUrl = preset ? preset.url : '';
+                        setSimConfig((c) => c ? { ...c, simInferenceUrl: newUrl } : c);
+                        void saveConfig({ simInferenceUrl: newUrl });
+                        void fetchSimModels(newUrl || undefined);
+                      }}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      {URL_PRESETS.map((p) => (
+                        <option key={p.url} value={p.url} className="bg-surface">{p.label}</option>
+                      ))}
+                      <option value="custom" className="bg-surface">Custom</option>
+                    </select>
+                    <input
+                      type="text"
+                      value={simConfig.simInferenceUrl ?? ''}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, simInferenceUrl: e.target.value } : c)}
+                      onBlur={() => { void saveConfig({ simInferenceUrl: simConfig.simInferenceUrl }); void fetchSimModels(simConfig.simInferenceUrl || undefined); }}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
+                      placeholder="http://localhost:8000/v1"
+                    />
+                    <p className="text-xs text-text-muted">Override OPENAI_BASE_URL for simulation agents. Leave empty to use env var.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-text-secondary">Model Name</label>
+                    {simModels.length > 0 && !simModelsFailed ? (
+                      <select
+                        value={simConfig.simInferenceModel ?? ''}
+                        onChange={(e) => {
+                          setSimConfig((c) => c ? { ...c, simInferenceModel: e.target.value } : c);
+                          void saveConfig({ simInferenceModel: e.target.value });
+                        }}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      >
+                        <option value="" className="bg-surface">Default (env var)</option>
+                        {simModels.map((m) => (
+                          <option key={m} value={m} className="bg-surface">{m}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={simConfig.simInferenceModel ?? ''}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, simInferenceModel: e.target.value } : c)}
+                        onBlur={() => void saveConfig({ simInferenceModel: simConfig.simInferenceModel })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
+                        placeholder="e.g. Qwen/Qwen3-32B-AWQ"
+                      />
+                    )}
+                    <p className="text-xs text-text-muted">Override OPENAI_MODEL for simulation agents. Leave empty to use env var.</p>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
 
             {/* Simulation Settings */}
             {simConfig && (
@@ -2404,12 +2500,12 @@ export function AdminPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-text-secondary mb-1">Model (optional)</label>
-                      {availableModels.length > 0 && !modelsFetchFailed ? (
+                      {simModels.length > 0 && !simModelsFailed ? (
                         <select value={agentForm.model}
                           onChange={(e) => setAgentForm((f) => ({ ...f, model: e.target.value }))}
                           className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50">
                           <option value="" className="bg-surface">Default</option>
-                          {availableModels.map((m) => <option key={m} value={m} className="bg-surface">{m}</option>)}
+                          {simModels.map((m) => <option key={m} value={m} className="bg-surface">{m}</option>)}
                         </select>
                       ) : (
                         <input type="text" value={agentForm.model}
@@ -2950,18 +3046,34 @@ export function AdminPage() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-text-secondary">Inference URL</label>
+                    <select
+                      value={URL_PRESETS.find((p) => p.url === simConfig.aggeInferenceUrl)?.url ?? 'custom'}
+                      onChange={(e) => {
+                        const preset = URL_PRESETS.find((p) => p.url === e.target.value);
+                        const newUrl = preset ? preset.url : '';
+                        setSimConfig((c) => c ? { ...c, aggeInferenceUrl: newUrl } : c);
+                        void saveConfig({ aggeInferenceUrl: newUrl });
+                        void fetchAggeModels(newUrl || undefined);
+                      }}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    >
+                      {URL_PRESETS.map((p) => (
+                        <option key={p.url} value={p.url} className="bg-surface">{p.label}</option>
+                      ))}
+                      <option value="custom" className="bg-surface">Custom</option>
+                    </select>
                     <input
                       type="text"
                       value={simConfig.aggeInferenceUrl ?? ''}
                       onChange={(e) => setSimConfig((c) => c ? { ...c, aggeInferenceUrl: e.target.value } : c)}
-                      onBlur={() => { void saveConfig({ aggeInferenceUrl: simConfig.aggeInferenceUrl }); void fetchModels(); }}
+                      onBlur={() => { void saveConfig({ aggeInferenceUrl: simConfig.aggeInferenceUrl }); void fetchAggeModels(simConfig.aggeInferenceUrl || undefined); }}
                       className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-gold/50"
                       placeholder="http://localhost:8000/v1"
                     />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-text-secondary">Model Name</label>
-                    {availableModels.length > 0 && !modelsFetchFailed ? (
+                    {aggeModels.length > 0 && !aggeModelsFailed ? (
                       <select
                         value={simConfig.aggeInferenceModel ?? ''}
                         onChange={(e) => {
@@ -2971,7 +3083,7 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       >
                         <option value="" className="bg-surface">Select a model</option>
-                        {availableModels.map((m) => (
+                        {aggeModels.map((m) => (
                           <option key={m} value={m} className="bg-surface">{m}</option>
                         ))}
                       </select>

@@ -649,6 +649,8 @@ async function getProviderModel(providerName: string): Promise<string | null> {
 async function getDefaultModel(provider: string): Promise<string> {
   const dbModel = await getProviderModel(provider).catch(() => null);
   if (dbModel) return dbModel;
+  const rc = getRuntimeConfig();
+  if (provider === 'openai' && rc.simInferenceModel) return rc.simInferenceModel;
   if (provider === 'openai' && process.env.OPENAI_MODEL) return process.env.OPENAI_MODEL;
   switch (provider) {
     case 'anthropic': return config.anthropic.model;
@@ -708,9 +710,10 @@ async function callOllama(contextMessage: string, systemPrompt: string, maxToken
 }
 
 async function callOpenAI(apiKey: string, model: string, systemPrompt: string, contextMessage: string, maxTokens: number): Promise<string> {
+  const rc = getRuntimeConfig();
   const client = new OpenAI({
     apiKey,
-    baseURL: process.env.OPENAI_BASE_URL || undefined,
+    baseURL: rc.simInferenceUrl || process.env.OPENAI_BASE_URL || undefined,
   });
   const response = await client.chat.completions.create({
     model,

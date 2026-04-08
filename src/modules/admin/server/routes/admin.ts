@@ -242,6 +242,14 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.aggeEvolutionPressureWeighted = body.aggeEvolutionPressureWeighted;
     }
 
+    /* Simulation Inference */
+    if (typeof body.simInferenceUrl === 'string') {
+      update.simInferenceUrl = body.simInferenceUrl.trim();
+    }
+    if (typeof body.simInferenceModel === 'string') {
+      update.simInferenceModel = body.simInferenceModel.trim();
+    }
+
     /* Relationship & Forum */
     const rdr = num('relationshipDecayRate', 0, 1);
     if (rdr !== undefined) update.relationshipDecayRate = rdr;

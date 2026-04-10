@@ -16,6 +16,7 @@ import { runSeed } from '@db/seedFn';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
 import { requireOwner } from '@core/server/middleware/auth.js';
+import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import healthRouter from './health.js';
 
 const router = Router();
@@ -948,7 +949,11 @@ router.get('/admin/elections/active', requireOwner, async (_req, res, next) => {
   }
 });
 
-const ELECTION_PHASE_ORDER = ['scheduled', 'registration', 'campaigning', 'voting', 'counting', 'certified'] as const;
+/* Canonical election phase order. 'counting' was previously listed but never
+ * implemented — removed to match the organic Phase 14 lifecycle. Terminal
+ * state is 'certified' (writes winner + position + certifiedDate via
+ * finalizeElection). */
+const ELECTION_PHASE_ORDER = ['scheduled', 'registration', 'campaigning', 'voting', 'certified'] as const;
 
 /* POST /api/admin/elections/trigger — trigger a new election */
 router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => {
@@ -977,7 +982,16 @@ router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => 
   }
 });
 
-/* POST /api/admin/elections/:id/advance — force-advance election to next phase */
+/* POST /api/admin/elections/:id/advance — force-advance election to next phase.
+ *
+ * scheduled → registration → campaigning → voting → certified.
+ *
+ * The terminal transition (voting → certified) delegates to finalizeElection(),
+ * which tallies campaign contributions, picks a winner, inserts the positions
+ * row, updates agent stats, writes activity/approval events, and broadcasts.
+ * Without this call the advance button was a string-only state bump and no
+ * officeholder was ever seated — the root cause of the 2026-04-10 missing-
+ * president bug. */
 router.post('/admin/elections/:id/advance', requireOwner, async (req, res, next) => {
   try {
     const id = String(req.params['id']);
@@ -993,13 +1007,46 @@ router.post('/admin/elections/:id/advance', requireOwner, async (req, res, next)
     }
     const nextStatus = ELECTION_PHASE_ORDER[currentIdx + 1];
     const now = new Date();
+
     if (nextStatus === 'voting') {
-      await db.update(elections).set({ status: nextStatus, votingStartDate: now }).where(eq(elections.id, id));
-    } else if (nextStatus === 'certified') {
-      await db.update(elections).set({ status: nextStatus, certifiedDate: now }).where(eq(elections.id, id));
-    } else {
-      await db.update(elections).set({ status: nextStatus }).where(eq(elections.id, id));
+      await db
+        .update(elections)
+        .set({ status: nextStatus, votingStartDate: now })
+        .where(eq(elections.id, id));
+      res.json({ success: true, data: { id, previousStatus: election.status, newStatus: nextStatus } });
+      return;
     }
+
+    if (nextStatus === 'certified') {
+      /* Delegate the full finalize pipeline. finalizeElection handles status,
+       * winnerId, totalVotes, certifiedDate, positions row, agent updates,
+       * approval/relationship cascades, and broadcasts. */
+      const result = await finalizeElection(id);
+      if (result.status === 'no_campaigns') {
+        res.status(400).json({
+          success: false,
+          error: 'Election has no campaigns — cannot certify. Register candidates first.',
+        });
+        return;
+      }
+      res.json({
+        success: true,
+        data: {
+          id,
+          previousStatus: election.status,
+          newStatus: 'certified',
+          winnerId: result.winnerId ?? null,
+          winnerName: result.winnerName ?? null,
+          totalVotes: result.totalVotes ?? 0,
+          positionId: result.positionId ?? null,
+          finalizeStatus: result.status,
+        },
+      });
+      return;
+    }
+
+    /* Intermediate transitions (scheduled→registration, registration→campaigning) */
+    await db.update(elections).set({ status: nextStatus }).where(eq(elections.id, id));
     res.json({ success: true, data: { id, previousStatus: election.status, newStatus: nextStatus } });
   } catch (error) {
     next(error);

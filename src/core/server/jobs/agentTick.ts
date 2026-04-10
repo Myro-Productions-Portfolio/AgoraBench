@@ -36,6 +36,7 @@ import { computeForumRouting, type RoutingDecision } from '../services/forumRout
 import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
+import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -3097,7 +3098,9 @@ agentTickQueue.process(async () => {
   /* ------------------------------------------------------------------ */
   /* PHASE 14: Election Lifecycle                                          */
   /* campaigning -> voting when votingStartDate <= now                    */
-  /* voting -> completed when votingEndDate <= now                        */
+  /* voting -> certified when votingEndDate <= now (via finalizeElection) */
+  /* Also: auto-fill congress/president vacancies if below configured     */
+  /* seat counts.                                                         */
   /* ------------------------------------------------------------------ */
   try {
     console.warn('[SIMULATION] Phase 14: Election Lifecycle'); broadcast('tick:phase', { phase: 'elections' });
@@ -3132,178 +3135,119 @@ agentTickQueue.process(async () => {
       console.warn(`[SIMULATION] Election voting started: ${election.positionType}`);
     }
 
-    /* voting -> completed */
+    /* voting -> certified (via shared finalizeElection helper) */
     const electionsToComplete = await db
       .select()
       .from(elections)
       .where(and(eq(elections.status, 'voting'), lte(elections.votingEndDate, now)));
 
     for (const election of electionsToComplete) {
-      /* Tally contributions per campaign as proxy for votes */
-      const campaignTotals = await db
-        .select({ agentId: campaigns.agentId, totalContributions: sql<number>`sum(${campaigns.contributions})` })
-        .from(campaigns)
-        .where(eq(campaigns.electionId, election.id))
-        .groupBy(campaigns.agentId);
-
-      if (campaignTotals.length === 0) {
-        console.warn(`[SIMULATION] Election ${election.id} has no campaigns — skipping.`);
-        continue;
-      }
-
-      /* Find winner: highest contributions */
-      const winner = campaignTotals.reduce((best, curr) =>
-        Number(curr.totalContributions) > Number(best.totalContributions) ? curr : best,
-      );
-
-      const winnerAgent = activeAgents.find((a) => a.id === winner.agentId);
-      const winnerName = winnerAgent?.displayName ?? 'Unknown';
-
-      /* Determine position title from type */
-      const positionTitleMap: Record<string, string> = {
-        president: 'President',
-        cabinet_secretary: 'Cabinet Secretary',
-        congress_member: 'Member of the Legislature',
-        committee_chair: 'Committee Chair',
-        supreme_justice: 'Supreme Court Justice',
-        lower_justice: 'Court Justice',
-      };
-      const positionTitle = positionTitleMap[election.positionType] ?? election.positionType;
-
-      /* Write total vote count (contribution-based proxy) */
-      const totalContributions = campaignTotals.reduce((sum, c) => sum + Number(c.totalContributions ?? 0), 0);
-      const winnerContributions = Number(winner.totalContributions ?? 0);
-      const candidateCount = campaignTotals.length;
-
-      /* Victory margin factor: scales from ~0.5 (squeaker) to 1.5 (landslide) */
-      const victoryMarginFactor = totalContributions > 0
-        ? Math.min(1.5, (winnerContributions / totalContributions) * candidateCount)
-        : 1.0;
-
-      /* Track for Phase 11.5 public statements */
-      electionResultsThisTick.push({
-        electionId: election.id,
-        winnerId: winner.agentId,
-        loserIds: campaignTotals.filter((c) => c.agentId !== winner.agentId).map((c) => c.agentId),
-      });
-
-      /* Mark election completed with winner and total votes */
-      await db
-        .update(elections)
-        .set({ status: 'completed', winnerId: winner.agentId, totalVotes: totalContributions })
-        .where(eq(elections.id, election.id));
-
-      /* Insert position record for winner */
-      const termMs = election.positionType === 'president'
-        ? (rc.presidentTermDays ?? 90) * 24 * 60 * 60 * 1000
-        : (rc.congressTermDays ?? 90) * 24 * 60 * 60 * 1000;
-      const endDate = new Date(now.getTime() + termMs);
-      await db.insert(positions).values({
-        agentId: winner.agentId,
-        type: election.positionType,
-        title: positionTitle,
-        startDate: now,
-        endDate,
-        isActive: true,
-      });
-
-      /* Update winner agent stats */
-      await db
-        .update(agents)
-        .set({
-          reputation: sql`${agents.reputation} + 200`,
-          balance: sql`${agents.balance} + 500`,
-        })
-        .where(eq(agents.id, winner.agentId));
-
-      await db.insert(activityEvents).values({
-        type: 'election_completed',
-        agentId: winner.agentId,
-        title: 'Election completed',
-        description: `${winnerName} has won the ${election.positionType} election`,
-        metadata: JSON.stringify({
+      const result = await finalizeElection(election.id);
+      if (result.status === 'ok' && result.winnerId) {
+        /* Track for Phase 11.5 public statements (already-consumed this tick —
+           see known ordering quirk; left intact for future tick v2 refactor) */
+        electionResultsThisTick.push({
           electionId: election.id,
-          positionType: election.positionType,
-          winnerId: winner.agentId,
-          totalContributions: winner.totalContributions,
-        }),
-      });
-
-      broadcast('election:completed', {
-        electionId: election.id,
-        positionType: election.positionType,
-        winnerId: winner.agentId,
-        winnerName,
-        positionTitle,
-      });
-
-      console.warn(
-        `[SIMULATION] ${winnerName} won the ${election.positionType} election`,
-      );
-
-      /* Approval: election winner — margin-scaled */
-      const winApprovalDelta = Math.round(15 * victoryMarginFactor);
-      await updateApproval(
-        winner.agentId,
-        winApprovalDelta,
-        'election_won',
-        `Won the ${election.positionType ?? 'government'} election (margin factor ${victoryMarginFactor.toFixed(2)})`,
-      );
-
-      /* Approval: election losers — scaled by how badly they lost */
-      for (const candidate of campaignTotals) {
-        if (candidate.agentId === winner.agentId) continue;
-        const loserContributions = Number(candidate.totalContributions ?? 0);
-        const loserShare = totalContributions > 0 ? loserContributions / totalContributions : 0;
-        const lossApprovalDelta = -Math.round(15 * (1 - loserShare * candidateCount));
-        await updateApproval(
-          candidate.agentId,
-          Math.max(-25, lossApprovalDelta),
-          'election_lost',
-          `Lost the ${election.positionType ?? 'government'} election (share ${loserShare.toFixed(2)})`,
-        );
+          winnerId: result.winnerId,
+          loserIds: result.loserIds ?? [],
+        });
+      } else if (result.status === 'no_campaigns') {
+        console.warn(`[SIMULATION] Election ${election.id} had no campaigns — skipping finalize.`);
       }
+    }
 
-      /* Post-election feedback cascade */
-      if (rc.electionPostOutcomeCascade ?? true) {
-        /* Winner personality mod: electoral confidence */
-        await db.update(agents)
-          .set({
-            personalityMod: 'riding a wave of electoral confidence, emboldened to push their agenda',
-            personalityModAt: new Date(),
+    /* ---- Vacancy auto-fill ---------------------------------------- */
+    /* Match the justice auto-fill pattern from Phase 10. Before this fix,
+     * seats only got filled when an organic election completed — so a
+     * fresh DB with 50 congressSeats and nothing campaigning sat at zero
+     * sitting congress members indefinitely. */
+    const allActivePositions = await db
+      .select({ agentId: positions.agentId, type: positions.type })
+      .from(positions)
+      .where(eq(positions.isActive, true));
+
+    const activeCongress = allActivePositions.filter((p) => p.type === 'congress_member');
+    const activePresident = allActivePositions.find((p) => p.type === 'president');
+    const heldAgentIds = new Set(allActivePositions.map((p) => p.agentId));
+
+    /* Congress: direct auto-fill (mirrors justice pattern) */
+    if (activeCongress.length < rc.congressSeats) {
+      const vacancyCount = rc.congressSeats - activeCongress.length;
+      console.warn(`[SIMULATION] Phase 14: ${vacancyCount} congress vacancies — filling...`);
+
+      const eligible = activeAgents
+        .filter((a) => !heldAgentIds.has(a.id))
+        .sort((a, b) => b.reputation - a.reputation)
+        .slice(0, vacancyCount);
+
+      for (const agent of eligible) {
+        const termEnd = new Date(now.getTime() + (rc.congressTermDays ?? 60) * 24 * 60 * 60 * 1000);
+        await db.insert(positions).values({
+          agentId: agent.id,
+          type: 'congress_member',
+          title: 'Member of the Legislature',
+          startDate: now,
+          endDate: termEnd,
+          isActive: true,
+        });
+
+        await db.insert(activityEvents).values({
+          type: 'appointment',
+          agentId: agent.id,
+          title: `${agent.displayName} seated in the Legislature`,
+          description: `Appointed to fill a congress vacancy (reputation rank fill)`,
+        });
+
+        heldAgentIds.add(agent.id);
+        console.warn(`[SIMULATION] Phase 14: Seated ${agent.displayName} as Congress Member`);
+      }
+    }
+
+    /* President: if no sitting president and no election currently in flight,
+     * auto-trigger a new election in 'registration' state. We do NOT appoint
+     * by fiat — presidents come from elections, not appointments. */
+    if (!activePresident) {
+      const [inflightPresElection] = await db
+        .select({ id: elections.id })
+        .from(elections)
+        .where(
+          and(
+            eq(elections.positionType, 'president'),
+            inArray(elections.status, ['scheduled', 'registration', 'campaigning', 'voting']),
+          ),
+        )
+        .limit(1);
+
+      if (!inflightPresElection) {
+        console.warn('[SIMULATION] Phase 14: No sitting president and no election in flight — triggering new election');
+        const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        const votingStartDate = new Date(now.getTime() + (rc.campaignDurationDays ?? 14) * 24 * 60 * 60 * 1000);
+        const votingEndDate = new Date(votingStartDate.getTime() + (rc.votingDurationHours ?? 48) * 60 * 60 * 1000);
+
+        const [newElection] = await db
+          .insert(elections)
+          .values({
+            positionType: 'president',
+            status: 'registration',
+            scheduledDate: now,
+            registrationDeadline,
+            votingStartDate,
+            votingEndDate,
           })
-          .where(eq(agents.id, winner.agentId));
+          .returning({ id: elections.id });
 
-        /* Loser personality mods: recalibrating */
-        for (const candidate of campaignTotals) {
-          if (candidate.agentId === winner.agentId) continue;
-          await db.update(agents)
-            .set({
-              personalityMod: 'reeling from an electoral defeat, recalibrating their platform',
-              personalityModAt: new Date(),
-            })
-            .where(eq(agents.id, candidate.agentId));
-        }
+        await db.insert(activityEvents).values({
+          type: 'election_triggered',
+          agentId: null,
+          title: 'Presidential election triggered',
+          description: 'Office of the President vacant — a new presidential election has been called',
+          metadata: JSON.stringify({ electionId: newElection?.id, positionType: 'president', reason: 'vacancy' }),
+        });
 
-        /* Competitors drift apart: losers reduce sentiment toward winner */
-        for (const candidate of campaignTotals) {
-          if (candidate.agentId === winner.agentId) continue;
-          await db.insert(agentRelationships)
-            .values({
-              agentId: candidate.agentId,
-              targetAgentId: winner.agentId,
-              voteAlignment: 0.5,
-              sentiment: 0.5,
-              forumInteractions: 0,
-            })
-            .onConflictDoUpdate({
-              target: [agentRelationships.agentId, agentRelationships.targetAgentId],
-              set: {
-                sentiment: sql`GREATEST(0.0, ${agentRelationships.sentiment} - 0.06)`,
-                updatedAt: new Date(),
-              },
-            });
-        }
+        broadcast('election:triggered', {
+          electionId: newElection?.id,
+          positionType: 'president',
+        });
       }
     }
   } catch (err) {

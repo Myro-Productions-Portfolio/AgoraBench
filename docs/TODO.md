@@ -1,9 +1,11 @@
 # TODO - Molt Government
 
-Last Updated: 2026-04-07 (session 2)
+Last Updated: 2026-04-10
 
 ## Recently Completed
 
+- [x] 2026-04-10: Elections pipeline fix — admin POST /admin/elections/:id/advance was a naive status-string bumper with no business logic. Force-advancing a presidential election left winner_id NULL, total_votes 0, and no positions row (no president seated). Extracted phase 14 finalize logic into shared finalizeElection(electionId) helper at src/modules/elections/server/finalizeElection.ts. Admin advance now delegates to it for voting→certified. Dropped dead 'counting' phase. Unified terminal state to 'certified' (phase 14 previously wrote 'completed' which ai.ts and elections.ts did not read). Added phase 14 auto-fill for congress vacancies (mirrors justice pattern) and auto-trigger for presidential elections when no sitting president + no in-flight election. Backfilled stuck election 03e1591a — Sam Ritter seated as president (8757 vote total). Cancelled duplicate election 1c65b018. Verified live on tick 16:45 UTC — phase 14 detected 48 vacancies, seated Zara Moss (only remaining unassigned agent).
+- [x] 2026-04-10: Simulation verified running on bspark2 (10.0.0.169:8000) with Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8. 15-min cron has zero drift, avg tick duration ~356s, ~940 decisions/6h. Populated simInferenceModel + aggeInferenceModel DB config fields (was falling through to env var only).
 - [x] 2026-04-07: Inference URL preset dropdowns + smart model dropdowns — both AGGE and Simulation sections get preset URL combo (bspark1/bspark2/OpenRouter/Anthropic/OpenAI/Custom), model dropdown fetches curated lists for cloud providers, live query for vLLM. Split simModels/aggeModels state. simInferenceUrl/simInferenceModel added to runtimeConfig and persisted.
 - [x] 2026-04-07: Fixed bspark2 inference — simulation was pointing at bspark1 (10.0.0.69), corrected to bspark2 (10.0.0.169) in .env on Linux box. Model corrected to Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8.
 - [x] 2026-04-07: Fixed AGGE model — stale anthropic/claude-sonnet-4-5 updated to anthropic/claude-sonnet-4-6 in .env and DB
@@ -33,9 +35,11 @@ Last Updated: 2026-04-07 (session 2)
 
 ### High Priority
 
+- [ ] Real election vote casting — agents currently don't vote in elections at all. finalizeElection() picks a winner from `campaigns.contributions` as a placeholder (see comment in finalizeElection.ts). Needs a dedicated vote-casting phase in the tick where eligible agents make an LLM decision and write to the `votes` table. Then finalizeElection swaps the tally source from campaigns.contributions to `SELECT candidate_id, COUNT(*) FROM votes ... GROUP BY candidate_id`. Single source of truth — only touch finalizeElection().
+- [ ] Agent pool is too small for 50 congress seats — currently 10 agents total, all now holding at least one position. congress auto-fill runs but can only seat whoever's unassigned. Either (a) reduce rc.congressSeats to match agent pool, (b) seed many more agents, or (c) allow agents to hold multiple positions simultaneously (already accidentally happening with Sam Ritter = president + congress member).
+- [ ] Resolve double-position state — Sam Ritter now holds both President and Congress Member positions. Decide: does winning a higher office vacate a lower one? Phase 14 finalize should probably deactivate any `congress_member` position when the same agent is seated as `president`/`cabinet_secretary`.
 - [ ] AGGE visibility — no way to see if personality adjustments are actually happening. Need intervention history visible on Agent profile page (personalityMod history, what changed, when, why)
 - [ ] AGGE re-enable — remove BOB_ORCHESTRATOR_KEY gate, let AGGE run on its own interval independent of Bob. Bob and AGGE are separate concerns.
-- [ ] Validate election trigger/advance endpoints with live simulation
 
 ### Medium Priority
 

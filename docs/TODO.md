@@ -4,6 +4,7 @@ Last Updated: 2026-04-10
 
 ## Recently Completed
 
+- [x] 2026-04-10: Congress context activated — set CONGRESS_API_KEY in .env on Linux box, restarted server. congressContext.ts now fetches real US Congress bills (119th Congress, AI/tech keywords, 90-day window) and injects them into agent system prompts as "Real-World Congressional Activity". Verified no "not set" warnings after initial startup race condition.
 - [x] 2026-04-10: Agent pool expansion 10 → 30 — seeded 20 new agents via scripts/seed-expansion-agents.ts, distributed 4 per alignment across all 5 parties, routed through bspark2 vLLM. Tick 22:00 (first 30-agent tick): 611s. Tick 22:15 (all 30 fully seated in congress, worst case): 887s (~14:47, less than 15 seconds of headroom on the 15-min cron). Tick 22:30: 715s. Average ~12m 18s. Staged for next server restart: rc.tickIntervalMs 900000 → 1200000 (20 min, gives 5-min worst-case headroom) and rc.congressSeats 50 → 25 (agent pool can't sustain 50 anyway). Also staged: rc.simInferenceModel and rc.aggeInferenceModel (previously empty strings, now populated — breaks the .env var load-bearing dependency). None of these config changes require a code push; they activate on next restart. Phase 14 auto-fill verified seating 10+ new agents in the 22:00 tick.
 - [x] 2026-04-10: Elections pipeline fix — admin POST /admin/elections/:id/advance was a naive status-string bumper with no business logic. Force-advancing a presidential election left winner_id NULL, total_votes 0, and no positions row (no president seated). Extracted phase 14 finalize logic into shared finalizeElection(electionId) helper at src/modules/elections/server/finalizeElection.ts. Admin advance now delegates to it for voting→certified. Dropped dead 'counting' phase. Unified terminal state to 'certified' (phase 14 previously wrote 'completed' which ai.ts and elections.ts did not read). Added phase 14 auto-fill for congress vacancies (mirrors justice pattern) and auto-trigger for presidential elections when no sitting president + no in-flight election. Backfilled stuck election 03e1591a — Sam Ritter seated as president (8757 vote total). Cancelled duplicate election 1c65b018. Verified live on tick 16:45 UTC — phase 14 detected 48 vacancies, seated Zara Moss (only remaining unassigned agent).
 - [x] 2026-04-10: Simulation verified running on bspark2 (10.0.0.169:8000) with Qwen/Qwen2.5-32B-Instruct-GPTQ-Int8. 15-min cron has zero drift, avg tick duration ~356s, ~940 decisions/6h. Populated simInferenceModel + aggeInferenceModel DB config fields (was falling through to env var only).
@@ -36,6 +37,7 @@ Last Updated: 2026-04-10
 
 ### High Priority
 
+- [ ] Reality injection phases 2+3 — Phase 2: broader real-world feeds (economic indicators, news, public opinion) as additional context block builders following the congressContext.ts pattern. Phase 3: MCP-based tool use where agents actively query external sources during decision-making. Brainstorming paused mid-session 2026-04-10 — user chose option D (all of the above, layered over time). Design spec not yet written.
 - [ ] Real election vote casting — agents currently don't vote in elections at all. finalizeElection() picks a winner from `campaigns.contributions` as a placeholder (see comment in finalizeElection.ts). Needs a dedicated vote-casting phase in the tick where eligible agents make an LLM decision and write to the `votes` table. Then finalizeElection swaps the tally source from campaigns.contributions to `SELECT candidate_id, COUNT(*) FROM votes ... GROUP BY candidate_id`. Single source of truth — only touch finalizeElection().
 - [ ] Resolve double-position state — Sam Ritter currently holds both President and Congress Member. Decide: does winning a higher office vacate a lower one? finalizeElection() should probably deactivate any `congress_member` position when the same agent is seated as `president`/`cabinet_secretary`. With 30 agents and 25 congressSeats + 7 justices + 1 president + potential cabinet, there's now enough pool slack that this matters.
 - [ ] Tune rc.congressSeats for the 30-agent pool — currently set to 25 in DB (takes effect next restart), but the right number depends on how many justices + cabinet slots we reserve. With 30 total - 7 justices - 1 president = 22, so 20-22 is probably the realistic ceiling unless we allow multi-position holders.
@@ -56,7 +58,7 @@ Last Updated: 2026-04-10
 
 ## Blocked
 
-- Nothing currently blocked
+- Simulation ticks will error on LLM calls — vLLM (vllm-32b) and all OpenClaw containers stopped on bspark2 as of 2026-04-10 end of session. Live site still serving at agorabench.com but no new agent decisions until vLLM is restarted. Local dev DB containers (molt-gov-postgres, molt-gov-redis) also stopped on 10.0.0.210. To resume: `docker start vllm-32b openclaw openclaw-proxy openshell-cluster-nemoclaw` on bspark2, `docker start molt-gov-postgres molt-gov-redis` on 10.0.0.210.
 
 ## Architecture Decisions Pending
 

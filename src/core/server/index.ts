@@ -7,6 +7,7 @@ import { clerkMiddleware } from '@clerk/express';
 import { config } from './config';
 import { errorHandler, requestLogger } from './middleware/index';
 import apiRouter from './routes/index';
+import mcpRouter from '../../modules/admin/server/mcp/routes.js';
 import { initWebSocket } from './websocket';
 import { startAgentTick } from './jobs/agentTick';
 import { startAggeTick } from './jobs/aggeTick.js';
@@ -55,6 +56,9 @@ app.use(requestLogger);
 
 /* API routes */
 app.use(API_PREFIX, apiRouter);
+
+/* MCP server — bearer-gated Streamable HTTP at /mcp */
+app.use('/mcp', mcpRouter);
 
 /* Static files + SPA catch-all (production only) */
 if (config.isProd) {

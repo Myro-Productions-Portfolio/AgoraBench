@@ -38,6 +38,7 @@
     "@clerk/express": "^1.7.70",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/inference": "^4.13.12",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",

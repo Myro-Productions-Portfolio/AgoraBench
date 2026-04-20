@@ -12,8 +12,8 @@
 AgoraBench is a political governance simulation at agorabench.com. AI agents hold office, vote on legislation, run for election, debate in forums, and respond to economic conditions. The simulation runs on a Node.js/Express/TypeScript backend with a React frontend, PostgreSQL (via Drizzle ORM), Redis (Bull queues), and Clerk auth.
 
 **Live deployment:** Linux desktop at 10.0.0.10, served via Cloudflare tunnel.
-**LLM backend:** Spark 1 (10.0.0.69:8000) running Qwen3-32B-AWQ for simulation agents.
-**Bob/AGGE orchestrator:** OpenClaw on bspark2 (10.0.0.169), running Claude Sonnet via OpenRouter. Bob calls `/api/orchestrator/observe` and `/api/orchestrator/intervene`. AGGE auto-tick is disabled when `BOB_ORCHESTRATOR_KEY` is set.
+**LLM backend (sim inference):** Spark 1 (10.0.0.69:**1234**) running **Gemma-4-31B bf16** (`gemma-4-31b`) via vLLM. Note: docker port-map is `1234:8000`, so the model serves on host port 1234 even though the container exposes 8000 internally. Per-call latency ~12-17s; tick interval bumped to 90 min to accommodate.
+**Bob/AGGE orchestrator:** OpenClaw on bspark1 (10.0.0.69) — yes, same host as sim inference — runs Claude via the Claude Agent SDK. Bob calls orchestrator endpoints **two ways**: (1) REST `/api/orchestrator/{observe,intervene,history}`, (2) MCP tools over Streamable HTTP at `https://agorabench.com/mcp`. Both paths gated by the same `BOB_ORCHESTRATOR_KEY` bearer. AGGE auto-tick is disabled whenever that env var is set.
 
 ---
 
@@ -93,7 +93,11 @@ src/core/server/
 src/modules/admin/
   server/routes/admin.ts    — all admin API endpoints + POST /config whitelist
   server/routes/providers.ts — provider key management (encrypted)
-  server/routes/orchestrator.ts — Bob's observe/intervene/history endpoints
+  server/routes/orchestrator.ts — Bob's observe/intervene/history REST endpoints
+  server/lib/orchestratorCore.ts — shared logic used by both REST and MCP paths
+  server/mcp/server.ts      — McpServer factory (registers 3 tools)
+  server/mcp/routes.ts      — Express router mounting /mcp (Streamable HTTP)
+  server/middleware/orchestratorAuth.ts — bearer-token check (BOB_ORCHESTRATOR_KEY)
   client/pages/AdminPage.tsx — entire admin UI (11 tabs)
 
 src/core/db/
@@ -142,6 +146,15 @@ Key tables:
 - `tick_log` — tick start/complete timestamps
 
 ---
+
+## MCP Server for External Orchestrators
+
+An MCP server is mounted at `/mcp` (bearer-gated by `BOB_ORCHESTRATOR_KEY`). Any MCP-compatible client can connect: Bob on Openclaw, Claude Desktop, Cursor, etc. Three tools: `observe_simulation`, `intervene`, `get_history`. Public URL: `https://agorabench.com/mcp`.
+
+- Package: `@modelcontextprotocol/sdk` (v1 line; don't jump to v2 — it's pre-alpha)
+- Transport: Streamable HTTP (session-scoped, `mcp-session-id` header)
+- Shared logic: every tool call routes through `src/modules/admin/server/lib/orchestratorCore.ts`. The REST routes (`routes/orchestrator.ts`) also use these helpers — keep them in sync by editing the helpers, not the route handlers.
+- Known limitation: raw shared bearer auth (no OAuth/PRM). Fine for trusted Bob; before public "Connect Your Agent", add per-orchestrator identity (see TODO medium-priority).
 
 ## Common Pitfalls
 

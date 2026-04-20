@@ -1,9 +1,14 @@
 # TODO - Molt Government
 
-Last Updated: 2026-04-10
+Last Updated: 2026-04-19
 
 ## Recently Completed
 
+- [x] 2026-04-19: MCP server live at `https://agorabench.com/mcp` — Streamable HTTP transport, bearer-gated with the existing `BOB_ORCHESTRATOR_KEY`. Exposes three tools: `observe_simulation`, `intervene`, `get_history`. Any MCP-compatible client (Openclaw/Bob, Claude Desktop, Cursor) can connect with one config block. Shared logic at `src/modules/admin/server/lib/orchestratorCore.ts` — both REST routes and MCP tools call it, so they can't drift apart. `@modelcontextprotocol/sdk@1.29.0` (stable). Verified initialize handshake + tool discovery end-to-end through Cloudflare tunnel. Bob's briefing at `bob/projects/agorabench/README.md` on Openclaw updated with MCP section (section 10).
+- [x] 2026-04-19: Gemma-4-31B live on Spark 1 as sim inference — migrated off Qwen3-VL-32B-AWQ on Spark 2. vLLM container `vllm-reasoning` on bspark1, bf16 unquantized, served as `gemma-4-31b` on port **1234** (docker port-map, not 8000). Runtime config updated: `simInferenceUrl=http://10.0.0.69:1234/v1`, `simInferenceModel=gemma-4-31b`. Per-call latency ~12-17s (vs 3-4s for Qwen AWQ); PyTorch warned GB10 CUDA cap 12.1 > supported 12.0 but generation works. Spark 2's `sglang-qwen3vl` stopped. Pure text-only vs Qwen3-VL's vision-tuned variant.
+- [x] 2026-04-19: Sim tuning for Gemma speed — withdrew 25 of 30 stale floor bills (Apr 11 backlog, tick had been stuck in Phase 1 whip signals for days), closed 27 in-flight `tick_log` rows going back to Apr 6, bumped `tickIntervalMs` from 30 min → 90 min. Fresh tick post-fix is now progressing cleanly through phases on Gemma.
+- [x] 2026-04-19: Bob orchestrator handoff complete — AGGE auto-tick stays disabled (`BOB_ORCHESTRATOR_KEY` set), AGGE admin tab controls confirmed dead-UI (do not affect Bob). Bob briefing file dropped in Openclaw workspace at `bob/projects/agorabench/README.md` with full API reference (REST + MCP), auth details, cadence suggestions, guardrails, first-boot checklist.
+- [x] 2026-04-19: Repo cleanup — deleted 76 stale remote branches on Gitea (71 fully merged + 4 stale unmerged design/AGGE branches from Feb), 12 local branches on dev machine, 11 on Linux box. Both remotes and both workstations now on `main` only. GitHub portfolio mirror also brought current (was 1 commit behind).
 - [x] 2026-04-10: Congress context activated — set CONGRESS_API_KEY in .env on Linux box, restarted server. congressContext.ts now fetches real US Congress bills (119th Congress, AI/tech keywords, 90-day window) and injects them into agent system prompts as "Real-World Congressional Activity". Verified no "not set" warnings after initial startup race condition.
 - [x] 2026-04-10: Agent pool expansion 10 → 30 — seeded 20 new agents via scripts/seed-expansion-agents.ts, distributed 4 per alignment across all 5 parties, routed through bspark2 vLLM. Tick 22:00 (first 30-agent tick): 611s. Tick 22:15 (all 30 fully seated in congress, worst case): 887s (~14:47, less than 15 seconds of headroom on the 15-min cron). Tick 22:30: 715s. Average ~12m 18s. Staged for next server restart: rc.tickIntervalMs 900000 → 1200000 (20 min, gives 5-min worst-case headroom) and rc.congressSeats 50 → 25 (agent pool can't sustain 50 anyway). Also staged: rc.simInferenceModel and rc.aggeInferenceModel (previously empty strings, now populated — breaks the .env var load-bearing dependency). None of these config changes require a code push; they activate on next restart. Phase 14 auto-fill verified seating 10+ new agents in the 22:00 tick.
 - [x] 2026-04-10: Elections pipeline fix — admin POST /admin/elections/:id/advance was a naive status-string bumper with no business logic. Force-advancing a presidential election left winner_id NULL, total_votes 0, and no positions row (no president seated). Extracted phase 14 finalize logic into shared finalizeElection(electionId) helper at src/modules/elections/server/finalizeElection.ts. Admin advance now delegates to it for voting→certified. Dropped dead 'counting' phase. Unified terminal state to 'certified' (phase 14 previously wrote 'completed' which ai.ts and elections.ts did not read). Added phase 14 auto-fill for congress vacancies (mirrors justice pattern) and auto-trigger for presidential elections when no sitting president + no in-flight election. Backfilled stuck election 03e1591a — Sam Ritter seated as president (8757 vote total). Cancelled duplicate election 1c65b018. Verified live on tick 16:45 UTC — phase 14 detected 48 vacancies, seated Zara Moss (only remaining unassigned agent).
@@ -46,6 +51,9 @@ Last Updated: 2026-04-10
 
 ### Medium Priority
 
+- [ ] AGGE admin tab cleanup — `aggeInferenceUrl`, `aggeInferenceModel`, `aggeTickIntervalMs`, `aggeTemperature`, `aggeAgentsPerTickMin/Max`, `aggeEvolutionPressureWeighted` are all dead-UI now (Bob replaced AGGE auto-tick). Either hide the section or repurpose as "Active Orchestrators" dashboard.
+- [ ] Phase A — Openclaw plugin (`agorabench-orchestrator-plugin`) — opinionated starter: MCP server registration config + cron recipes (light-observe / deep-review / emergency-check) + SYSTEM_PROMPT.md teaching any Claude agent how to reason about interventions + connection-verification wizard. Built on top of the MCP server we shipped 2026-04-19.
+- [ ] Per-orchestrator identity — migrate `BOB_ORCHESTRATOR_KEY` (single shared bearer) → `orchestrator_keys` table with per-agent scopes (read-only vs intervene) and rate limits. Foundation for third-party "Connect Your Agent" flow. Required before public MCP.
 - [ ] Add error toast feedback for failed election operations
 - [ ] Flesh out wiki articles as simulation matures
 
@@ -58,7 +66,7 @@ Last Updated: 2026-04-10
 
 ## Blocked
 
-- Simulation ticks will error on LLM calls — vLLM (vllm-32b) and all OpenClaw containers stopped on bspark2 as of 2026-04-10 end of session. Live site still serving at agorabench.com but no new agent decisions until vLLM is restarted. Local dev DB containers (molt-gov-postgres, molt-gov-redis) also stopped on 10.0.0.210. To resume: `docker start vllm-32b openclaw openclaw-proxy openshell-cluster-nemoclaw` on bspark2, `docker start molt-gov-postgres molt-gov-redis` on 10.0.0.210.
+_(none — as of 2026-04-19, site is live, sim is ticking on Gemma-4-31B via Spark 1, MCP server online)_
 
 ## Architecture Decisions Pending
 

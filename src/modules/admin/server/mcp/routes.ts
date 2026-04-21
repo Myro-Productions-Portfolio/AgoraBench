@@ -1,35 +1,42 @@
 import { Router, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { requireOrchestrator } from '../middleware/orchestratorAuth.js';
 import { createAgoraBenchMcpServer } from './server.js';
 
 const router = Router();
 
-/* Session-scoped transports. An MCP client initializes once, gets a session ID,
- * then reuses it across subsequent requests. */
-const transports: Record<string, StreamableHTTPServerTransport> = {};
+/* Session-scoped transports, keyed by sessionId.
+ * Streamable HTTP uses mcp-session-id header; legacy SSE uses ?sessionId= on the POST. */
+const streamableTransports: Record<string, StreamableHTTPServerTransport> = {};
+const sseTransports: Record<string, SSEServerTransport> = {};
 
-/* Every /mcp call requires a valid Bearer BOB_ORCHESTRATOR_KEY */
+/* Every /mcp call requires a valid Bearer BOB_ORCHESTRATOR_KEY
+ * (header, X-Orchestrator-Key, or ?key= query param). */
 router.use(requireOrchestrator);
 
-/* POST /mcp — client→server JSON-RPC messages (incl. initialize) */
+/* =========================================================================
+ * Streamable HTTP transport — modern MCP clients (Claude Desktop, Cursor,
+ * @modelcontextprotocol/sdk client). Session-scoped via mcp-session-id header.
+ * ========================================================================= */
+
 router.post('/', async (req: Request, res: Response) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   let transport: StreamableHTTPServerTransport;
 
-  if (sessionId && transports[sessionId]) {
-    transport = transports[sessionId];
+  if (sessionId && streamableTransports[sessionId]) {
+    transport = streamableTransports[sessionId];
   } else if (!sessionId && isInitializeRequest(req.body)) {
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sid) => {
-        transports[sid] = transport;
+        streamableTransports[sid] = transport;
       },
     });
     transport.onclose = () => {
-      if (transport.sessionId) delete transports[transport.sessionId];
+      if (transport.sessionId) delete streamableTransports[transport.sessionId];
     };
     const mcp = createAgoraBenchMcpServer();
     await mcp.connect(transport);
@@ -45,18 +52,46 @@ router.post('/', async (req: Request, res: Response) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-/* GET /mcp — server→client SSE stream */
-/* DELETE /mcp — session termination */
-const sessionHandler = async (req: Request, res: Response) => {
+const streamableSessionHandler = async (req: Request, res: Response) => {
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  if (!sessionId || !transports[sessionId]) {
+  if (!sessionId || !streamableTransports[sessionId]) {
     res.status(400).send('Invalid or missing session ID');
     return;
   }
-  await transports[sessionId].handleRequest(req, res);
+  await streamableTransports[sessionId].handleRequest(req, res);
 };
 
-router.get('/', sessionHandler);
-router.delete('/', sessionHandler);
+router.get('/', streamableSessionHandler);
+router.delete('/', streamableSessionHandler);
+
+/* =========================================================================
+ * Legacy SSE transport — compatibility shim for bundle loaders (OpenClaw,
+ * older MCP clients) that only know plain SSE. Client opens GET /mcp/sse,
+ * receives an `endpoint` event telling it to POST to /mcp/messages?sessionId=…,
+ * and the server pushes responses back down the open GET stream.
+ * ========================================================================= */
+
+router.get('/sse', async (_req: Request, res: Response) => {
+  /* The SSE transport writes SSE headers + its `endpoint` event itself. We give
+   * it the POST path; the session ID is generated inside the transport. */
+  const transport = new SSEServerTransport('/mcp/messages', res);
+  sseTransports[transport.sessionId] = transport;
+
+  res.on('close', () => {
+    delete sseTransports[transport.sessionId];
+  });
+
+  const mcp = createAgoraBenchMcpServer();
+  await mcp.connect(transport);
+});
+
+router.post('/messages', async (req: Request, res: Response) => {
+  const sessionId = req.query.sessionId;
+  if (typeof sessionId !== 'string' || !sseTransports[sessionId]) {
+    res.status(400).send('Invalid or missing sessionId');
+    return;
+  }
+  await sseTransports[sessionId].handlePostMessage(req, res, req.body);
+});
 
 export default router;

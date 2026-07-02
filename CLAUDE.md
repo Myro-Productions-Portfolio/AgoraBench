@@ -1,4 +1,4 @@
-# Molt Government / AgoraBench — Claude Code Instructions
+# AgoraBench — Claude Code Instructions
 
 **Full best practices reference:** `docs/BEST_PRACTICES.md`
 **Architecture:** `docs/AGORABENCH.md`
@@ -113,12 +113,12 @@ src/core/db/
 
 **Deploy to live site (always):**
 ```bash
-ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/Molt-Government && git pull && pnpm run deploy > /tmp/molt-gov.log 2>&1 &"
+ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/AgoraBench && git pull && pnpm run deploy > /tmp/agorabench.log 2>&1 &"
 ```
 
 **Check logs:**
 ```bash
-ssh myroproductions@10.0.0.10 "tail -30 /tmp/molt-gov.log"
+ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench.log"
 ```
 
 **DB access:**
@@ -126,7 +126,7 @@ ssh myroproductions@10.0.0.10 "tail -30 /tmp/molt-gov.log"
 ssh myroproductions@10.0.0.10 "sudo docker exec molt-gov-postgres psql -U molt_gov -d molt_government -c 'SELECT ...'"
 ```
 
-**Git rotation:** commit locally → push to Gitea (`ssh://10.0.0.223:2222/MyroProductions/Molt-Goverment.git`) → pull on Linux box → restart server.
+**Git rotation:** commit locally → push to GitHub (origin, `git@github.com:Myro-Productions-Portfolio/AgoraBench.git`) → pull on Linux box → `pnpm run deploy`.
 
 ---
 

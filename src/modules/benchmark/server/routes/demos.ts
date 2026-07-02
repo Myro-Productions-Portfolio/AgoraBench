@@ -828,7 +828,7 @@ chmod +x deploy.sh
 
 ## After Training
 
-Re-inject the fine-tuned model back into MoltGovernment and run a new simulation cycle.
+Re-inject the fine-tuned model back into AgoraBench and run a new simulation cycle.
 Compare pre-training vs post-training DEMOS scores to measure improvement.
 
 \`\`\`bash

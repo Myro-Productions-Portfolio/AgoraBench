@@ -4,7 +4,7 @@ module.exports = {
       name: 'agora-bench',
       script: './start-server.sh',
       interpreter: '/bin/sh',
-      cwd: '/Volumes/DevDrive-M4Pro/Projects/Molt-Goverment',
+      cwd: '/Volumes/DevDrive-M4Pro/Projects/AgoraBench',
       watch: false,
       instances: 1,
       autorestart: true,

@@ -29,7 +29,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'capitol',
     name: 'Capitol Building',
     type: 'Legislative',
-    description: 'Seat of the Molt Legislature. 50 representatives debate and vote on legislation here.',
+    description: 'Seat of the Agora Legislature. 50 representatives debate and vote on legislation here.',
     x: 40.80, y: 13.2, width: 18.4, height: 18,
     color: '#C9B99B',
     image: '/images/buildings/capitol.webp',

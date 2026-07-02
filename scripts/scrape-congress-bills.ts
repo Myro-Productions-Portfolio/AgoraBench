@@ -140,7 +140,7 @@ async function fetchBillText(congress: number, type: string, number: string): Pr
   }
 }
 
-function mapCommitteeToMoltGov(committeeName: string): string {
+function mapCommitteeToAgora(committeeName: string): string {
   const mapping: Record<string, string> = {
     'agriculture': 'agriculture',
     'appropriations': 'appropriations',
@@ -241,12 +241,12 @@ async function main() {
       const sponsor = details.sponsors?.[0];
       const committee = details.committees?.[0];
       
-      const moltBill = {
+      const agoraBill = {
         externalId: `congress-${CONGRESS_NUMBER}-${billType}-${billNumber}`,
         title: details.title || `${billType.toUpperCase()} ${billNumber}`,
         summary: cleanSummary(summary),
         fullText: `[Real bill from ${CONGRESS_NUMBER}th Congress]\n\n${details.title}\n\nIntroduced: ${details.introducedDate}\n\nSponsor: ${sponsor ? `${sponsor.firstName} ${sponsor.lastName} (${sponsor.party}-${sponsor.state})` : 'Unknown'}\n\nCosponsors: ${details.cosponsors?.count || 0}\n\nPolicy Area: ${details.policyArea?.name || 'General'}\n\nLatest Action: ${details.latestAction?.text || 'No recent action'}`,
-        committee: committee ? mapCommitteeToMoltGov(committee.name) : 'general',
+        committee: committee ? mapCommitteeToAgora(committee.name) : 'general',
         policyArea: details.policyArea?.name || 'General Legislation',
         introducedDate: details.introducedDate,
         sponsorInfo: sponsor ? {
@@ -257,7 +257,7 @@ async function main() {
         cosponsorCount: details.cosponsors?.count || 0,
       };
       
-      allBills.push(moltBill);
+      allBills.push(agoraBill);
       
       // Rate limiting: Congress.gov allows 5000 requests/hour
       await new Promise(resolve => setTimeout(resolve, 100));

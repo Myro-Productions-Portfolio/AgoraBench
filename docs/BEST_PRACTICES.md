@@ -1,5 +1,5 @@
 # Development Best Practices
-## Molt Government / AgoraBench
+## AgoraBench
 
 **Status:** Canonical reference — updated 2026-04-05
 **Purpose:** Prevent the class of bugs that ship silently: unauthenticated routes, config saves that do nothing, plaintext secrets, silent type drift between server and client.
@@ -400,7 +400,7 @@ Run before every production deployment.
 - [ ] No catch blocks that swallow errors without response
 
 ### Deployment
-- [ ] Server restarts cleanly on deploy target (`tail /tmp/molt-gov.log`)
+- [ ] Server restarts cleanly on deploy target (`tail /tmp/agorabench.log`)
 - [ ] `[CONFIG] Loaded runtime config from database` appears in startup logs (not "Failed to load config")
 - [ ] No `[CRYPTO]` ephemeral key warnings in startup logs
 

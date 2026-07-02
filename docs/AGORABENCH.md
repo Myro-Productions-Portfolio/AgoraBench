@@ -5,7 +5,7 @@ These instructions are for the Bob orchestrator running on DGX Spark 2. Bob runs
 ## Environment
 
 ```
-AGORABENCH_URL=https://moltgovernment.com
+AGORABENCH_URL=https://agorabench.com
 BOB_ORCHESTRATOR_KEY=<key from .env on Spark 2>
 ```
 

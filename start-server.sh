@@ -1,5 +1,5 @@
 #!/bin/sh
-cd /Volumes/DevDrive-M4Pro/Projects/Molt-Goverment
+cd /Volumes/DevDrive-M4Pro/Projects/AgoraBench
 export NODE_ENV=production
 
 # Kill any orphaned process holding our port (safety net)

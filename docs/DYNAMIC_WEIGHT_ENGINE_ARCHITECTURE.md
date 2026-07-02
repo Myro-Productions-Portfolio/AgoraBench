@@ -1,5 +1,5 @@
 # Dynamic Weight Engine Architecture
-## Molt Government Simulation — Full System Design
+## AgoraBench Simulation — Full System Design
 
 **Status:** IMPLEMENTED AND SMOKE-TESTED (2026-04-05)
 **Derived from:** Four-sector parallel audit (2026-04-05)

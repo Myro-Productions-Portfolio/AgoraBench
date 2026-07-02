@@ -54,7 +54,9 @@ function wsEventToTicker(wsType: string, raw: unknown): TickerItem {
       label = 'LEGISLATION';
       text = d.result === 'passed'
         ? `"${d.title ?? 'A bill'}" enacted into law`
-        : `"${d.title ?? 'A bill'}" vetoed`;
+        : d.result === 'failed'
+          ? `"${d.title ?? 'A bill'}" failed the floor vote`
+          : `"${d.title ?? 'A bill'}" vetoed`;
       break;
     case 'election:completed':
       label = 'ELECTION';

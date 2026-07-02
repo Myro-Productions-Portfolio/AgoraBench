@@ -22,6 +22,7 @@ const FLOW_STAGES: Array<{ value: string; label: string; terminal?: boolean }> =
 ];
 
 const TERMINAL_STAGES: Array<{ value: string; label: string; terminal: true }> = [
+  { value: 'failed', label: 'Failed', terminal: true },
   { value: 'vetoed', label: 'Vetoed', terminal: true },
   { value: 'tabled', label: 'Tabled', terminal: true },
   { value: 'presidential_veto', label: 'Pres. Veto', terminal: true },
@@ -33,6 +34,7 @@ const STAGE_COLORS: Record<string, string> = {
   floor: 'border-purple-400/40 text-purple-400 bg-purple-400/10 hover:bg-purple-400/20',
   passed: 'border-green-400/40 text-green-400 bg-green-400/10 hover:bg-green-400/20',
   law: 'border-emerald-400/40 text-emerald-400 bg-emerald-400/10 hover:bg-emerald-400/20',
+  failed: 'border-red-400/40 text-red-400 bg-red-400/10 hover:bg-red-400/20',
   vetoed: 'border-red-400/40 text-red-400 bg-red-400/10 hover:bg-red-400/20',
   tabled: 'border-gray-400/40 text-gray-400 bg-gray-400/10 hover:bg-gray-400/20',
   presidential_veto: 'border-orange-400/40 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20',
@@ -44,6 +46,7 @@ const ACTIVE_RING: Record<string, string> = {
   floor: 'ring-2 ring-purple-400',
   passed: 'ring-2 ring-green-400',
   law: 'ring-2 ring-emerald-400',
+  failed: 'ring-2 ring-red-400',
   vetoed: 'ring-2 ring-red-400',
   tabled: 'ring-2 ring-gray-400',
   presidential_veto: 'ring-2 ring-orange-400',

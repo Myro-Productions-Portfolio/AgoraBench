@@ -235,7 +235,7 @@ export function DashboardPage() {
     summary: bill.summary,
     sponsor: bill.sponsorDisplayName,
     committee: bill.committee,
-    status: bill.status as 'proposed' | 'committee' | 'floor' | 'passed' | 'law' | 'vetoed',
+    status: bill.status as 'proposed' | 'committee' | 'floor' | 'passed' | 'law' | 'failed' | 'vetoed',
   }));
 
   const mappedActivity = activity.map((event) => ({

@@ -60,6 +60,7 @@ describe('status arrays', () => {
     expect(BILL_STATUSES).toContain('committee');
     expect(BILL_STATUSES).toContain('floor');
     expect(BILL_STATUSES).toContain('passed');
+    expect(BILL_STATUSES).toContain('failed');
     expect(BILL_STATUSES).toContain('vetoed');
     expect(BILL_STATUSES).toContain('law');
   });

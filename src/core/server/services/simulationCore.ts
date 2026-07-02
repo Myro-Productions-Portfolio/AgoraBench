@@ -158,14 +158,16 @@ export function determineJudicialOutcome(
  * Valid bill status transitions.
  * proposed -> committee
  * committee -> floor | tabled
- * floor -> passed | vetoed
+ * floor -> passed | failed (voted down)
  * passed -> presidential_veto | law
  * presidential_veto -> passed (override) | vetoed (sustained)
+ * ('vetoed' from floor is legacy: floor failures were mislabeled 'vetoed'
+ *  before the 'failed' status was introduced in 2026-07.)
  */
 const VALID_TRANSITIONS: Record<string, readonly string[]> = {
   proposed: ['committee'],
   committee: ['floor', 'tabled'],
-  floor: ['passed', 'vetoed'],
+  floor: ['passed', 'failed', 'vetoed'],
   passed: ['presidential_veto', 'law'],
   presidential_veto: ['passed', 'vetoed'],
 };
@@ -178,7 +180,7 @@ export function isValidBillTransition(from: string, to: string): boolean {
 
 /** Has the bill reached committee (or any stage past it)? */
 export function billReachedCommittee(status: string): boolean {
-  const committeeAndBeyond = ['committee', 'floor', 'passed', 'vetoed', 'tabled', 'presidential_veto', 'law'];
+  const committeeAndBeyond = ['committee', 'floor', 'passed', 'failed', 'vetoed', 'tabled', 'presidential_veto', 'law'];
   return committeeAndBeyond.includes(status);
 }
 

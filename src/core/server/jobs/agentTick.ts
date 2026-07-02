@@ -32,6 +32,7 @@ import {
   agentStatements,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply } from '../services/ai.js';
+import { applyAmendment } from '../lib/applyAmendment.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER } from '@shared/constants';
@@ -453,6 +454,9 @@ agentTickQueue.process(async () => {
 
       for (const bill of amendFloorBills) {
         let amendmentsThisBill = 0;
+        /* Accumulates accepted amendments within this tick so a second
+           amendment builds on the first instead of the stale fetch. */
+        let workingFullText = bill.fullText;
 
         /* Eligible proposers: active agents who are NOT the sponsor */
         const eligible = activeAgents.filter((a) => a.id !== bill.sponsorId);
@@ -476,6 +480,7 @@ agentTickQueue.process(async () => {
             `Summary: ${bill.summary}. ` +
             `You may propose a floor amendment to refine this legislation before the vote. ` +
             `Choose type: 'addition' (add a new clause), 'strike' (remove a clause), or 'substitute' (rewrite a section). ` +
+            `For 'strike' or 'substitute', name the target section in your amendment text (e.g. "SECTION 2"). ` +
             `Keep the amendment under 150 words. Be specific — reference actual content from the bill. ` +
             `Respond with exactly this JSON: ` +
             `{"action":"propose_amendment","reasoning":"one sentence explaining your change","data":{"type":"addition","amendmentText":"The amendment text"}}`;
@@ -537,9 +542,23 @@ agentTickQueue.process(async () => {
             const amendmentPasses = total17 > 0 && (votesFor / total17) >= rc.billPassagePercentage;
 
             if (amendmentPasses) {
-              /* Update bill text */
+              /* Section-aware application — never overwrite the bill text.
+                 Ordinal for '[... Amendment #k]' annotations; the count
+                 includes the row inserted just above. */
+              const [amendmentCountRow] = await db
+                .select({ total: count() })
+                .from(billAmendments)
+                .where(eq(billAmendments.billId, bill.id));
+              const amendmentNumber = Number(amendmentCountRow?.total ?? 1);
+
+              workingFullText = applyAmendment(workingFullText, {
+                type: amendmentType,
+                amendmentText,
+                amendmentNumber,
+              });
+
               await db.update(bills)
-                .set({ fullText: amendmentText, lastActionAt: new Date() })
+                .set({ fullText: workingFullText, lastActionAt: new Date() })
                 .where(eq(bills.id, bill.id));
 
               await db.update(billAmendments)
@@ -1442,7 +1461,7 @@ agentTickQueue.process(async () => {
   /* ------------------------------------------------------------------ */
   /* PHASE 5: Bill Resolution                                              */
   /* Tally votes; passed bills get status='passed' (not yet enacted).     */
-  /* Congress-vetoed bills get status='vetoed'.                           */
+  /* Bills voted down on the floor get status='failed'.                   */
   /* ------------------------------------------------------------------ */
   try {
     console.warn('[SIMULATION] Phase 5: Bill Resolution'); broadcast('tick:phase', { phase: 'presidential' });
@@ -1520,27 +1539,27 @@ agentTickQueue.process(async () => {
 
         /* No vote_majority bonus — being on the winning side of a vote isn't a public approval event */
       } else {
-        /* Congress voted it down */
+        /* Congress voted it down — 'failed', not 'vetoed' (no veto occurred) */
         await db
           .update(bills)
-          .set({ status: 'vetoed', lastActionAt: new Date() })
+          .set({ status: 'failed', lastActionAt: new Date() })
           .where(eq(bills.id, bill.id));
 
         /* Track for Phase 5.5 and Phase 11.5 */
-        failedBillsThisTick.push({ ...bill, status: 'vetoed' });
+        failedBillsThisTick.push({ ...bill, status: 'failed' });
 
         await db.insert(activityEvents).values({
           type: 'bill_resolved',
           agentId: null,
-          title: 'Bill vetoed',
+          title: 'Bill failed floor vote',
           description: `"${bill.title}" was voted down by the Legislature (${yeaCount} yea, ${nayCount} nay)`,
-          metadata: JSON.stringify({ billId: bill.id, result: 'vetoed', yeaCount, nayCount }),
+          metadata: JSON.stringify({ billId: bill.id, result: 'failed', yeaCount, nayCount }),
         });
 
         broadcast('bill:resolved', {
           billId: bill.id,
           title: bill.title,
-          result: 'vetoed',
+          result: 'failed',
           yeaCount,
           nayCount,
         });
@@ -2684,7 +2703,7 @@ agentTickQueue.process(async () => {
       const contextMessage =
         `You are considering proposing new legislation. Based on your political alignment and values, propose a bill. ` +
         `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote} ` +
-        `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Technology|Budget|Social Welfare|Justice|Foreign Affairs","billType":"original","amendsLawId":""}}`;
+        `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":""}}`;
 
       const decision = await generateAgentDecision(
         {

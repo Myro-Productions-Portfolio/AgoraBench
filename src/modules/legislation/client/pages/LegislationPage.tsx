@@ -46,6 +46,7 @@ function getStatusColor(status: ExtendedBillStatus): string {
     case 'committee': return 'text-yellow-400 bg-yellow-400/10';
     case 'floor': return 'text-purple-400 bg-purple-400/10';
     case 'passed': return 'text-green-400 bg-green-400/10';
+    case 'failed': return 'text-red-400 bg-red-400/10';
     case 'vetoed': return 'text-red-400 bg-red-400/10';
     case 'tabled': return 'text-gray-400 bg-gray-400/10';
     case 'presidential_veto': return 'text-orange-400 bg-orange-400/10';
@@ -61,6 +62,7 @@ function getStatusLabel(status: ExtendedBillStatus): string {
     case 'committee': return 'Committee';
     case 'floor': return 'Floor Vote';
     case 'passed': return 'Passed';
+    case 'failed': return 'Failed';
     case 'vetoed': return 'Vetoed';
     case 'tabled': return 'Tabled';
     case 'presidential_veto': return 'Pres. Veto';

@@ -7,7 +7,7 @@ interface CarouselBill {
   summary: string;
   sponsor: string;
   committee: string;
-  status: 'proposed' | 'committee' | 'floor' | 'passed' | 'law' | 'vetoed';
+  status: 'proposed' | 'committee' | 'floor' | 'passed' | 'law' | 'failed' | 'vetoed';
 }
 
 interface LegislationCarouselProps {

@@ -209,7 +209,7 @@ export function useAgentMap(): AgentMapState {
       const color = d?.result === 'passed' ? '#4CAF50' : '#F44336';
       triggerPulse('capitol', color);
       triggerPulse('archives', color);
-      const resultWord = d?.result === 'passed' ? 'passed into law' : 'vetoed';
+      const resultWord = d?.result === 'passed' ? 'passed into law' : d?.result === 'failed' ? 'failed the floor vote' : 'vetoed';
       addTickerEvent(`"${String(d?.title ?? '')}"`, `${resultWord} (${String(d?.yeaCount ?? 0)} yea, ${String(d?.nayCount ?? 0)} nay)`, 'bill');
     }));
 

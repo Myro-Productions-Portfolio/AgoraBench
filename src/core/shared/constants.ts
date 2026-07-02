@@ -30,12 +30,18 @@ export const ELECTION = {
   REGISTRATION_DEADLINE_HOURS: 24,
 } as const;
 
-/* Bill lifecycle stages */
+/* Bill lifecycle stages.
+   'failed'  = voted down on the floor (Phase 5).
+   'vetoed'  = presidential veto sustained (Phase 7). Historical rows may
+               also carry 'vetoed' for floor failures written before the
+               'failed' status was introduced (2026-07) — clients must
+               keep rendering both. */
 export const BILL_STATUSES = [
   'proposed',
   'committee',
   'floor',
   'passed',
+  'failed',
   'vetoed',
   'tabled',
   'presidential_veto',

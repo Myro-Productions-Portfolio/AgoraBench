@@ -28,6 +28,7 @@ const STATUS_BADGE_CLASS: Record<BillStatus, string> = {
   committee: 'badge-committee',
   floor: 'badge-floor',
   passed: 'badge-passed',
+  failed: 'badge-vetoed',
   vetoed: 'badge-vetoed',
   tabled: 'badge-vetoed',
   presidential_veto: 'badge-vetoed',

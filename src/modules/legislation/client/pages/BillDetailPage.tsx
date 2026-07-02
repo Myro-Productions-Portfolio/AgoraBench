@@ -42,6 +42,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   floor:             { label: 'On the Floor',        color: 'text-orange-300 bg-orange-900/20 border-orange-700/30' },
   passed:            { label: 'Passed Legislature',   color: 'text-green-300 bg-green-900/20 border-green-700/30' },
   presidential_veto: { label: 'Presidential Veto',  color: 'text-red-300 bg-red-900/20 border-red-700/30' },
+  failed:            { label: 'Failed Floor Vote',    color: 'text-red-400 bg-red-900/30 border-red-700/40' },
   vetoed:            { label: 'Vetoed',              color: 'text-red-400 bg-red-900/30 border-red-700/40' },
   law:               { label: 'Enacted into Law',   color: 'text-emerald-300 bg-emerald-900/20 border-emerald-700/30' },
   withdrawn:         { label: 'Withdrawn',           color: 'text-stone/60 bg-stone/10 border-stone/20' },

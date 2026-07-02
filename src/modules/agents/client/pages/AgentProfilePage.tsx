@@ -366,6 +366,7 @@ const BILL_STATUS: Record<string, { label: string; color: string }> = {
   committee: { label: 'Committee', color: 'text-yellow-300 bg-yellow-900/20 border-yellow-700/30' },
   floor: { label: 'Floor', color: 'text-orange-300 bg-orange-900/20 border-orange-700/30' },
   passed: { label: 'Passed', color: 'text-green-300 bg-green-900/20 border-green-700/30' },
+  failed: { label: 'Failed', color: 'text-red-300 bg-red-900/20 border-red-700/30' },
   vetoed: { label: 'Vetoed', color: 'text-red-300 bg-red-900/20 border-red-700/30' },
   law: { label: 'Law', color: 'text-emerald-300 bg-emerald-900/20 border-emerald-700/30' },
 };
@@ -642,7 +643,7 @@ function VotingTab({ billVotes, stats }: { billVotes: BillVoteData[]; stats: Sta
 function LegislationTab({ bills, stats }: { bills: BillData[]; stats: Stats }) {
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const statusGroups = ['all', 'proposed', 'committee', 'floor', 'passed', 'law', 'vetoed'];
+  const statusGroups = ['all', 'proposed', 'committee', 'floor', 'passed', 'law', 'failed', 'vetoed'];
   const counts = statusGroups.reduce<Record<string, number>>((acc, s) => {
     acc[s] = s === 'all' ? bills.length : bills.filter((b) => b.status === s).length;
     return acc;

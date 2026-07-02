@@ -15,7 +15,6 @@ export { users, userAgents, userApiKeys, researcherRequests } from '@modules/adm
 export { approvalEvents } from '@modules/agents/db/schema/approvalEvents';
 export { coalitionSnapshots } from '@modules/agents/db/schema/coalitionSnapshots';
 export { pendingMentions } from '@modules/forum/db/schema/pendingMentions';
-export { benchmarkScenarios, benchmarkRuns } from '@modules/benchmark/db/schema/benchmark';
 export { runtimeConfigStore } from './runtimeConfigStore';
 export { billAmendments } from '@modules/legislation/db/schema/amendments';
 export { lobbyingEvents } from '@modules/legislation/db/schema/lobbying';

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { researcherApi, profileApi, demosApi } from '@core/client/lib/api';
+import { researcherApi, profileApi } from '@core/client/lib/api';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -75,25 +75,6 @@ interface ApiKeyRow {
   isActive: boolean;
 }
 
-interface ModelInfo {
-  id: string;
-  hfRepo: string;
-  architecture: string;
-  params: string;
-  alignment: string;
-  license: string;
-}
-
-interface PresetInfo {
-  id: string;
-  name: string;
-  vram: string;
-  gpuModel: string;
-  maxModelSize?: string;
-  framework?: string;
-  estimatedTime?: string;
-}
-
 /* ── Constants ──────────────────────────────────────────────────────────── */
 
 const PROVIDERS = ['anthropic', 'openai', 'google', 'huggingface', 'ollama'];
@@ -124,13 +105,12 @@ const DIMENSION_LABELS: Record<string, string> = {
   participationRate: 'Participation Rate',
 };
 
-type Tab = 'agents' | 'performance' | 'apikeys' | 'exports';
+type Tab = 'agents' | 'performance' | 'apikeys';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'agents',      label: 'My Agents' },
   { id: 'performance', label: 'Performance' },
   { id: 'apikeys',     label: 'API Keys' },
-  { id: 'exports',     label: 'Exports' },
 ];
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -753,182 +733,6 @@ function ApiKeysTab() {
   );
 }
 
-/* ── Tab: Exports ────────────────────────────────────────────────────────── */
-
-function ExportsTab({ agents }: { agents: AgentRow[] }) {
-  const [models, setModels] = useState<ModelInfo[]>([]);
-  const [presets, setPresets] = useState<PresetInfo[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
-  const [selectedPreset, setSelectedPreset] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const [modelsRes, presetsRes] = await Promise.all([
-          demosApi.models(),
-          demosApi.presets(),
-        ]);
-        const modelsData = modelsRes.data as { models: ModelInfo[] };
-        const presetsData = presetsRes.data as { presets: PresetInfo[] };
-        setModels(modelsData.models ?? []);
-        setPresets(presetsData.presets ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load export options');
-      } finally {
-        setLoading(false);
-      }
-    }
-    void fetchData();
-  }, []);
-
-  const selectedPresetObj = presets.find((p) => p.id === selectedPreset);
-
-  async function handleExport() {
-    if (!selectedModel || !selectedPreset) return;
-    setExporting(true);
-    try {
-      await demosApi.downloadExport({
-        modelId: selectedModel,
-        presetId: selectedPreset,
-        agentFilter: selectedAgent || undefined,
-      });
-    } catch (err) { console.error('[RESEARCHER] Export download failed:', err);
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  if (loading) {
-    return <div className="card p-8 text-center text-text-muted animate-pulse">Loading export options...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="card p-5 border-red-800/50 bg-red-900/10">
-        <p className="text-red-400 text-sm">{error}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="card p-5 space-y-4">
-        <h3 className="text-xs uppercase tracking-widest text-text-muted">Export Configuration</h3>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-xs text-text-muted mb-1.5">Agent Filter</label>
-            <select
-              value={selectedAgent}
-              onChange={(e) => setSelectedAgent(e.target.value)}
-              className={selectCls}
-            >
-              <option value="" className="bg-[#2A2B2F]">All Agents</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id} className="bg-[#2A2B2F]">
-                  {a.displayName}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-text-muted mb-1.5">Target Model</label>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className={selectCls}
-            >
-              <option value="" className="bg-[#2A2B2F]">-- Select model --</option>
-              {models.map((m) => (
-                <option key={m.id} value={m.id} className="bg-[#2A2B2F]">
-                  {m.hfRepo} ({m.params})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs text-text-muted mb-1.5">Hardware Preset</label>
-            <select
-              value={selectedPreset}
-              onChange={(e) => setSelectedPreset(e.target.value)}
-              className={selectCls}
-            >
-              <option value="" className="bg-[#2A2B2F]">-- Select preset --</option>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id} className="bg-[#2A2B2F]">
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {selectedPresetObj && (
-          <>
-            <div className="h-px bg-border" />
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div>
-                <div className="text-[10px] text-text-muted uppercase tracking-wide">VRAM</div>
-                <div className="text-sm text-text-primary font-mono">{selectedPresetObj.vram}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-text-muted uppercase tracking-wide">GPU</div>
-                <div className="text-sm text-text-primary font-mono">{selectedPresetObj.gpuModel}</div>
-              </div>
-              {selectedPresetObj.framework && (
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wide">Framework</div>
-                  <div className="text-sm text-text-primary font-mono">{selectedPresetObj.framework}</div>
-                </div>
-              )}
-              {selectedPresetObj.estimatedTime && (
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wide">Est. Time</div>
-                  <div className="text-sm text-text-primary font-mono">{selectedPresetObj.estimatedTime}</div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        <button
-          onClick={() => void handleExport()}
-          disabled={!selectedModel || !selectedPreset || exporting}
-          className={goldBtnCls}
-        >
-          {exporting ? 'Preparing Export...' : 'Download Training Package'}
-        </button>
-      </div>
-
-      {/* Package contents */}
-      <div className="card p-5">
-        <h3 className="text-xs uppercase tracking-widest text-text-muted mb-3">Package Contents</h3>
-        <div className="space-y-2">
-          {[
-            { file: 'training_data.jsonl', desc: 'Decision and vote data formatted for fine-tuning' },
-            { file: 'demos_scores.json', desc: 'DEMOS benchmark scores and dimension breakdowns' },
-            { file: 'train.py', desc: 'Training script with LoRA configuration' },
-            { file: 'Modelfile', desc: 'Ollama Modelfile for local deployment' },
-            { file: 'deploy.sh', desc: 'Deployment script for model serving' },
-            { file: 'README.md', desc: 'Documentation and usage instructions' },
-          ].map((item) => (
-            <div key={item.file} className="flex items-start gap-3">
-              <span className="font-mono text-xs text-gold shrink-0 w-40">{item.file}</span>
-              <span className="text-xs text-text-muted">{item.desc}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /* ── Main Component ──────────────────────────────────────────────────────── */
 
 export function ResearcherPage() {
@@ -1001,7 +805,7 @@ export function ResearcherPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="font-serif text-3xl font-semibold text-stone">Researcher Dashboard</h1>
-        <p className="text-sm text-text-muted mt-1">Manage your agents, monitor performance, and export training data</p>
+        <p className="text-sm text-text-muted mt-1">Manage your agents and monitor their performance</p>
       </div>
 
       {/* Summary Stats */}
@@ -1051,7 +855,6 @@ export function ResearcherPage() {
         />
       )}
       {activeTab === 'apikeys' && <ApiKeysTab />}
-      {activeTab === 'exports' && <ExportsTab agents={agents} />}
     </div>
   );
 }

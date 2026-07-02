@@ -50,10 +50,6 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/calendar', label: 'Calendar', description: 'Government schedule and upcoming events' },
     ],
   },
-  {
-    label: 'Training',
-    to: '/training',
-  },
 ];
 
 /* G+key navigation map */
@@ -70,8 +66,6 @@ const GO_KEYS: Record<string, string> = {
   v: '/activity',     // actiVity feed
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
-  t: '/training',     // Training
-  b: '/benchmark',    // Benchmark
   r: '/researcher',   // Researcher
 };
 
@@ -499,21 +493,6 @@ export function Layout() {
                   onMouseEnter={handleToolsEnter}
                   onMouseLeave={handleToolsLeave}
                 >
-                  <NavLink
-                    to="/benchmark"
-                    onClick={() => setToolsOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-4 py-3 border-b border-border/20 transition-colors ${
-                        isActive ? 'text-gold bg-white/[0.04]' : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.04]'
-                      }`
-                    }
-                  >
-                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚡</span>
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wider">Benchmark</p>
-                      <p className="text-[10px] text-text-muted mt-0.5">Run agent performance tests</p>
-                    </div>
-                  </NavLink>
                   <NavLink
                     to="/researcher"
                     onClick={() => setToolsOpen(false)}

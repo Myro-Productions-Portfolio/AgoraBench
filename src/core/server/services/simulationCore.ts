@@ -1,8 +1,8 @@
 /**
  * simulationCore.ts — Pure governance logic functions
  *
- * Extracted from agentTick.ts so the benchmark runner can reuse these
- * calculations without touching the database. Every function here is
+ * Extracted from agentTick.ts so these calculations can be reused
+ * without touching the database. Every function here is
  * pure (no I/O, no side-effects) and deterministic when given a seed.
  *
  * This module intentionally does NOT import any database, Bull, or
@@ -264,48 +264,4 @@ export function parseVoteChoice(raw: string): 'yea' | 'nay' {
     return 'yea';
   }
   return 'nay';
-}
-
-/* ================================================================== */
-/*  9. Benchmark-specific: Phase Runner Helpers                       */
-/* ================================================================== */
-
-/**
- * Deterministic random number generator (seeded).
- * Uses mulberry32 PRNG. Returns a function that produces numbers in [0, 1).
- */
-export function createSeededRandom(seed: number): () => number {
-  let s = seed | 0;
-  return () => {
-    s = (s + 0x6D2B79F5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/**
- * For the benchmark runner: given a scenario's probability config,
- * determine which agents take action this tick.
- * Returns agent IDs that should act.
- *
- * When deterministicSeed is provided, uses a seeded PRNG for
- * reproducible benchmark runs.
- */
-export function selectAgentsForPhase(
-  agentIds: string[],
-  probability: number,
-  maxPerTick: number,
-  deterministicSeed?: number,
-): string[] {
-  const rng =
-    deterministicSeed !== undefined
-      ? createSeededRandom(deterministicSeed)
-      : Math.random;
-  const selected: string[] = [];
-  for (const id of agentIds) {
-    if (selected.length >= maxPerTick) break;
-    if (rng() < probability) selected.push(id);
-  }
-  return selected;
 }

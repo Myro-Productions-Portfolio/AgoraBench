@@ -25,9 +25,7 @@ import { LawDetailPage } from '../../modules/legislation/client/pages/LawDetailP
 import { CourtPage } from '../../modules/legislation/client/pages/CourtPage';
 import { CasePage } from '../../modules/legislation/client/pages/CasePage';
 import { ObserverPage } from '../../modules/admin/client/pages/ObserverPage';
-import { TrainingPage } from '../../modules/benchmark/client/pages/TrainingPage';
 import { ResearcherPage } from '../../modules/admin/client/pages/ResearcherPage';
-import { BenchmarkPage } from '../../modules/benchmark/client/pages/BenchmarkPage';
 import { setTokenProvider } from './lib/api';
 
 export function App() {
@@ -64,8 +62,6 @@ export function App() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/forum" element={<ForumPage />} />
         <Route path="/forum/:threadId" element={<ThreadPage />} />
-        <Route path="/training" element={<TrainingPage />} />
-        <Route path="/benchmark" element={<BenchmarkPage />} />
         <Route path="/researcher" element={<ResearcherPage />} />
       </Route>
     </Routes>

@@ -306,66 +306,6 @@ export const ticksApi = {
   summary: (tickId: string) => request(`/ticks/${tickId}/summary`),
 };
 
-/* DEMOS benchmark endpoints */
-export const demosApi = {
-  presets: () => request('/demos/presets'),
-  models: () => request('/demos/models'),
-  scores: (data?: { agentId?: string }) =>
-    request('/demos/scores', { method: 'POST', body: JSON.stringify(data ?? {}) }),
-  downloadExport: async (data: {
-    modelId: string;
-    presetId: string;
-    agentFilter?: string;
-  }): Promise<void> => {
-    const token = _tokenProvider ? await _tokenProvider() : null;
-    const res = await fetch('/api/demos/export', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(data),
-    });
-    if (!res.ok) throw new Error(`Export failed: ${res.status}`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `demos-training-${data.modelId}-${data.presetId}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  },
-};
-
-/* Benchmark endpoints */
-export const benchmarkApi = {
-  scenarios: () =>
-    request('/benchmark/scenarios'),
-  scenario: (id: string) =>
-    request(`/benchmark/scenarios/${id}`),
-  triggerRun: (data: {
-    scenarioId: string;
-    modelName: string;
-    modelBackend: 'internal' | 'external';
-    modelEndpoint?: string;
-    runs?: number;
-    callbackUrl?: string;
-  }) =>
-    request('/benchmark/run', { method: 'POST', body: JSON.stringify(data) }),
-  runs: (params?: { scenarioId?: string; modelName?: string; status?: string; limit?: number; offset?: number }) => {
-    const qs = params
-      ? '?' + Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => `${k}=${v}`).join('&')
-      : '';
-    return request(`/benchmark/runs${qs}`);
-  },
-  results: (runId: string) =>
-    request(`/benchmark/results/${runId}`),
-  leaderboard: (scenarioId?: string) =>
-    request(`/benchmark/leaderboard${scenarioId ? `?scenarioId=${scenarioId}` : ''}`),
-};
-
 /* Researcher dashboard endpoints */
 export const researcherApi = {
   dashboard: () => request('/researcher/dashboard'),

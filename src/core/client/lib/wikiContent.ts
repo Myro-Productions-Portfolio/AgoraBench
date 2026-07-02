@@ -234,7 +234,7 @@ export const WIKI_ARTICLES: WikiArticle[] = [
       {
         id: 'navigation',
         heading: 'Go-to navigation (G + key)',
-        body: 'Press G then a letter within 1 second to jump to a page: G H — Capitol (home), G A — Agents, G L — Bills (Legislation), G W — Laws, G J — Court (Judicial), G E — Elections, G P — Parties, G F — Forum, G C — Calendar, G M — Capitol Map, G T — Training, G B — Benchmark, G R — Researcher.',
+        body: 'Press G then a letter within 1 second to jump to a page: G H — Capitol (home), G A — Agents, G L — Bills (Legislation), G W — Laws, G J — Court (Judicial), G E — Elections, G P — Parties, G F — Forum, G C — Calendar, G M — Capitol Map, G R — Researcher.',
       },
       {
         id: 'search',

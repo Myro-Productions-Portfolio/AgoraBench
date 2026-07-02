@@ -113,12 +113,13 @@ src/core/db/
 
 **Deploy to live site (always):**
 ```bash
-ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/AgoraBench && git pull && pnpm run deploy > /tmp/agorabench.log 2>&1 &"
+ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/AgoraBench && git pull && pnpm run deploy >> /tmp/agorabench-deploy.log 2>&1 &"
 ```
 
-**Check logs:**
+**Check logs** — two separate files; the server is the ONLY writer of `agorabench.log` (append-only), deploy output (build/purge) goes to `agorabench-deploy.log`. Deploy rotates the old server log to `agorabench.log.1`:
 ```bash
-ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench.log"
+ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench.log"        # server runtime log
+ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench-deploy.log" # deploy build/purge log
 ```
 
 **DB access:**

@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings, agentDeals } from '@db/schema/index';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings, agentDeals, agentStatements, activityEvents, gazetteIssues } from '@db/schema/index';
 import { eq, and, or, desc, gt, inArray, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -407,6 +407,81 @@ export async function buildActiveDealsBlock(agentId: string): Promise<string> {
   ].join('\n');
 }
 
+// Recent news cache: shared across all agents, 60s TTL (~1 query set per tick)
+let recentNewsCache: { block: string; ts: number } | null = null;
+const RECENT_NEWS_TTL_MS = 60_000;
+const NEWS_ITEM_MAX_CHARS = 140; // hard cap per line — 3 lines ≈ 400 chars total
+const NEWS_MAX_ITEMS = 3;
+
+/**
+ * Small "Recent News" block for agent prompts: latest public statements,
+ * Bob's injected media_event rows, and the latest Gazette headline — merged
+ * by recency, capped at 3 lines of 140 chars. This is the wire that finally
+ * delivers orchestrator media events to agents.
+ */
+export async function buildRecentNewsBlock(): Promise<string> {
+  if (recentNewsCache && Date.now() - recentNewsCache.ts < RECENT_NEWS_TTL_MS) {
+    return recentNewsCache.block;
+  }
+
+  const [statements, mediaEvents, gazetteRows] = await Promise.all([
+    db.select({
+        statementText: agentStatements.statementText,
+        authorName: agents.displayName,
+        createdAt: agentStatements.createdAt,
+      })
+      .from(agentStatements)
+      .innerJoin(agents, eq(agentStatements.agentId, agents.id))
+      .where(eq(agentStatements.isPublic, true))
+      .orderBy(desc(agentStatements.createdAt))
+      .limit(2),
+    db.select({
+        title: activityEvents.title,
+        description: activityEvents.description,
+        createdAt: activityEvents.createdAt,
+      })
+      .from(activityEvents)
+      .where(eq(activityEvents.type, 'media_event'))
+      .orderBy(desc(activityEvents.createdAt))
+      .limit(2),
+    /* Individually failure-soft: gazette_issues may not exist yet on a mid-life DB */
+    db.select({ headline: gazetteIssues.headline, createdAt: gazetteIssues.createdAt })
+      .from(gazetteIssues)
+      .orderBy(desc(gazetteIssues.createdAt))
+      .limit(1)
+      .catch(() => [] as { headline: string; createdAt: Date }[]),
+  ]);
+
+  const items: { line: string; createdAt: Date }[] = [];
+
+  for (const s of statements) {
+    const text = (s.statementText ?? '').replace(/\s+/g, ' ').trim();
+    items.push({
+      line: `- Statement (${s.authorName}): ${text}`.slice(0, NEWS_ITEM_MAX_CHARS),
+      createdAt: s.createdAt,
+    });
+  }
+  for (const e of mediaEvents) {
+    const text = `${e.title} — ${e.description}`.replace(/\s+/g, ' ').trim();
+    items.push({
+      line: `- News: ${text}`.slice(0, NEWS_ITEM_MAX_CHARS),
+      createdAt: e.createdAt,
+    });
+  }
+  for (const g of gazetteRows) {
+    items.push({
+      line: `- Gazette: ${g.headline}`.slice(0, NEWS_ITEM_MAX_CHARS),
+      createdAt: g.createdAt,
+    });
+  }
+
+  items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const block = items.slice(0, NEWS_MAX_ITEMS).map((i) => i.line).join('\n');
+
+  recentNewsCache = { block, ts: Date.now() };
+  return block;
+}
+
 // Simulation state cache: shared, 10-minute TTL (one per tick window is fine)
 let simStateCache: { block: string; threadTitles: string[]; ts: number } | null = null;
 const SIM_STATE_TTL_MS = 10 * 60_000;
@@ -549,6 +624,7 @@ function buildSystemPrompt(
   electionContext?: string,
   economyContext?: string,
   dealsContext?: string,
+  recentNewsContext?: string,
 ): string {
   const rc = getRuntimeConfig();
   const alignment = agent.alignment ?? 'centrist';
@@ -587,6 +663,9 @@ function buildSystemPrompt(
       : '') +
     (congressContext
       ? `\n\n## Real-World Congressional Activity\nThese are actual bills currently moving through the U.S. Congress. Use this to ground your positions in real-world political context:\n${congressContext}`
+      : '') +
+    (recentNewsContext
+      ? `\n\n## Recent News\nThe latest headlines and public statements inside Agora Bench:\n${recentNewsContext}`
       : '') +
     (relationshipContext
       ? `\n\n## Your Relationships\nBased on your voting record and interactions with other officials:\n${relationshipContext}`
@@ -772,7 +851,7 @@ export async function generateAgentDecision(
 ): Promise<AgentDecision> {
   const rc = getRuntimeConfig();
   const provider = agent.modelProvider ?? 'ollama';
-  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext, economyContext] = await Promise.all([
+  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext, economyContext, recentNewsContext] = await Promise.all([
     buildMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildForumContextBlock().catch((err) => { console.warn('[AI] Forum context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildCongressContextBlock().catch((err) => { console.warn('[AI] Congress context failed:', err instanceof Error ? err.message : err); return ''; }),
@@ -780,6 +859,7 @@ export async function generateAgentDecision(
     buildPolicyPositionBlock(agent.id).catch((err) => { console.warn('[AI] Policy position block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildElectionMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Election memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildEconomyContextBlock(agent.id).catch((err) => { console.warn('[AI] Economy context failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildRecentNewsBlock().catch((err) => { console.warn('[AI] Recent news block failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
   // Only fetch deals context for phases where vote commitments are relevant
   const dealPhases = ['vote', 'bill_voting', 'lobby', 'propose_amendment', 'override_vote'];
@@ -796,6 +876,7 @@ export async function generateAgentDecision(
     electionContext || undefined,
     economyContext || undefined,
     dealsContext || undefined,
+    recentNewsContext || undefined,
   );
   const start = Date.now();
 
@@ -1032,6 +1113,75 @@ export async function summarizeAgentDecisions(agentId: string): Promise<void> {
     console.warn(`[AI] Summarized ${unsummarized.length} decisions for ${agent.displayName}`);
   } catch (err) {
     console.warn(`[AI] Decision summarization failed for ${agent.displayName}:`, err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Daily Gazette
+// ---------------------------------------------------------------------------
+
+const GAZETTE_HEADLINE_MAX_CHARS = 200; // matches gazette_issues.headline varchar(200)
+const GAZETTE_BODY_MAX_CHARS = 2000;
+
+/**
+ * ONE LLM call that turns a deterministic tick digest into a short Gazette
+ * article. Returns null on ANY failure — provider error, malformed JSON,
+ * out-of-bounds fields — and never throws: a failed Gazette must never fail
+ * the tick. Output is untrusted (Rule 4): only the whitelisted headline/body
+ * keys are read, both type-checked and length-clamped.
+ */
+export async function generateGazetteArticle(
+  digest: string,
+): Promise<{ headline: string; body: string } | null> {
+  try {
+    const rc = getRuntimeConfig();
+    const provider = rc.providerOverride !== 'default' ? rc.providerOverride : 'openai';
+    const gazetteRecord: AgentRecord = {
+      id: 'gazette',
+      displayName: 'The Agora Gazette',
+      alignment: null,
+      modelProvider: provider,
+      personality: null,
+      ownerUserId: null,
+    };
+
+    const systemPrompt =
+      `You are the editor of The Agora Gazette, the daily paper of record for Agora Bench — ` +
+      `a democratic simulation where AI agents govern. Write a concise, punchy news recap of ` +
+      `today's verified events in a neutral wire-service tone. Do not invent events that are ` +
+      `not in the digest. Respond ONLY with a valid JSON object of the form ` +
+      `{"headline": "<one headline, max 12 words>", "body": "<recap, 120-200 words>"} — ` +
+      `no markdown, no text outside the JSON.`;
+    const contextMessage = `Today's verified events:\n${digest}\n\nWrite the recap now. JSON only.`;
+
+    const raw = await callProvider(provider, gazetteRecord, rc, systemPrompt, contextMessage);
+
+    const s = raw.indexOf('{');
+    const e = raw.lastIndexOf('}');
+    if (s === -1 || e <= s) return null;
+    const jsonSubstr = raw.slice(s, e + 1);
+
+    let parsed: unknown;
+    try { parsed = JSON.parse(jsonSubstr); }
+    catch {
+      try { parsed = JSON.parse(sanitizeJsonString(jsonSubstr)); }
+      catch { return null; }
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+
+    /* Rule 4: read ONLY the whitelisted keys; validate type and bounds */
+    const headlineRaw = (parsed as Record<string, unknown>)['headline'];
+    const bodyRaw = (parsed as Record<string, unknown>)['body'];
+    if (typeof headlineRaw !== 'string' || typeof bodyRaw !== 'string') return null;
+
+    const headline = headlineRaw.replace(/\s+/g, ' ').trim().slice(0, GAZETTE_HEADLINE_MAX_CHARS);
+    const body = bodyRaw.trim().slice(0, GAZETTE_BODY_MAX_CHARS);
+    if (headline.length < 5 || body.length < 50) return null;
+
+    return { headline, body };
+  } catch (err) {
+    console.warn('[AI] Gazette article generation failed:', err instanceof Error ? err.message : err);
+    return null;
   }
 }
 

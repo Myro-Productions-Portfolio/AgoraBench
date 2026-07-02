@@ -1,9 +1,60 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { agentStatements, agents } from '@db/schema/index';
+import { agentStatements, agents, gazetteIssues } from '@db/schema/index';
 import { eq, desc, and, sql } from 'drizzle-orm';
 
 const router = Router();
+
+/* GET /api/press/gazette -- Public: Daily Gazette issues, newest first */
+router.get('/press/gazette', async (req, res, next) => {
+  try {
+    const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 10;
+    const rawOffset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
+    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 10 : rawLimit, 50);
+    const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+
+    const [rows, [countRow]] = await Promise.all([
+      db
+        .select({
+          id: gazetteIssues.id,
+          tickId: gazetteIssues.tickId,
+          headline: gazetteIssues.headline,
+          body: gazetteIssues.body,
+          createdAt: gazetteIssues.createdAt,
+        })
+        .from(gazetteIssues)
+        .orderBy(desc(gazetteIssues.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db.select({ count: sql<number>`COUNT(*)::int` }).from(gazetteIssues),
+    ]);
+
+    res.json({ success: true, data: { issues: rows, total: countRow?.count ?? 0 } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/press/gazette/latest -- Public: most recent Gazette issue (null when none) */
+router.get('/press/gazette/latest', async (_req, res, next) => {
+  try {
+    const [row] = await db
+      .select({
+        id: gazetteIssues.id,
+        tickId: gazetteIssues.tickId,
+        headline: gazetteIssues.headline,
+        body: gazetteIssues.body,
+        createdAt: gazetteIssues.createdAt,
+      })
+      .from(gazetteIssues)
+      .orderBy(desc(gazetteIssues.createdAt))
+      .limit(1);
+
+    res.json({ success: true, data: row ?? null });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /* GET /api/press -- Public press room: all agent statements with optional filters */
 router.get('/press', async (req, res, next) => {

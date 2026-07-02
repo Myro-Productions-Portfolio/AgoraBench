@@ -139,6 +139,9 @@ interface RuntimeConfig {
   publicStatementsEnabled: boolean;
   proactiveStatementChance: number;
   maxStatementsPerAgentPerTick: number;
+  gazetteEnabled: boolean;
+  dealParsingEnabled: boolean;
+  maxDealsPerTick: number;
 }
 
 interface EconomySettings {
@@ -1973,6 +1976,44 @@ export function AdminPage() {
                       value={simConfig.maxStatementsPerAgentPerTick}
                       onChange={e => setSimConfig(c => c ? ({ ...c, maxStatementsPerAgentPerTick: Number(e.target.value) }) : c)}
                       onBlur={() => void saveConfig({ maxStatementsPerAgentPerTick: simConfig.maxStatementsPerAgentPerTick })}
+                    />
+                  </label>
+                </div>
+
+                {/* Vote-Pact Deals */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Vote-Pact Deals</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Deal Parsing Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.dealParsingEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, dealParsingEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ dealParsingEnabled: simConfig.dealParsingEnabled })}
+                    />
+                  </label>
+
+                  <label className="flex items-center justify-between gap-4">
+                    <span className="text-sm text-text-secondary">Max Deals / Tick</span>
+                    <input type="number" min={1} max={10} step={1}
+                      className="input-sm w-20 text-right"
+                      value={simConfig.maxDealsPerTick}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, maxDealsPerTick: Number(e.target.value) }) : c)}
+                      onBlur={() => void saveConfig({ maxDealsPerTick: simConfig.maxDealsPerTick })}
+                    />
+                  </label>
+                </div>
+
+                {/* Daily Gazette */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Daily Gazette</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Gazette Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.gazetteEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, gazetteEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ gazetteEnabled: simConfig.gazetteEnabled })}
                     />
                   </label>
                 </div>

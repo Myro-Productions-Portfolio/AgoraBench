@@ -345,6 +345,21 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.maxStatementsPerAgentPerTick = Math.round(v);
     }
 
+    // Daily Gazette
+    if (body.gazetteEnabled !== undefined) {
+      update.gazetteEnabled = Boolean(body.gazetteEnabled);
+    }
+
+    // Vote-Pact Deals
+    if (body.dealParsingEnabled !== undefined) {
+      update.dealParsingEnabled = Boolean(body.dealParsingEnabled);
+    }
+    if (body.maxDealsPerTick !== undefined) {
+      const v = Number(body.maxDealsPerTick);
+      if (!isFinite(v) || v < 1 || v > 10) { res.status(400).json({ error: 'maxDealsPerTick must be 1–10' }); return; }
+      update.maxDealsPerTick = Math.round(v);
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

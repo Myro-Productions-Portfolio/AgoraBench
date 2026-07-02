@@ -123,6 +123,13 @@ export interface RuntimeConfig {
   publicStatementsEnabled: boolean;
   proactiveStatementChance: number;
   maxStatementsPerAgentPerTick: number;
+
+  /* ---- Daily Gazette ---- */
+  gazetteEnabled: boolean;           // one LLM recap of the tick, failure-soft
+
+  /* ---- Vote-Pact Deals ---- */
+  dealParsingEnabled: boolean;       // parse optional 'deal' field from Phase 1.5 lobbying output
+  maxDealsPerTick: number;           // cap on agentDeals inserts per tick (1-10)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -237,6 +244,13 @@ const DEFAULTS: RuntimeConfig = {
   publicStatementsEnabled: true,
   proactiveStatementChance: 0.05,
   maxStatementsPerAgentPerTick: 1,
+
+  /* Daily Gazette */
+  gazetteEnabled: true,
+
+  /* Vote-Pact Deals */
+  dealParsingEnabled: true,
+  maxDealsPerTick: 3,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

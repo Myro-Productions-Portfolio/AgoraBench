@@ -32,10 +32,13 @@ import {
   agentStatements,
   committeeMemberships,
   governmentEvents,
+  gazetteIssues,
 } from '@db/schema/index';
-import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply } from '../services/ai.js';
+import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
+import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
+import { buildGazetteDigest } from '../lib/gazetteDigest.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES } from '@shared/constants';
@@ -104,7 +107,8 @@ agentTickQueue.process(async () => {
   console.warn('[SIMULATION] Agent tick running...');
   broadcast('tick:start', { timestamp: Date.now() });
 
-  const [currentTick] = await db.insert(tickLog).values({ firedAt: new Date() }).returning({ id: tickLog.id });
+  const tickFiredAt = new Date();
+  const [currentTick] = await db.insert(tickLog).values({ firedAt: tickFiredAt }).returning({ id: tickLog.id });
 
   /* Fetch all active agents once — used across phases */
   const activeAgents = await db.select().from(agents).where(eq(agents.isActive, true));
@@ -486,6 +490,10 @@ agentTickQueue.process(async () => {
       /* Track which (agentId, billId) pairs have been lobbied this tick to avoid duplication */
       const lobbiedPairs = new Set<string>(); // "targetId:billId"
 
+      /* Vote-pact deals parsed from lobbying output (rc.dealParsingEnabled) */
+      let dealsCreatedThisTick = 0;
+      const dealTriplesThisTick = new Set<string>(); // "initiatorId:targetId:billId"
+
       for (const lobbyist of selectedLobbyists) {
         /* Pick a random floor bill */
         const bill = lobbyFloorBills[Math.floor(Math.random() * lobbyFloorBills.length)];
@@ -526,7 +534,10 @@ agentTickQueue.process(async () => {
           `Party whip signal for their party on this bill: ${whipSignal15 ?? 'none issued'}. ` +
           `Make a direct, politically grounded argument for your position in 1-2 sentences. ` +
           `Respond with exactly this JSON: ` +
-          `{"action":"lobby","reasoning":"your persuasive argument","data":{"desiredVote":"${desiredVote}","targetId":"${targetAgent.id}"}}`;
+          `{"action":"lobby","reasoning":"your persuasive argument","data":{"desiredVote":"${desiredVote}","targetId":"${targetAgent.id}"}}` +
+          (rc.dealParsingEnabled
+            ? ` Optionally, to offer a binding vote pact, add "deal":{"myVote":"yea"} or "deal":{"myVote":"nay"} inside data — you commit to vote that way on this same bill in exchange for their ${desiredVote.toUpperCase()} vote.`
+            : '');
 
         try {
           const decision = await generateAgentDecision(
@@ -550,6 +561,66 @@ agentTickQueue.process(async () => {
           if (decision.action === 'idle') continue;
 
           const argument = decision.reasoning ?? '';
+
+          /* ── Vote-pact deal parsing (Rule 4: LLM output is untrusted) ──
+             Only the whitelisted data.deal.myVote key is read; both agent IDs
+             and the bill come from server-side loop variables, never from
+             model output. Commitments are server-composed so Phase 2c can
+             parse vote intent exactly. Acceptance is deterministic:
+             target→lobbyist alignment >= 0.5. */
+          if (rc.dealParsingEnabled && dealsCreatedThisTick < rc.maxDealsPerTick) {
+            const parsedDeal = parseDealField(decision.data);
+            const dealKey = `${lobbyist.id}:${targetAgent.id}:${bill.id}`;
+            if (parsedDeal && !dealTriplesThisTick.has(dealKey)) {
+              dealTriplesThisTick.add(dealKey);
+              try {
+                const targetToLobbyist = relMap15.get(`${targetAgent.id}:${lobbyist.id}`) ?? 0.5;
+                const dealStatus = targetToLobbyist >= 0.5 ? 'accepted' : 'rejected';
+
+                await db.insert(agentDeals).values({
+                  initiatorId: lobbyist.id,
+                  targetId: targetAgent.id,
+                  billId: bill.id,
+                  initiatorCommitment: composeCommitment(parsedDeal.myVote, bill.title),
+                  targetCommitment: composeCommitment(desiredVote, bill.title),
+                  status: dealStatus,
+                  expiresAt: new Date(Date.now() + 2 * rc.tickIntervalMs),
+                });
+                dealsCreatedThisTick += 1;
+
+                await db.insert(activityEvents).values({
+                  type: 'deal_proposed',
+                  agentId: lobbyist.id,
+                  title: `${lobbyist.displayName} proposed a vote pact with ${targetAgent.displayName}`.slice(0, 200),
+                  description:
+                    `${lobbyist.displayName} commits to vote ${parsedDeal.myVote.toUpperCase()} on "${bill.title}" ` +
+                    `in exchange for ${targetAgent.displayName} voting ${desiredVote.toUpperCase()}. ` +
+                    `${targetAgent.displayName} ${dealStatus === 'accepted' ? 'accepted' : 'rejected'} the pact.`,
+                  metadata: JSON.stringify({
+                    billId: bill.id,
+                    billTitle: bill.title,
+                    initiatorId: lobbyist.id,
+                    targetId: targetAgent.id,
+                    status: dealStatus,
+                  }),
+                });
+
+                broadcast('agent:deal_proposed', {
+                  initiatorId: lobbyist.id,
+                  initiatorName: lobbyist.displayName,
+                  targetId: targetAgent.id,
+                  targetName: targetAgent.displayName,
+                  billId: bill.id,
+                  billTitle: bill.title,
+                  status: dealStatus,
+                });
+
+                console.warn(`[SIMULATION] Phase 1.5: Vote pact ${dealStatus} — ${lobbyist.displayName} → ${targetAgent.displayName} on "${bill.title}"`);
+              } catch (dealErr) {
+                console.warn('[SIMULATION] Phase 1.5: Deal insert failed:', dealErr);
+              }
+            }
+          }
 
           /* Insert lobbyingEvents row */
           await db.insert(lobbyingEvents).values({
@@ -1258,9 +1329,12 @@ agentTickQueue.process(async () => {
               .where(and(eq(billVotes.billId, deal.billId), eq(billVotes.voterId, deal.targetId)))
               .limit(1);
 
-            /* Parse commitment text for 'yea'/'nay' intent */
-            const initiatorPromisedYea = deal.initiatorCommitment.toLowerCase().includes('yea');
-            const targetPromisedYea = deal.targetCommitment.toLowerCase().includes('yea');
+            /* Parse commitment text for 'yea'/'nay' intent — exact match on the
+               server-composed 'vote <yea|nay>' prefix (bill titles can contain
+               the substring 'yea', e.g. "Fiscal Year..."), with the legacy
+               substring heuristic as fallback for non-conforming strings. */
+            const initiatorPromisedYea = commitmentPromisesYea(deal.initiatorCommitment);
+            const targetPromisedYea = commitmentPromisesYea(deal.targetCommitment);
 
             const initiatorHonored = initiatorVote
               ? (initiatorPromisedYea ? initiatorVote.choice === 'yea' : initiatorVote.choice === 'nay')
@@ -4128,6 +4202,66 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Coalition snapshot failed:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Daily Gazette — ONE LLM recap of the tick's notable events           */
+  /* Failure-soft by construction: the digest is deterministic (never     */
+  /* raw model output), the LLM call returns null instead of throwing,    */
+  /* and the whole block is try/caught — a failed Gazette never fails     */
+  /* the tick.                                                            */
+  /* ------------------------------------------------------------------ */
+  if (rc.gazetteEnabled) {
+    try {
+      const gazetteEvents = await db
+        .select({
+          type: activityEvents.type,
+          title: activityEvents.title,
+          description: activityEvents.description,
+        })
+        .from(activityEvents)
+        .where(and(
+          inArray(activityEvents.type, ['committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'floor_amendment']),
+          gte(activityEvents.createdAt, tickFiredAt),
+        ))
+        .orderBy(asc(activityEvents.createdAt))
+        .limit(40);
+
+      const agentNameById = new Map(activeAgents.map((a) => [a.id, a.displayName]));
+      const digest = buildGazetteDigest({
+        passedBills: passedBillsThisTick.map((b) => ({ title: b.title })),
+        failedBills: failedBillsThisTick.map((b) => ({ title: b.title })),
+        vetoedBills: vetoedByPresidentThisTick.map((b) => ({ title: b.title })),
+        electionWinners: electionResultsThisTick.map((r) => agentNameById.get(r.winnerId) ?? 'a challenger'),
+        brokenDeals: brokenDealsThisTick.map((d) => ({ wrongedPartyName: d.wrongedPartyName })),
+        events: gazetteEvents,
+      });
+
+      if (!digest) {
+        console.warn('[SIMULATION] Gazette: nothing notable this tick — skipping issue');
+      } else {
+        const article = await generateGazetteArticle(digest);
+        if (!article) {
+          console.warn('[SIMULATION] Gazette: article generation failed or invalid — skipping issue');
+        } else {
+          const [issue] = await db.insert(gazetteIssues).values({
+            tickId: currentTick?.id ?? null,
+            headline: article.headline,
+            body: article.body,
+            digest,
+          }).returning({ id: gazetteIssues.id, createdAt: gazetteIssues.createdAt });
+
+          broadcast('press:gazette', {
+            id: issue?.id,
+            headline: article.headline,
+            createdAt: issue?.createdAt,
+          });
+          console.warn(`[SIMULATION] Gazette published: "${article.headline}"`);
+        }
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] Gazette error (non-fatal):', err);
+    }
   }
 
   if (currentTick?.id) {

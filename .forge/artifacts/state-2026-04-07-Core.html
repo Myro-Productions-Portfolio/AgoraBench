@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Molt-Goverment Project State Diagram</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#1a1a1a; --panel:#2d2d2d; --card:#363636; --border:#444;
+    --text:#e0e0e0; --text-muted:#999; --text-dim:#666;
+    --green:#4CAF50; --green-acc:#39d353; --blue:#2196F3;
+    --purple:#7c6af7; --orange:#f0ad4e; --red:#f44336;
+  }
+  html, body {
+    width: 2560px; min-height: 1440px;
+    background: var(--bg); color: var(--text);
+    font-family: Arial, sans-serif; font-size: 17px;
+  }
+  #page { padding: 48px 64px; }
+  h1 { font-size: 30px; color: var(--purple); margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 17px; margin-bottom: 32px; }
+  .generated { font-size: 13px; color: var(--text-dim); margin-top: 48px; }
+
+  /* Custom styles for the state diagram */
+  .grid-container { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .section-title { font-size: 20px; color: var(--blue); margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 24px; }
+  .phase-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed var(--border); }
+  .phase-item:last-child { border-bottom: none; }
+  .phase-name { font-weight: bold; font-size: 18px; }
+  .phase-status { padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: bold; }
+  .status-done { background: var(--green); color: white; }
+  .status-active { background: var(--blue); color: white; }
+  .status-pending { background: var(--text-dim); color: white; }
+  .current-phase-highlight { font-size: 24px; color: var(--purple); margin-bottom: 24px; text-align: center; }
+  .task-list { margin-top: 16px; list-style: none; }
+  .task-group-title { font-size: 16px; font-weight: bold; margin-top: 20px; margin-bottom: 10px; }
+  .task-group-title.high { color: var(--red); }
+  .task-group-title.medium { color: var(--orange); }
+  .task-group-title.low { color: var(--text-dim); }
+  .task-item { margin-bottom: 8px; color: var(--text); display: flex; align-items: baseline; }
+  .task-item.done { text-decoration: line-through; color: var(--text-dim); }
+  .task-item.active { font-weight: bold; color: var(--blue); }
+  .task-item.pending { color: var(--text-muted); }
+  .task-tags { font-size: 12px; color: var(--text-dim); margin-left: auto; white-space: nowrap; }
+  .activity-item { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 12px; margin-bottom: 12px; font-size: 15px; }
+  .activity-item:last-child { margin-bottom: 0; }
+  .activity-item .message { margin-bottom: 4px; line-height: 1.4; }
+  .activity-item .details { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; }
+  .activity-item .hash { font-family: monospace; color: var(--text-muted); }
+  .activity-item .timestamp { color: var(--text-dim); }
+  .task-summary { font-size: 14px; color: var(--text-muted); margin-right: 15px; }
+</style>
+</head>
+<body>
+<div id="page">
+  <h1>Molt-Goverment Project State Diagram</h1>
+  <p class="sub">Current Status & Recent Activity</p>
+
+  <div class="current-phase-highlight">Current Active Project Phase: <strong>Core</strong></div>
+
+  <div class="grid-container">
+    <div class="column">
+      <div class="section-title">Project Phases</div>
+      <div class="card">
+        <div class="phase-item">
+          <span class="phase-name">Setup</span>
+          <div>
+            <span class="task-summary">0/0 Tasks</span>
+            <span class="phase-status status-done">Done</span>
+          </div>
+        </div>
+        <div class="phase-item">
+          <span class="phase-name">Core</span>
+          <div>
+            <span class="task-summary">0/0 Tasks</span>
+            <span class="phase-status status-active">Active</span>
+          </div>
+        </div>
+        <div class="phase-item">
+          <span class="phase-name">Integration</span>
+          <div>
+            <span class="task-summary">0/0 Tasks</span>
+            <span class="phase-status status-pending">Pending</span>
+          </div>
+        </div>
+        <div class="phase-item">
+          <span class="phase-name">Polish</span>
+          <div>
+            <span class="task-summary">0/0 Tasks</span>
+            <span class="phase-status status-pending">Pending</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">Tasks Board</div>
+      <div class="card">
+        <div class="task-group-title high">High Priority</div>
+        <ul class="task-list">
+          <li class="task-item done">Enable cloudflared on boot on Linux box <span class="task-tags">fix</span></li>
+          <li class="task-item active">Validate election trigger/advance endpoints with live simulation <span class="task-tags">test</span></li>
+          <li class="task-item pending">Test TickStageBar rendering across all 9 phases <span class="task-tags">test</span></li>
+        </ul>
+        <div class="task-group-title medium">Medium Priority</div>
+        <ul class="task-list">
+          <li class="task-item pending">Add admin UI for selecting LLM model from models endpoint <span class="task-tags">feat</span></li>
+          <li class="task-item pending">Add error toast feedback for failed election operations <span class="task-tags">feat</span></li>
+          <li class="task-item pending">E2e test coverage for admin election management flow <span class="task-tags">test</span></li>
+          <li class="task-item pending">Document orchestrator API in docs/ <span class="task-tags">docs</span></li>
+          <li class="task-item pending">Flesh out wiki articles as simulation matures <span class="task-tags">docs</span></li>
+          <li class="task-item done">Add live logs drawer to admin panel <span class="task-tags">feat</span></li>
+        </ul>
+        <div class="task-group-title low">Low Priority</div>
+        <ul class="task-list">
+          <li class="task-item pending">Light mode theme toggle <span class="task-tags">feat</span></li>
+          <li class="task-item pending">Playwright e2e test suite <span class="task-tags">test</span></li>
+          <li class="task-item pending">OpenAPI/Swagger documentation for all endpoints <span class="task-tags">docs</span></li>
+          <li class="task-item pending">Expand unit test coverage to 80%+ <span class="task-tags">test</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="column">
+      <div class="section-title">Recent Activity (Last 10 Commits)</div>
+      <div class="card">
+        <div class="activity-item">
+          <div class="message">docs: update TODO for 2026-04-07 session + add logs drawer spec and plan</div>
+          <div class="details">
+            <span class="hash">04af807fec53</span>
+            <span class="timestamp">2026-04-07 00:05:32 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">fix(admin): lock admin to full viewport height, hide footer</div>
+          <div class="details">
+            <span class="hash">a8deb37d492a</span>
+            <span class="timestamp">2026-04-06 21:09:07 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">docs: fix deploy command in CLAUDE.md — never use dev:local for live site</div>
+          <div class="details">
+            <span class="hash">dd46537a07bd</span>
+            <span class="timestamp">2026-04-06 21:07:18 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(logs): wire LogsDrawer into AdminPage sidebar and layout</div>
+          <div class="details">
+            <span class="hash">841b31b40f31</span>
+            <span class="timestamp">2026-04-06 21:02:36 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(logs): add LogsDrawer component</div>
+          <div class="details">
+            <span class="hash">3ffb0f5f98dd</span>
+            <span class="timestamp">2026-04-06 21:00:24 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(logs): add LogEntry type, state, and WS subscription</div>
+          <div class="details">
+            <span class="hash">5c065cad45c4</span>
+            <span class="timestamp">2026-04-06 20:58:09 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(logs): add broadcastLog and console.warn intercept</div>
+          <div class="details">
+            <span class="hash">114abbdd6055</span>
+            <span class="timestamp">2026-04-06 20:57:21 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(logs): add LOG_ENTRY to WS_EVENTS</div>
+          <div class="details">
+            <span class="hash">91e99db0aa98</span>
+            <span class="timestamp">2026-04-06 20:56:20 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">forge: add FORGE.md, forge-data, and archivist sync workflow</div>
+          <div class="details">
+            <span class="hash">9d84c48a007b</span>
+            <span class="timestamp">2026-04-06 20:39:21 -0400</span>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="message">feat(agge): add Bob mode indicator and controls to AGGE admin tab</div>
+          <div class="details">
+            <span class="hash">80253b8ca5fc</span>
+            <span class="timestamp">2026-04-06 12:54:35 -0400</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="generated">Generated by Forge Master · April 07, 2026 16:00 UTC</p>
+</div>
+</body>
+</html>

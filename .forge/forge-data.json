@@ -1,10 +1,55 @@
 {
-  "project": "Molt-Goverment",
-  "path": "/Volumes/DevDrive-M4Pro/Projects/Molt-Goverment",
+  "project": "AgoraBench",
+  "path": "/Volumes/DevDrive-M4Pro/Projects/AgoraBench",
   "branch": "main",
-  "updatedAt": "2026-04-10T16:00:01.550Z",
+  "updatedAt": "2026-05-08T16:00:01.392Z",
   "filesChanged": 0,
   "commits": [
+    {
+      "hash": "594b198456dabffec3dc177b55a87fbbd7f853f3",
+      "message": "feat(mcp): add legacy SSE transport at /mcp/sse alongside Streamable HTTP",
+      "timestamp": "2026-04-20 23:25:39 -0400"
+    },
+    {
+      "hash": "45e3273f1a6a7e734731d6d7e59ece0c0f47b3ea",
+      "message": "fix(orchestrator-auth): accept bearer via header, X-Orchestrator-Key, or query param",
+      "timestamp": "2026-04-20 21:46:51 -0400"
+    },
+    {
+      "hash": "6e146379be8a0f0c92f56c1fc85f187a4ab389a0",
+      "message": "docs: sync CLAUDE.md + TODO.md with 2026-04-19 state",
+      "timestamp": "2026-04-19 20:15:09 -0400"
+    },
+    {
+      "hash": "19b49ad8a5fb6a8cc4ad0d224cd9100c7582ace9",
+      "message": "feat(mcp): add Streamable HTTP MCP server for orchestrator at /mcp",
+      "timestamp": "2026-04-19 19:38:25 -0400"
+    },
+    {
+      "hash": "94f03ba3359714dab7d0266200c70fda3169ad16",
+      "message": "docs: end-of-session 2026-04-10 — congress context live, services stopped",
+      "timestamp": "2026-04-10 22:19:58 -0400"
+    },
+    {
+      "hash": "271a717b69f114eb3994bd034f4defc80169a84d",
+      "message": "docs(todo): 30-agent tick timing data + staged config changes",
+      "timestamp": "2026-04-10 18:45:00 -0400"
+    },
+    {
+      "hash": "d158a763f2ea63666f0763bf6d4471db78e5473d",
+      "message": "feat(seed): expansion script + 20 new agents (10→30 total)",
+      "timestamp": "2026-04-10 17:53:00 -0400"
+    },
+    {
+      "hash": "c8c4b57b89e7f6c263711935feaf2c7c4d4fd968",
+      "message": "docs(todo): log 2026-04-10 election fix + open follow-ups",
+      "timestamp": "2026-04-10 12:53:00 -0400"
+    },
+    {
+      "hash": "1bd622a8fe1414213b49a3aeb08e60b40483aa1c",
+      "message": "fix(elections): admin advance actually finalizes — unbreak president pipeline",
+      "timestamp": "2026-04-10 12:40:06 -0400"
+    },
     {
       "hash": "ce26d7b33e2f6a0924b68e21a2d0eff4c038e7e0",
       "message": "docs: update TODO and forge for 2026-04-07 session 2",
@@ -959,54 +1004,63 @@
       "hash": "fbe438ad06c7f31ae62cf0cb7b0ab8d6925c8a57",
       "message": "Merge pull request 'fix(admin): tick counter + forum refresh fixes' (#161) from dev into main",
       "timestamp": "2026-02-19 21:00:01 +0000"
-    },
-    {
-      "hash": "3f8110060a553e8d0f7a489795948ec3942f4a9e",
-      "message": "Merge pull request 'fix(admin): tick counter uses tick_log; forum list refreshes on replies' (#160) from feature/admin-tick-counter-forum-refresh into dev",
-      "timestamp": "2026-02-19 20:59:52 +0000"
-    },
-    {
-      "hash": "c5aa796e3f3f881e9f890306edae919c2d17fe4d",
-      "message": "fix(admin): use tick_log for completed count; fix forum list refresh on replies",
-      "timestamp": "2026-02-19 15:59:31 -0500"
-    },
-    {
-      "hash": "fa0d8289c412103eecd71cb2ba07e051ab1d8616",
-      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#159) from dev into main",
-      "timestamp": "2026-02-19 20:38:18 +0000"
-    },
-    {
-      "hash": "a9a12a7288ccf214e051ffddbe174b1cdf9a7a92",
-      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#158) from feature/forum-reply-simulation into dev",
-      "timestamp": "2026-02-19 20:37:52 +0000"
-    },
-    {
-      "hash": "ee9fc8183f24e1db32046daf4ec842b74b63ff24",
-      "message": "feat(ui): subscribe to forum:reply WS event — toast + live ticker",
-      "timestamp": "2026-02-19 15:31:31 -0500"
-    },
-    {
-      "hash": "88d9c0d77c2426791db8bcc560e143942308da43",
-      "message": "feat(ui): render @mentions as gold highlights and reply badges in forum thread view",
-      "timestamp": "2026-02-19 15:31:23 -0500"
-    },
-    {
-      "hash": "c80512c99e104f8cdd58cf004a52c2ddeb13b2cf",
-      "message": "feat(simulation): Phase 17 — agent forum replies with @mention tracking",
-      "timestamp": "2026-02-19 15:23:51 -0500"
-    },
-    {
-      "hash": "c91fee29359074a4c010910004246d6b2cd00f0a",
-      "message": "chore(db): push pending_mentions migration",
-      "timestamp": "2026-02-19 15:20:48 -0500"
-    },
-    {
-      "hash": "a5a0ce4eec0f035746ef40b19167d5af42de34ef",
-      "message": "feat(schema): add pending_mentions table + forum_reply message type",
-      "timestamp": "2026-02-19 15:17:06 -0500"
     }
   ],
   "activity": [
+    {
+      "hash": "594b198456dabffec3dc177b55a87fbbd7f853f3",
+      "message": "feat(mcp): add legacy SSE transport at /mcp/sse alongside Streamable HTTP",
+      "timestamp": "2026-04-20 23:25:39 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "45e3273f1a6a7e734731d6d7e59ece0c0f47b3ea",
+      "message": "fix(orchestrator-auth): accept bearer via header, X-Orchestrator-Key, or query param",
+      "timestamp": "2026-04-20 21:46:51 -0400",
+      "type": "fix"
+    },
+    {
+      "hash": "6e146379be8a0f0c92f56c1fc85f187a4ab389a0",
+      "message": "docs: sync CLAUDE.md + TODO.md with 2026-04-19 state",
+      "timestamp": "2026-04-19 20:15:09 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "19b49ad8a5fb6a8cc4ad0d224cd9100c7582ace9",
+      "message": "feat(mcp): add Streamable HTTP MCP server for orchestrator at /mcp",
+      "timestamp": "2026-04-19 19:38:25 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "94f03ba3359714dab7d0266200c70fda3169ad16",
+      "message": "docs: end-of-session 2026-04-10 — congress context live, services stopped",
+      "timestamp": "2026-04-10 22:19:58 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "271a717b69f114eb3994bd034f4defc80169a84d",
+      "message": "docs(todo): 30-agent tick timing data + staged config changes",
+      "timestamp": "2026-04-10 18:45:00 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "d158a763f2ea63666f0763bf6d4471db78e5473d",
+      "message": "feat(seed): expansion script + 20 new agents (10→30 total)",
+      "timestamp": "2026-04-10 17:53:00 -0400",
+      "type": "feat"
+    },
+    {
+      "hash": "c8c4b57b89e7f6c263711935feaf2c7c4d4fd968",
+      "message": "docs(todo): log 2026-04-10 election fix + open follow-ups",
+      "timestamp": "2026-04-10 12:53:00 -0400",
+      "type": "docs"
+    },
+    {
+      "hash": "1bd622a8fe1414213b49a3aeb08e60b40483aa1c",
+      "message": "fix(elections): admin advance actually finalizes — unbreak president pipeline",
+      "timestamp": "2026-04-10 12:40:06 -0400",
+      "type": "fix"
+    },
     {
       "hash": "ce26d7b33e2f6a0924b68e21a2d0eff4c038e7e0",
       "message": "docs: update TODO and forge for 2026-04-07 session 2",
@@ -2152,60 +2206,6 @@
       "message": "Merge pull request 'fix(admin): tick counter + forum refresh fixes' (#161) from dev into main",
       "timestamp": "2026-02-19 21:00:01 +0000",
       "type": "commit"
-    },
-    {
-      "hash": "3f8110060a553e8d0f7a489795948ec3942f4a9e",
-      "message": "Merge pull request 'fix(admin): tick counter uses tick_log; forum list refreshes on replies' (#160) from feature/admin-tick-counter-forum-refresh into dev",
-      "timestamp": "2026-02-19 20:59:52 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "c5aa796e3f3f881e9f890306edae919c2d17fe4d",
-      "message": "fix(admin): use tick_log for completed count; fix forum list refresh on replies",
-      "timestamp": "2026-02-19 15:59:31 -0500",
-      "type": "fix"
-    },
-    {
-      "hash": "fa0d8289c412103eecd71cb2ba07e051ab1d8616",
-      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#159) from dev into main",
-      "timestamp": "2026-02-19 20:38:18 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "a9a12a7288ccf214e051ffddbe174b1cdf9a7a92",
-      "message": "Merge pull request 'feat(simulation): Phase 17 — agent forum replies with @mention tracking' (#158) from feature/forum-reply-simulation into dev",
-      "timestamp": "2026-02-19 20:37:52 +0000",
-      "type": "commit"
-    },
-    {
-      "hash": "ee9fc8183f24e1db32046daf4ec842b74b63ff24",
-      "message": "feat(ui): subscribe to forum:reply WS event — toast + live ticker",
-      "timestamp": "2026-02-19 15:31:31 -0500",
-      "type": "feat"
-    },
-    {
-      "hash": "88d9c0d77c2426791db8bcc560e143942308da43",
-      "message": "feat(ui): render @mentions as gold highlights and reply badges in forum thread view",
-      "timestamp": "2026-02-19 15:31:23 -0500",
-      "type": "feat"
-    },
-    {
-      "hash": "c80512c99e104f8cdd58cf004a52c2ddeb13b2cf",
-      "message": "feat(simulation): Phase 17 — agent forum replies with @mention tracking",
-      "timestamp": "2026-02-19 15:23:51 -0500",
-      "type": "feat"
-    },
-    {
-      "hash": "c91fee29359074a4c010910004246d6b2cd00f0a",
-      "message": "chore(db): push pending_mentions migration",
-      "timestamp": "2026-02-19 15:20:48 -0500",
-      "type": "commit"
-    },
-    {
-      "hash": "a5a0ce4eec0f035746ef40b19167d5af42de34ef",
-      "message": "feat(schema): add pending_mentions table + forum_reply message type",
-      "timestamp": "2026-02-19 15:17:06 -0500",
-      "type": "feat"
     }
   ],
   "phases": [

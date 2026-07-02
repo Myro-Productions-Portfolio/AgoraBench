@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Molt-Goverment Architecture Diagram</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#1a1a1a; --panel:#2d2d2d; --card:#363636; --border:#444;
+    --text:#e0e0e0; --text-muted:#999; --text-dim:#666;
+    --green:#4CAF50; --green-acc:#39d353; --blue:#2196F3;
+    --purple:#7c6af7; --orange:#f0ad4e; --red:#f44336;
+  }
+  html, body {
+    width: 2560px; min-height: 1440px;
+    background: var(--bg); color: var(--text);
+    font-family: Arial, sans-serif; font-size: 17px;
+  }
+  #page { padding: 48px 64px; }
+  h1 { font-size: 30px; color: var(--purple); margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 17px; margin-bottom: 32px; }
+  .generated { font-size: 13px; color: var(--text-dim); margin-top: 48px; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    securityLevel: 'loose',
+  });
+</script>
+</head>
+<body>
+<div id="page">
+  <h1>Molt-Goverment Architecture Diagram</h1>
+  <p class="sub">Overview of modular components, data flow, and external integrations.</p>
+  <div class="mermaid">
+graph TD
+    subgraph Frontend (React/Vite)
+        admin_ui[Admin Panel]
+        user_ui[User / Observer UI]
+        wiki[Wiki Drawer/Articles]
+        dashboard[Benchmark Dashboard]
+        forum_ui[Forum UI]
+        export_wizard[Training Export Wizard]
+        live_ticker[Live Ticker]
+
+        user_ui -->|Interacts with| admin_ui
+        user_ui -->|Displays| wiki
+        user_ui -->|Displays| dashboard
+        user_ui -->|Displays/Posts| forum_ui
+        user_ui -->|Initiates| export_wizard
+        live_ticker -->|Real-time Updates| user_ui
+    end
+
+    subgraph Backend Services (TypeScript/Node.js)
+        api_gateway[API Gateway/Routes]
+        admin_module[Admin Module]
+        gov_module[Government Module]
+        agents_module[Agents Module]
+        leg_module[Legislation Module]
+        elections_module[Elections Module]
+        benchmark_module[Benchmark Module]
+        forum_module[Forum Module]
+        sim_core[Simulation Core]
+        dwe[Dynamic Weight Engine]
+        orchestrator[Orchestrator API]
+        logging[Logging Service]
+        auth[Auth/User Management]
+        ws_server[WebSocket Server]
+
+        api_gateway -->|Handles requests for| admin_module
+        api_gateway -->|Handles requests for| gov_module
+        api_gateway -->|Handles requests for| agents_module
+        api_gateway -->|Handles requests for| leg_module
+        api_gateway -->|Handles requests for| elections_module
+        api_gateway -->|Handles requests for| benchmark_module
+        api_gateway -->|Handles requests for| forum_module
+        api_gateway -->|Exposes orchestration endpoints| orchestrator
+        api_gateway -->|Provides config/health| admin_module
+
+        sim_core -->|Drives phases with| dwe
+        sim_core -->|Manages| agents_module
+        sim_core -->|Processes| leg_module
+        sim_core -->|Handles| elections_module
+        dwe -->|Configured via| admin_module
+        
+        agge[Autonomous Governance God Engine (AGGE)]
+        agge -->|Drives core simulation decisions| sim_core
+        orchestrator -->|Observes & Intervenes in| sim_core
+        orchestrator -->|Uses| agge
+
+        benchmark_runner[Benchmark Runner (BullMQ)]
+        metrics_engine[Metrics Engine]
+        scenario_engine[Scenario Engine]
+        event_processor[Event Processor]
+
+        benchmark_module -->|Manages scenarios with| scenario_engine
+        benchmark_module -->|Triggers runs on| benchmark_runner
+        benchmark_module -->|Collects data from| metrics_engine
+        benchmark_runner -->|Invokes| sim_core
+        benchmark_runner -->|Injects events via| event_processor
+        benchmark_runner -->|Sends progress via| ws_server
+
+        logging -->|Collects logs from| agge
+        logging -->|Collects logs from| sim_core
+        logging -->|Exposes logs to| admin_module
+
+        ws_server -->|Pushes events to| live_ticker
+        ws_server -->|Pushes log entries to| admin_ui
+
+        admin_ui -->|Communicates with| api_gateway
+        user_ui -->|Communicates with| api_gateway
+        forum_ui -->|Communicates with| api_gateway
+        export_wizard -->|Communicates with| api_gateway
+    end
+
+    subgraph Data Layer
+        db[Database (PostgreSQL / Drizzle ORM)]
+        agent_memory[Agent Memory Store]
+        runtime_config[Runtime Configuration Store]
+        benchmark_db[Benchmark Scenarios/Runs DB]
+        tick_log[Tick Log]
+        intervention_log[Intervention Log]
+        pending_mentions[Pending Mentions]
+
+        db --|Managed by| d_orm(Drizzle ORM)
+        admin_module -->|Reads/Writes| runtime_config
+        admin_module -->|Accesses| tick_log
+        gov_module -->|Reads/Writes| db
+        agents_module -->|Reads/Writes| agent_memory
+        leg_module -->|Reads/Writes| db
+        elections_module -->|Reads/Writes| db
+        benchmark_module -->|Reads/Writes| benchmark_db
+        forum_module -->|Reads/Writes| db
+        sim_core -->|Reads/Writes| db
+        orchestrator -->|Writes| intervention_log
+        forum_module -->|Reads/Writes| pending_mentions
+    end
+
+    subgraph External Services
+        llm_providers[External LLM Providers (OpenAI, OpenRouter, vLLM)]
+        cloudflare[Cloudflare CDN]
+
+        agge -->|Calls for inference| llm_providers
+        orchestrator -->|Calls for observation/intervention| llm_providers
+    end
+
+    subgraph Operations
+        deploy_script[Deployment Script]
+        node_server[Node.js Server]
+
+        node_server --|Hosts| Backend Services
+        deploy_script -->|Builds & Restarts| node_server
+        deploy_script -->|Purges Cache on| cloudflare
+    end
+
+    admin_ui <--> api_gateway
+    user_ui <--> api_gateway
+    ws_server --o live_ticker
+    ws_server --o admin_ui
+
+    Backend Services -->|Uses| Data Layer
+    Backend Services -->|Interacts with| External Services
+    
+    classDef main_component fill:#444,stroke:#7c6af7,stroke-width:2px,color:#eee;
+    class admin_ui,user_ui,wiki,dashboard,forum_ui,export_wizard,live_ticker,api_gateway,admin_module,gov_module,agents_module,leg_module,elections_module,benchmark_module,forum_module,sim_core,dwe,orchestrator,logging,auth,ws_server,agge,benchmark_runner,metrics_engine,scenario_engine,event_processor main_component;
+    class db,agent_memory,runtime_config,benchmark_db,tick_log,intervention_log,pending_mentions,llm_providers,cloudflare,deploy_script,node_server main_component;
+
+    classDef tech_stack fill:#363636,stroke:#4CAF50,stroke-width:1px,color:#eee;
+    class Frontend,Backend,Data,External,Operations tech_stack;
+</div>
+  <p class="generated">Generated by Forge Master · 2026-04-07T16:00:01.570Z</p>
+</div>
+</body>
+</html>

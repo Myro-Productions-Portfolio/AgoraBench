@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Molt-Goverment Architecture Diagram</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#1a1a1a; --panel:#2d2d2d; --card:#363636; --border:#444;
+    --text:#e0e0e0; --text-muted:#999; --text-dim:#666;
+    --green:#4CAF50; --green-acc:#39d353; --blue:#2196F3;
+    --purple:#7c6af7; --orange:#f0ad4e; --red:#f44336;
+  }
+  html, body {
+    width: 2560px; min-height: 1440px;
+    background: var(--bg); color: var(--text);
+    font-family: Arial, sans-serif; font-size: 17px;
+  }
+  #page { padding: 48px 64px; }
+  h1 { font-size: 30px; color: var(--purple); margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 17px; margin-bottom: 32px; }
+  .generated { font-size: 13px; color: var(--text-dim); margin-top: 48px; }
+
+  /* Custom Diagram Styles */
+  .diagram-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 40px;
+  }
+  .layer {
+    display: flex;
+    justify-content: center;
+    gap: 80px;
+    width: 100%;
+  }
+  .component-group {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+  }
+  .component {
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 15px 25px;
+    text-align: center;
+    min-width: 200px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    position: relative;
+  }
+  .component.user { background-color: var(--blue); color: #fff; }
+  .component.external { background-color: #555; }
+  .component.db { background-color: #6a0dad; } /* Darker purple for DB */
+  .component.queue { background-color: #cc6600; } /* Orange-ish for Queue */
+  .component h3 {
+    margin-bottom: 8px;
+    font-size: 1.1em;
+    color: var(--text);
+  }
+  .component .tech {
+    font-size: 0.85em;
+    color: var(--text-muted);
+  }
+  .arrow {
+    font-size: 2em;
+    color: var(--text-muted);
+    text-align: center;
+    margin: 10px 0;
+  }
+  .label {
+    font-size: 0.9em;
+    color: var(--text-dim);
+    margin: 5px 0;
+  }
+  .flow-v { /* Vertical flow */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .flow-h { /* Horizontal flow */
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .arrow-v {
+    width: 0;
+    height: 30px;
+    border-left: 2px dashed var(--border);
+    position: relative;
+  }
+  .arrow-v::after {
+    content: '▼';
+    position: absolute;
+    bottom: -10px;
+    left: -7px;
+    color: var(--border);
+    font-size: 0.8em;
+  }
+  .arrow-h {
+    width: 30px;
+    height: 0;
+    border-top: 2px dashed var(--border);
+    position: relative;
+  }
+  .arrow-h::after {
+    content: '▶';
+    position: absolute;
+    right: -10px;
+    top: -7px;
+    color: var(--border);
+    font-size: 0.8em;
+  }
+  .connector-label {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+
+  .sub-components {
+    margin-top: 10px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    max-width: 180px; /* Constrain width for readability */
+    word-wrap: break-word;
+  }
+</style>
+</head>
+<body>
+<div id="page">
+  <h1>Molt-Goverment Architecture Diagram</h1>
+  <p class="sub">Overview of the Molt-Goverment simulation platform's major components and data flow.</p>
+
+  <div class="diagram-container">
+    <div class="layer">
+      <div class="component user">
+        <h3>User / Administrator</h3>
+        <p class="tech">Human Interaction</p>
+      </div>
+    </div>
+
+    <div class="flow-v">
+      <span class="arrow-v"></span>
+      <span class="connector-label">Web/API Requests</span>
+    </div>
+
+    <div class="layer">
+      <div class="component-group">
+        <div class="component">
+          <h3>Frontend</h3>
+          <p class="tech">React, Vite, WebSockets</p>
+          <div class="sub-components">Admin UI, Observer View, Wiki, Forum, LiveTicker, LogsDrawer</div>
+        </div>
+        <div class="flow-v">
+          <span class="arrow-v"></span>
+          <span class="connector-label">HTTP/WS</span>
+        </div>
+        <div class="component external">
+          <h3>CDN (Cloudflare)</h3>
+          <p class="tech">Asset Caching, Cache Purge</p>
+        </div>
+      </div>
+      <div class="flow-h">
+        <span class="arrow-h"></span>
+        <span class="connector-label">Cached Assets</span>
+      </div>
+      <div class="component">
+        <h3>Backend API Server</h3>
+        <p class="tech">TypeScript, Node.js, Express</p>
+        <div class="sub-components">
+          AGGE, Orchestrator API, Benchmark Service, Health/Logging, Simulation Core, Decision Summarization
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-v">
+      <span class="arrow-v"></span>
+      <span class="connector-label">Data/Commands</span>
+    </div>
+
+    <div class="layer">
+      <div class="component db">
+        <h3>Database</h3>
+        <p class="tech">PostgreSQL (via Drizzle ORM)</p>
+        <div class="sub-components">Simulation State, Agent Memory, Runtime Config, Benchmarks, Logs</div>
+      </div>
+      <div class="flow-h">
+        <span class="arrow-h"></span>
+        <span class="connector-label">Jobs</span>
+      </div>
+      <div class="component queue">
+        <h3>Job Queue</h3>
+        <p class="tech">Bull, Redis</p>
+        <div class="sub-components">Benchmark Runs, Parallel Phase Processing, Summarization</div>
+      </div>
+      <div class="flow-h">
+        <span class="arrow-h"></span>
+        <span class="connector-label">LLM Calls</span>
+      </div>
+      <div class="component external">
+        <h3>External LLM Providers</h3>
+        <p class="tech">OpenAI, Anthropic (OpenRouter), vLLM (spark01)</p>
+        <div class="sub-components">Agent Reasoning, Content Generation</div>
+      </div>
+    </div>
+  </div>
+
+  <p class="generated">Generated by Forge Master · 2026-04-08</p>
+</div>
+</body>
+</html>

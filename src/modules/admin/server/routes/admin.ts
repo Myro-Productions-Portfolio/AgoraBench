@@ -320,6 +320,11 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.maxAmendmentsPerBillPerTick = Math.round(v);
     }
 
+    // Committees
+    if (body.committeeMarkupEnabled !== undefined) {
+      update.committeeMarkupEnabled = Boolean(body.committeeMarkupEnabled);
+    }
+
     // Bill Withdrawal
     if (body.billWithdrawalEnabled !== undefined) {
       update.billWithdrawalEnabled = Boolean(body.billWithdrawalEnabled);

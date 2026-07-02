@@ -30,12 +30,15 @@ import {
   lobbyingEvents,
   agentDeals,
   agentStatements,
+  committeeMemberships,
+  governmentEvents,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
+import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
-import { ALIGNMENT_ORDER } from '@shared/constants';
+import { ALIGNMENT_ORDER, COMMITTEE_TYPES } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 
@@ -119,6 +122,173 @@ agentTickQueue.process(async () => {
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
   /* Election results from Phase 14, read by Phase 11.5 */
   let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 0.5: Committee Assignment & Chair Succession                    */
+  /* Deterministic, zero LLM. Every active agent sits on 2 of the four     */
+  /* canonical committees (scored from agent_policy_positions; stable      */
+  /* hash fallback for new agents), and every canonical committee gets an  */
+  /* active chair — the insert that wakes the Phase 3 committee review     */
+  /* LLM call and the Phase 1.7 chair amendment bonus. Sticky: existing    */
+  /* members are never re-scored, so a mid-life DB stays stable.           */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 0.5: Committee Assignment & Chair Succession');
+
+    const activeAgentIds05 = activeAgents.map((a) => a.id);
+    const activeAgentIdSet05 = new Set(activeAgentIds05);
+    const agentById05 = new Map(activeAgents.map((a) => [a.id, a]));
+
+    const allMemberships05 = await db.select().from(committeeMemberships);
+    const policyRows05 = activeAgentIds05.length > 0
+      ? await db
+          .select({
+            agentId: agentPolicyPositions.agentId,
+            category: agentPolicyPositions.category,
+            supportCount: agentPolicyPositions.supportCount,
+            opposeCount: agentPolicyPositions.opposeCount,
+          })
+          .from(agentPolicyPositions)
+          .where(inArray(agentPolicyPositions.agentId, activeAgentIds05))
+      : [];
+    const engagementMap05 = new Map<string, number>();
+    for (const row of policyRows05) {
+      engagementMap05.set(`${row.agentId}:${row.category}`, row.supportCount + row.opposeCount);
+    }
+    const engagementOf05 = (agentId: string, committee: string): number =>
+      engagementMap05.get(`${agentId}:${committee}`) ?? 0;
+
+    /* (1) Deactivate memberships whose agent is no longer active */
+    const staleMembershipIds05 = allMemberships05
+      .filter((m) => m.isActive && !activeAgentIdSet05.has(m.agentId))
+      .map((m) => m.id);
+    if (staleMembershipIds05.length > 0) {
+      await db
+        .update(committeeMemberships)
+        .set({ isActive: false, endedAt: new Date() })
+        .where(inArray(committeeMemberships.id, staleMembershipIds05));
+      console.warn(`[SIMULATION] Phase 0.5: Deactivated ${staleMembershipIds05.length} memberships of inactive agents`);
+    }
+    const staleMembershipIdSet05 = new Set(staleMembershipIds05);
+
+    /* Local post-deactivation view: agentId -> committees */
+    const membershipsByAgent05 = new Map<string, string[]>();
+    for (const m of allMemberships05) {
+      if (!m.isActive || staleMembershipIdSet05.has(m.id)) continue;
+      const list = membershipsByAgent05.get(m.agentId) ?? [];
+      list.push(m.committee);
+      membershipsByAgent05.set(m.agentId, list);
+    }
+
+    /* (2) Seat every active agent with no active membership on their top-2
+       committees (reactivate-or-insert via the (agentId, committee) unique) */
+    let newlySeated05 = 0;
+    for (const agent of activeAgents) {
+      if ((membershipsByAgent05.get(agent.id)?.length ?? 0) > 0) continue;
+      const topCommittees = pickTopCommittees(agent.id, (committee) => engagementOf05(agent.id, committee), 2);
+      for (const committee of topCommittees) {
+        await db
+          .insert(committeeMemberships)
+          .values({ agentId: agent.id, committee, isActive: true, assignedAt: new Date(), endedAt: null })
+          .onConflictDoUpdate({
+            target: [committeeMemberships.agentId, committeeMemberships.committee],
+            set: { isActive: true, assignedAt: new Date(), endedAt: null },
+          });
+      }
+      membershipsByAgent05.set(agent.id, [...topCommittees]);
+      newlySeated05++;
+    }
+    if (newlySeated05 > 0) {
+      console.warn(`[SIMULATION] Phase 0.5: Seated ${newlySeated05} agents on committees`);
+    }
+
+    /* committee -> active member agentIds (post-assignment view) */
+    const membersByCommittee05 = new Map<string, string[]>();
+    for (const [agentId, agentCommittees] of membershipsByAgent05) {
+      for (const committee of agentCommittees) {
+        const list = membersByCommittee05.get(committee) ?? [];
+        list.push(agentId);
+        membersByCommittee05.set(committee, list);
+      }
+    }
+
+    /* (3) Chair succession. Title `${committee} Committee Chair` is
+       load-bearing: Phase 1.7's chair bonus and Phase 3's chair lookup
+       both match chairs via title.includes(committee). */
+    const chairPositions05 = await db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.isActive, true), eq(positions.type, 'committee_chair')));
+
+    /* Pass 1 — inventory: keep the newest active chair row per committee,
+       retire duplicates and chairs whose agent went inactive. */
+    const sittingChairIds05 = new Set<string>();
+    const vacantCommittees05: CanonicalCommittee[] = [];
+    const chairRowsToRetire05: string[] = [];
+    for (const committee of COMMITTEE_TYPES) {
+      const rows = chairPositions05
+        .filter((p) => p.title.toLowerCase().includes(committee.toLowerCase()))
+        .sort((a, b) => b.startDate.getTime() - a.startDate.getTime());
+      const [newest, ...duplicates] = rows;
+      for (const dup of duplicates) chairRowsToRetire05.push(dup.id);
+      if (newest && activeAgentIdSet05.has(newest.agentId)) {
+        sittingChairIds05.add(newest.agentId);
+      } else {
+        if (newest) chairRowsToRetire05.push(newest.id);
+        vacantCommittees05.push(committee);
+      }
+    }
+    if (chairRowsToRetire05.length > 0) {
+      await db
+        .update(positions)
+        .set({ isActive: false, endDate: new Date() })
+        .where(inArray(positions.id, chairRowsToRetire05));
+      console.warn(`[SIMULATION] Phase 0.5: Retired ${chairRowsToRetire05.length} stale/duplicate chair positions`);
+    }
+
+    /* Pass 2 — fill vacancies: highest engagement + approval among the
+       committee's members, excluding sitting chairs of other committees. */
+    for (const committee of vacantCommittees05) {
+      const candidates = (membersByCommittee05.get(committee) ?? [])
+        .filter((id) => activeAgentIdSet05.has(id))
+        .map((id) => ({
+          agentId: id,
+          engagement: engagementOf05(id, committee),
+          approvalRating: agentById05.get(id)?.approvalRating ?? 0,
+        }));
+      const pick = selectChair(candidates, sittingChairIds05);
+      const chairAgent = pick ? agentById05.get(pick.agentId) : undefined;
+      if (!pick || !chairAgent) {
+        console.warn(`[SIMULATION] Phase 0.5: No eligible chair for the ${committee} Committee — Phase 3 auto-advances its bills.`);
+        continue;
+      }
+
+      await db.insert(positions).values({
+        agentId: chairAgent.id,
+        type: 'committee_chair',
+        title: `${committee} Committee Chair`,
+        startDate: new Date(),
+        isActive: true,
+      });
+      sittingChairIds05.add(chairAgent.id);
+
+      await db.insert(activityEvents).values({
+        type: 'appointment',
+        agentId: chairAgent.id,
+        title: `${chairAgent.displayName} appointed ${committee} Committee Chair`,
+        description: `Appointed chair of the ${committee} Committee (highest policy engagement and approval among its members)`,
+        metadata: JSON.stringify({ committee, engagement: pick.engagement, approvalRating: pick.approvalRating }),
+      });
+      broadcast('government:chair_appointed', {
+        agentId: chairAgent.id,
+        agentName: chairAgent.displayName,
+        committee,
+      });
+      console.warn(`[SIMULATION] Phase 0.5: ${chairAgent.displayName} appointed ${committee} Committee Chair`);
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 0.5 error:', err);
+  }
 
   /* ---- Floor working set (Phases 1, 1.5, 1.7, 2) ---------------------- */
   /* Phase 2 voting is the only unbounded O(bills × agents) LLM phase. Cap  */
@@ -1267,6 +1437,53 @@ agentTickQueue.process(async () => {
         chairPolicyMap.set(`${pp.agentId}:${pp.category}`, { support: pp.supportCount, oppose: pp.opposeCount });
       }
 
+      /* Active committee memberships (Phase 0.5) — markup ratification
+         voters and hearing attendees. Failure-soft: an empty roster only
+         means markups can't ratify and hearings list no attendees. */
+      const activeAgentIdSet3 = new Set(activeAgents.map((a) => a.id));
+      const membersByCommittee3 = new Map<string, string[]>();
+      try {
+        const membershipRows3 = await db
+          .select({ agentId: committeeMemberships.agentId, committee: committeeMemberships.committee })
+          .from(committeeMemberships)
+          .where(eq(committeeMemberships.isActive, true));
+        for (const m of membershipRows3) {
+          if (!activeAgentIdSet3.has(m.agentId)) continue;
+          const list = membersByCommittee3.get(m.committee) ?? [];
+          list.push(m.agentId);
+          membersByCommittee3.set(m.committee, list);
+        }
+      } catch (membershipErr) {
+        console.warn('[SIMULATION] Phase 3: Membership fetch error (markup ratification degraded):', membershipErr);
+      }
+
+      /* One committee_hearing row per reviewed (bill, tick). The public
+         Calendar (GET /api/calendar + CalendarPage) already reads and
+         styles committee_hearing — governmentEvents had zero writers. */
+      const insertHearing3 = async (
+        bill: (typeof committeeBillsForReview)[number],
+        chair: (typeof activeAgents)[number],
+        outcome: string,
+      ): Promise<void> => {
+        try {
+          await db.insert(governmentEvents).values({
+            type: 'committee_hearing',
+            title: `${bill.committee} Committee: ${bill.title}`.slice(0, 200),
+            description: (bill.summary ?? '').slice(0, 500),
+            scheduledAt: new Date(),
+            durationMinutes: 60,
+            organizerId: chair.id,
+            attendeeIds: JSON.stringify(membersByCommittee3.get(bill.committee) ?? []),
+            status: 'completed',
+            outcome,
+            relatedBillId: bill.id,
+            isPublic: true,
+          });
+        } catch (hearingErr) {
+          console.warn('[SIMULATION] Phase 3: Hearing insert error:', hearingErr);
+        }
+      };
+
       /* Separate bills into auto-tabled (pre-filter) vs LLM-reviewed */
       const billsForLLMReview: typeof committeeBillsForReview = [];
 
@@ -1306,6 +1523,7 @@ agentTickQueue.process(async () => {
               target: [agentRelationships.agentId, agentRelationships.targetAgentId],
               set: { sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.08)`, updatedAt: new Date() },
             });
+          await insertHearing3(bill, chair, 'tabled');
           continue;
         }
 
@@ -1347,14 +1565,23 @@ agentTickQueue.process(async () => {
             enrichmentNote += ` You have historically opposed bills from ${sponsorAlignment}-aligned sponsors.`;
           }
 
+          /* Markup contract (flag on): a scoped amendment the committee
+             ratifies deterministically — reuses the Phase 1.7 machinery.
+             Legacy contract (flag off): full-text amendedText, verbatim. */
+          const decisionContract = rc.committeeMarkupEnabled
+            ? ` Options: approve as-is, amend (propose one scoped amendment your committee will vote on), or table (kill) it. ` +
+              `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendmentType":"addition","amendmentText":""}} ` +
+              `Use "approved", "amended", or "tabled" for decision. If amending: set amendmentType to "addition", "strike", or "substitute" and put the amendment (under 150 words) in amendmentText — for "strike" or "substitute", name the target section (e.g. "SECTION 2"). If not amending, leave amendmentText empty.`
+            : ` Options: approve as-is, amend the text, or table (kill) it. ` +
+              `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendedText":""}} ` +
+              `Use "approved", "amended", or "tabled" for decision. If amending, provide full revised text in amendedText. If not amending, leave amendedText empty.`;
+
           const contextMessage =
             `You chair the ${bill.committee} Committee. Review this bill: "${bill.title}". ` +
             `Summary: ${bill.summary}. Full text excerpt: ${bill.fullText.slice(0, 600)}. ` +
             `Sponsored by ${sponsorName} (${sponsorAlignment}).` +
             enrichmentNote +
-            ` Options: approve as-is, amend the text, or table (kill) it. ` +
-            `Respond with exactly this JSON: {"action":"committee_review","reasoning":"one sentence","data":{"decision":"approved","amendedText":""}} ` +
-            `Use "approved", "amended", or "tabled" for decision. If amending, provide full revised text in amendedText. If not amending, leave amendedText empty.`;
+            decisionContract;
 
           return generateAgentDecision(
             {
@@ -1387,6 +1614,12 @@ agentTickQueue.process(async () => {
         const reviewDecision = String(decision.data['decision'] ?? 'approved').toLowerCase();
         const amendedText = String(decision.data['amendedText'] ?? '').trim();
 
+        /* Public hearing record — once per reviewed (bill, tick). Outcome is
+           the chair's decision, whitelisted (LLM output is untrusted). */
+        const hearingOutcome3 =
+          reviewDecision === 'tabled' || reviewDecision === 'amended' ? reviewDecision : 'approved';
+        await insertHearing3(bill, chair, hearingOutcome3);
+
         if (reviewDecision === 'tabled') {
           await db.update(bills).set({ status: 'tabled', committeeDecision: 'tabled', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({
@@ -1405,6 +1638,86 @@ agentTickQueue.process(async () => {
               target: [agentRelationships.agentId, agentRelationships.targetAgentId],
               set: { sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.08)`, updatedAt: new Date() },
             });
+        } else if (reviewDecision === 'amended' && rc.committeeMarkupEnabled) {
+          /* Markup path: the chair's scoped amendment is applied through
+             applyAmendment (never a wholesale fullText overwrite) after the
+             committee members ratify it with the Phase 1.7 weighted-
+             alignment arithmetic — no extra LLM calls. */
+          const rawMarkupType3 = String(decision.data['amendmentType'] ?? 'addition').trim().toLowerCase();
+          const markupType3: 'addition' | 'strike' | 'substitute' =
+            rawMarkupType3 === 'strike' || rawMarkupType3 === 'substitute' ? rawMarkupType3 : 'addition';
+          const markupText3 = String(decision.data['amendmentText'] ?? '').trim().slice(0, 1500);
+
+          if (markupText3.length < 10) {
+            /* No usable amendment text — approve unamended (safe default) */
+            await db.update(bills).set({ committeeDecision: 'approved', committeeChairId: chair.id }).where(eq(bills.id, bill.id));
+            await db.insert(activityEvents).values({
+              type: 'committee_review', agentId: chair.id, title: 'Bill approved by committee',
+              description: `${chair.displayName} approved "${bill.title}" out of the ${bill.committee} Committee`,
+              metadata: JSON.stringify({ billId: bill.id, decision: 'approved', reasoning: decision.reasoning, markup: 'invalid_amendment_text' }),
+            });
+            console.warn(`[SIMULATION] ${chair.displayName} approved "${bill.title}" from committee (markup text invalid)`);
+          } else {
+            const [markupAmendment3] = await db.insert(billAmendments).values({
+              billId: bill.id,
+              proposerId: chair.id,
+              amendmentText: markupText3,
+              type: markupType3,
+              status: 'pending',
+              reasoning: decision.reasoning,
+              votesFor: 0,
+              votesAgainst: 0,
+            }).returning({ id: billAmendments.id });
+
+            /* Deterministic ratification by the committee's members (chair
+               excluded): chair→member voteAlignment, default 0.5. An empty
+               roster (mid-migration DB) never ratifies — bill advances
+               unamended. */
+            const memberVoterIds3 = (membersByCommittee3.get(bill.committee) ?? []).filter((id) => id !== chair.id);
+            const memberAlignments3 = memberVoterIds3.map((id) => chairRelMap.get(`${chair.id}:${id}`) ?? 0.5);
+            const { votesFor, votesAgainst, passed } = tallyWeightedRatification(memberAlignments3, rc.billPassagePercentage);
+
+            if (passed && markupAmendment3) {
+              const [markupCountRow3] = await db
+                .select({ total: count() })
+                .from(billAmendments)
+                .where(eq(billAmendments.billId, bill.id));
+              const markupOrdinal3 = Number(markupCountRow3?.total ?? 1);
+
+              const nextFullText3 = applyAmendment(bill.fullText, {
+                type: markupType3,
+                amendmentText: markupText3,
+                amendmentNumber: markupOrdinal3,
+              });
+
+              await db.update(bills)
+                .set({ fullText: nextFullText3, committeeDecision: 'amended', committeeChairId: chair.id, lastActionAt: new Date() })
+                .where(eq(bills.id, bill.id));
+              await db.update(billAmendments)
+                .set({ status: 'accepted', resolvedAt: new Date(), votesFor, votesAgainst })
+                .where(eq(billAmendments.id, markupAmendment3.id));
+              await db.insert(activityEvents).values({
+                type: 'committee_review', agentId: chair.id, title: 'Bill amended in committee',
+                description: `${chair.displayName} amended "${bill.title}" in the ${bill.committee} Committee — markup ratified by members`,
+                metadata: JSON.stringify({ billId: bill.id, decision: 'amended', reasoning: decision.reasoning, amendmentType: markupType3, votesFor, votesAgainst, ratified: true }),
+              });
+              broadcast('bill:committee_amended', { billId: bill.id, title: bill.title, chairId: chair.id, chairName: chair.displayName, committee: bill.committee });
+              console.warn(`[SIMULATION] ${chair.displayName} markup on "${bill.title}" RATIFIED (${votesFor.toFixed(2)}-${votesAgainst.toFixed(2)})`);
+            } else {
+              if (markupAmendment3) {
+                await db.update(billAmendments)
+                  .set({ status: 'rejected', resolvedAt: new Date(), votesFor, votesAgainst })
+                  .where(eq(billAmendments.id, markupAmendment3.id));
+              }
+              await db.update(bills).set({ committeeDecision: 'approved', committeeChairId: chair.id }).where(eq(bills.id, bill.id));
+              await db.insert(activityEvents).values({
+                type: 'committee_review', agentId: chair.id, title: 'Committee markup rejected — bill approved unamended',
+                description: `${chair.displayName} proposed a markup to "${bill.title}" but the ${bill.committee} Committee did not ratify it`,
+                metadata: JSON.stringify({ billId: bill.id, decision: 'approved', reasoning: decision.reasoning, amendmentType: markupType3, votesFor, votesAgainst, ratified: false }),
+              });
+              console.warn(`[SIMULATION] ${chair.displayName} markup on "${bill.title}" NOT ratified (${votesFor.toFixed(2)}-${votesAgainst.toFixed(2)}) — approved unamended`);
+            }
+          }
         } else if (reviewDecision === 'amended' && amendedText.length > 50) {
           await db.update(bills).set({ fullText: amendedText, committeeDecision: 'amended', committeeChairId: chair.id, lastActionAt: new Date() }).where(eq(bills.id, bill.id));
           await db.insert(activityEvents).values({

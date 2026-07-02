@@ -134,6 +134,7 @@ interface RuntimeConfig {
   lobbyingPositionShiftChance: number;
   floorAmendmentsEnabled: boolean;
   maxAmendmentsPerBillPerTick: number;
+  committeeMarkupEnabled: boolean;
   billWithdrawalEnabled: boolean;
   publicStatementsEnabled: boolean;
   proactiveStatementChance: number;
@@ -1910,6 +1911,20 @@ export function AdminPage() {
                       value={simConfig.maxAmendmentsPerBillPerTick}
                       onChange={e => setSimConfig(c => c ? ({ ...c, maxAmendmentsPerBillPerTick: Number(e.target.value) }) : c)}
                       onBlur={() => void saveConfig({ maxAmendmentsPerBillPerTick: simConfig.maxAmendmentsPerBillPerTick })}
+                    />
+                  </label>
+                </div>
+
+                {/* Committee Markup */}
+                <div className="space-y-3 pt-4 border-t border-border/40">
+                  <h4 className="text-badge text-text-muted uppercase tracking-wider">Committee Markup</h4>
+
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">Committee Markup Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.committeeMarkupEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, committeeMarkupEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ committeeMarkupEnabled: simConfig.committeeMarkupEnabled })}
                     />
                   </label>
                 </div>

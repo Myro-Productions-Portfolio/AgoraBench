@@ -113,6 +113,9 @@ export interface RuntimeConfig {
   floorAmendmentsEnabled: boolean;
   maxAmendmentsPerBillPerTick: number;
 
+  /* ---- Committees ---- */
+  committeeMarkupEnabled: boolean;   // Phase 3 markup: scoped amendment + member ratification (false = legacy full-text amend)
+
   /* ---- Bill Withdrawal ---- */
   billWithdrawalEnabled: boolean;
 
@@ -223,6 +226,9 @@ const DEFAULTS: RuntimeConfig = {
   /* Floor Amendments */
   floorAmendmentsEnabled: true,
   maxAmendmentsPerBillPerTick: 2,
+
+  /* Committees */
+  committeeMarkupEnabled: true,
 
   /* Bill Withdrawal */
   billWithdrawalEnabled: true,

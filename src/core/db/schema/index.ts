@@ -20,3 +20,5 @@ export { billAmendments } from '@modules/legislation/db/schema/amendments';
 export { lobbyingEvents } from '@modules/legislation/db/schema/lobbying';
 export { agentDeals } from '@modules/agents/db/schema/agentDeals';
 export { agentStatements } from '@modules/agents/db/schema/agentStatements';
+export { committeeMemberships } from '@modules/government/db/schema/committeeMemberships';
+export { gazetteIssues } from '@modules/press/db/schema/gazette';

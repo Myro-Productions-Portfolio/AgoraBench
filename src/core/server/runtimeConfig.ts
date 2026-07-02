@@ -62,6 +62,7 @@ export interface RuntimeConfig {
   maxOutputLengthTokens: number;      // default: 500
   maxBillsPerAgentPerTick: number;    // default: 1
   maxCampaignSpeechesPerTick: number; // default: 1
+  maxFloorBillsPerTick: number;       // default: 5 — caps the floor working set (phases 1, 1.5, 1.7, 2)
 
   /* ---- Relationship Evolution ---- */
   relationshipDecayRate: number;            // per-tick decay toward neutral
@@ -172,6 +173,7 @@ const DEFAULTS: RuntimeConfig = {
   maxOutputLengthTokens: 500,
   maxBillsPerAgentPerTick: 1,
   maxCampaignSpeechesPerTick: 1,
+  maxFloorBillsPerTick: 5,
 
   /* Relationship Evolution */
   relationshipDecayRate: 0.05,

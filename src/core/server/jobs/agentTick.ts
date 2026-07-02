@@ -1,5 +1,5 @@
 import Bull from 'bull';
-import { eq, and, inArray, lte, gte, gt, lt, desc, count, sql } from 'drizzle-orm';
+import { eq, and, inArray, lte, gte, gt, lt, asc, desc, count, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
@@ -119,6 +119,29 @@ agentTickQueue.process(async () => {
   /* Election results from Phase 14, read by Phase 11.5 */
   let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
 
+  /* ---- Floor working set (Phases 1, 1.5, 1.7, 2) ---------------------- */
+  /* Phase 2 voting is the only unbounded O(bills × agents) LLM phase. Cap  */
+  /* the per-tick working set at maxFloorBillsPerTick, oldest bills first.  */
+  /* Bills outside the set get no new votes this tick and remain queued —  */
+  /* Phase 5 resolution and later phases are intentionally NOT capped.     */
+  let floorWorkingSet: (typeof bills.$inferSelect)[] = [];
+  try {
+    const maxFloorBills = rc.maxFloorBillsPerTick ?? 5;
+    const allFloorBills = await db
+      .select()
+      .from(bills)
+      .where(eq(bills.status, 'floor'))
+      .orderBy(asc(bills.introducedAt));
+    floorWorkingSet = allFloorBills.slice(0, maxFloorBills);
+    if (allFloorBills.length > floorWorkingSet.length) {
+      console.warn(
+        `[SIMULATION] Floor working set capped: processing ${floorWorkingSet.length} of ${allFloorBills.length} floor bills this tick (oldest first); the rest remain queued.`,
+      );
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Floor working set fetch error:', err);
+  }
+
   /* ------------------------------------------------------------------ */
   /* PHASE 1: Party Whip Signal                                            */
   /* Party leaders signal their recommended vote on floor bills.          */
@@ -129,7 +152,7 @@ agentTickQueue.process(async () => {
   try {
     console.warn('[SIMULATION] Phase 1: Party Whip Signal'); broadcast('tick:phase', { phase: 'voting' });
 
-    const floorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+    const floorBills = floorWorkingSet;
 
     if (floorBills.length === 0) {
       console.warn('[SIMULATION] Phase 1: No floor bills — skipping whip signals.');
@@ -213,7 +236,7 @@ agentTickQueue.process(async () => {
   try {
     console.warn('[SIMULATION] Phase 1.5: Pre-Vote Lobbying');
 
-    const lobbyFloorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+    const lobbyFloorBills = floorWorkingSet;
 
     if (!rc.lobbyingEnabled || lobbyFloorBills.length === 0) {
       console.warn('[SIMULATION] Phase 1.5: Skipping — lobbyingEnabled=false or no floor bills.');
@@ -399,7 +422,7 @@ agentTickQueue.process(async () => {
   try {
     console.warn('[SIMULATION] Phase 1.7: Floor Amendments');
 
-    const amendFloorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+    const amendFloorBills = floorWorkingSet;
 
     if (!rc.floorAmendmentsEnabled || amendFloorBills.length === 0) {
       console.warn('[SIMULATION] Phase 1.7: Skipping — floorAmendmentsEnabled=false or no floor bills.');
@@ -586,7 +609,7 @@ agentTickQueue.process(async () => {
   try {
     console.warn('[SIMULATION] Phase 2: Bill Voting');
 
-    const floorBills = await db.select().from(bills).where(eq(bills.status, 'floor'));
+    const floorBills = floorWorkingSet;
 
     if (floorBills.length === 0) {
       console.warn('[SIMULATION] Phase 2: No floor bills — skipping voting.');

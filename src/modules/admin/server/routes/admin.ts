@@ -183,6 +183,8 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (mbpat !== undefined) update.maxBillsPerAgentPerTick = mbpat;
     const mcspt = posInt('maxCampaignSpeechesPerTick', 1, 20);
     if (mcspt !== undefined) update.maxCampaignSpeechesPerTick = mcspt;
+    const mfbpt = posInt('maxFloorBillsPerTick', 1, 20);
+    if (mfbpt !== undefined) update.maxFloorBillsPerTick = mfbpt;
 
     /* Agent Behavior */
     const bpc = prob('billProposalChance');       if (bpc !== undefined) update.billProposalChance = bpc;

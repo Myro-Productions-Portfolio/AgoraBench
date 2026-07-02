@@ -98,6 +98,7 @@ interface RuntimeConfig {
   maxOutputLengthTokens: number;
   maxBillsPerAgentPerTick: number;
   maxCampaignSpeechesPerTick: number;
+  maxFloorBillsPerTick: number;
   /* Relationship & Forum */
   relationshipDecayRate: number;
   forumInteractionSentimentBonus: number;
@@ -1831,6 +1832,20 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       />
                       <p className="text-xs text-text-muted">Maximum campaign speeches per agent per tick.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Max Floor Bills Per Tick</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.maxFloorBillsPerTick}</span>
+                      </div>
+                      <input type="number" min={1} max={20}
+                        value={simConfig.maxFloorBillsPerTick}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, maxFloorBillsPerTick: parseInt(e.target.value) || 5 } : c)}
+                        onBlur={() => void saveConfig({ maxFloorBillsPerTick: simConfig.maxFloorBillsPerTick })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Floor bills processed per tick (oldest first) in whip, lobbying, amendment, and voting phases. Excess bills stay queued.</p>
                     </div>
                   </div>
                 </div>

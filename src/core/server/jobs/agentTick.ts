@@ -124,7 +124,10 @@ agentTickQueue.process(async () => {
   /* Phase 2 voting is the only unbounded O(bills × agents) LLM phase. Cap  */
   /* the per-tick working set at maxFloorBillsPerTick, oldest bills first.  */
   /* Bills outside the set get no new votes this tick and remain queued —  */
-  /* Phase 5 resolution and later phases are intentionally NOT capped.     */
+  /* Phase 5 still resolves ANY bill that reaches quorum, but its          */
+  /* timeExpired escape hatch applies only to in-set bills so queued bills */
+  /* are never resolved on partial, stale votes before getting their floor */
+  /* vote under the cap.                                                   */
   let floorWorkingSet: (typeof bills.$inferSelect)[] = [];
   try {
     const maxFloorBills = rc.maxFloorBillsPerTick ?? 5;
@@ -132,7 +135,7 @@ agentTickQueue.process(async () => {
       .select()
       .from(bills)
       .where(eq(bills.status, 'floor'))
-      .orderBy(asc(bills.introducedAt));
+      .orderBy(asc(bills.introducedAt), asc(bills.id));
     floorWorkingSet = allFloorBills.slice(0, maxFloorBills);
     if (allFloorBills.length > floorWorkingSet.length) {
       console.warn(
@@ -142,6 +145,8 @@ agentTickQueue.process(async () => {
   } catch (err) {
     console.warn('[SIMULATION] Floor working set fetch error:', err);
   }
+  /* Used by Phase 5 to restrict the timeExpired escape hatch to in-set bills. */
+  const workingSetIds = new Set(floorWorkingSet.map((b) => b.id));
 
   /* ------------------------------------------------------------------ */
   /* PHASE 1: Party Whip Signal                                            */
@@ -1477,11 +1482,14 @@ agentTickQueue.process(async () => {
 
       const voteCount = voteCounts.reduce((sum, row) => sum + Number(row.total), 0);
 
-      /* Resolve once quorum is reached or the bill has been on the floor long enough */
+      /* Resolve once quorum is reached, or — for bills in this tick's floor   */
+      /* working set only — once the bill has been on the floor long enough.   */
+      /* Out-of-set bills must not resolve on partial, stale votes; they stay  */
+      /* queued until they age into the working set (or reach quorum).         */
       const quorumCount = Math.ceil(activeAgentCount * rc.quorumPercentage);
       const floorAgeMs = Date.now() - new Date(bill.lastActionAt).getTime();
       const timeExpired = floorAgeMs >= rc.billAdvancementDelayMs * 2;
-      if (voteCount < quorumCount && !timeExpired) continue;
+      if (voteCount < quorumCount && !(timeExpired && workingSetIds.has(bill.id))) continue;
       if (voteCount === 0) continue;
 
       const yeaCount = Number(voteCounts.find((r) => r.choice === 'yea')?.total ?? 0);

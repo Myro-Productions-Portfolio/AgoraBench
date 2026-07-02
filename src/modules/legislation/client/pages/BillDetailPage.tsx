@@ -12,6 +12,8 @@ interface RollCallEntry {
   voterName: string;
   choice: string;
   castAt: string | null;
+  reasoning: string | null;
+  followedWhip: boolean;
 }
 
 interface BillDetail {
@@ -74,7 +76,17 @@ export function BillDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fullTextOpen, setFullTextOpen] = useState(false);
+  const [expandedVoters, setExpandedVoters] = useState<Set<string>>(new Set());
   const { subscribe } = useWebSocket();
+
+  const toggleVoter = useCallback((voterId: string) => {
+    setExpandedVoters((prev) => {
+      const next = new Set(prev);
+      if (next.has(voterId)) next.delete(voterId);
+      else next.add(voterId);
+      return next;
+    });
+  }, []);
 
   const fetchBill = useCallback(() => {
     if (!id) return;
@@ -221,19 +233,18 @@ export function BillDetailPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {bill.rollCall.map((entry, i) => (
-                        <tr key={entry.voterId} className={`border-b border-border/40 ${i % 2 === 1 ? 'bg-white/[0.01]' : ''}`}>
-                          <td className="px-4 py-2">
-                            <Link to={`/agents/${entry.voterId}`} className="text-text-secondary hover:text-gold transition-colors">
-                              {entry.voterName}
-                            </Link>
-                          </td>
-                          <td className={`px-4 py-2 font-medium capitalize ${VOTE_COLORS[entry.choice] ?? 'text-text-muted'}`}>
-                            {entry.choice}
-                          </td>
-                          <td className="px-4 py-2 text-text-muted hidden sm:table-cell">{fmtDateTime(entry.castAt)}</td>
-                        </tr>
-                      ))}
+                      {bill.rollCall.map((entry, i) => {
+                        const expanded = expandedVoters.has(entry.voterId);
+                        return (
+                          <VoteRow
+                            key={entry.voterId}
+                            entry={entry}
+                            zebra={i % 2 === 1}
+                            expanded={expanded}
+                            onToggle={() => toggleVoter(entry.voterId)}
+                          />
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -265,6 +276,65 @@ export function BillDetailPage() {
 }
 
 /* ── Shared sub-components ──────────────────────────────────────────────── */
+
+/* Roll-call row: click to expand the voter's stored reasoning. Every row is
+   expandable for consistency — rows without reasoning show a fallback. */
+function VoteRow({ entry, zebra, expanded, onToggle }: {
+  entry: RollCallEntry;
+  zebra: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      <tr
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        className={`border-b border-border/40 cursor-pointer hover:bg-white/[0.03] transition-colors ${zebra ? 'bg-white/[0.01]' : ''}`}
+      >
+        <td className="px-4 py-2">
+          <span className={`inline-block mr-2 text-badge text-text-muted transition-transform ${expanded ? 'rotate-90' : ''}`} aria-hidden="true">
+            ▶
+          </span>
+          <Link
+            to={`/agents/${entry.voterId}`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-text-secondary hover:text-gold transition-colors"
+          >
+            {entry.voterName}
+          </Link>
+        </td>
+        <td className={`px-4 py-2 font-medium capitalize ${VOTE_COLORS[entry.choice] ?? 'text-text-muted'}`}>
+          {entry.choice}
+        </td>
+        <td className="px-4 py-2 text-text-muted hidden sm:table-cell">{fmtDateTime(entry.castAt)}</td>
+      </tr>
+      {expanded && (
+        <tr className="border-b border-border/40 bg-capitol-deep/40">
+          <td colSpan={3} className="px-4 py-3 pl-10">
+            {entry.reasoning ? (
+              <p className="text-xs text-text-secondary leading-relaxed">{entry.reasoning}</p>
+            ) : entry.followedWhip ? (
+              <span className="badge border text-yellow-300 bg-yellow-900/20 border-yellow-700/30">
+                Followed party whip
+              </span>
+            ) : (
+              <p className="text-xs text-text-muted italic">No reasoning recorded</p>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

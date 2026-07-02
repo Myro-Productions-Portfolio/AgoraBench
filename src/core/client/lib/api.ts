@@ -104,6 +104,14 @@ export const legislationApi = {
   lawById: (id: string) => request(`/laws/${id}`),
 };
 
+/* Press endpoints */
+export const pressApi = {
+  gazette: (limit = 20, offset = 0) =>
+    request(`/press/gazette?limit=${limit}&offset=${offset}`),
+  gazetteLatest: () =>
+    request('/press/gazette/latest'),
+};
+
 /* Vote endpoints */
 export const votesApi = {
   cast: (data: {

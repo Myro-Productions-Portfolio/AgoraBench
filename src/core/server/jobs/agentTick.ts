@@ -1087,7 +1087,7 @@ agentTickQueue.process(async () => {
             agentId: agent.id,
             title: 'Vote cast',
             description: `${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}"`,
-            metadata: JSON.stringify({ billId: bill.id, choice, followedWhip: true, provider: agent.modelProvider }),
+            metadata: JSON.stringify({ billId: bill.id, choice, followedWhip: true, reasoning: 'Followed party whip signal', provider: agent.modelProvider }),
           });
           broadcast('agent:vote', { agentId: agent.id, agentName: agent.displayName, billId: bill.id, billTitle: bill.title, choice });
           console.warn(`[SIMULATION] ${agent.displayName} voted ${choice.toUpperCase()} on "${bill.title}" (whip)`);
@@ -1123,6 +1123,7 @@ agentTickQueue.process(async () => {
               billId: bill.id,
               choice,
               followedWhip: !!(whipSignal && choice === whipSignal),
+              reasoning: (decision.reasoning ?? '').slice(0, 500),
               provider: agent.modelProvider,
             }),
           });

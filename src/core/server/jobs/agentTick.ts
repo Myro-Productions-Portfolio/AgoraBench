@@ -171,9 +171,19 @@ agentTickQueue.process(async () => {
 
       const activeParties = await db.select().from(parties).where(eq(parties.isActive, true));
 
+      /* Initialize per-bill signal maps up front so bills with zero leader
+         responses still get an empty map (preserves prior behavior). */
       for (const bill of floorBills) {
-        const billSignals = new Map<string, string>();
+        whipSignals.set(bill.id, new Map<string, string>());
+      }
 
+      /* Build (bill, leader, party) tuples for every whip-signal call */
+      const whipTuples: Array<{
+        bill: (typeof floorBills)[number];
+        leader: (typeof activeAgents)[number];
+        party: (typeof activeParties)[number];
+      }> = [];
+      for (const bill of floorBills) {
         for (const membership of leaderMemberships) {
           const leader = activeAgents.find((a) => a.id === membership.agentId);
           if (!leader) continue;
@@ -181,6 +191,13 @@ agentTickQueue.process(async () => {
           const party = activeParties.find((p) => p.id === membership.partyId);
           if (!party) continue;
 
+          whipTuples.push({ bill, leader, party });
+        }
+      }
+
+      /* Fire all whip-signal LLM calls in parallel */
+      const whipResults = await Promise.allSettled(
+        whipTuples.map(({ bill, leader, party }) => {
           const contextMessage =
             `As leader of ${party.name}, signal your party's recommended vote on "${bill.title}". ` +
             `Summary: ${bill.summary}. Committee: ${bill.committee}. ` +
@@ -188,7 +205,7 @@ agentTickQueue.process(async () => {
             `Respond with exactly this JSON: {"action":"whip_signal","reasoning":"one sentence","data":{"signal":"yea"}} ` +
             `Use "yea" or "nay" only.`;
 
-          const decision = await generateAgentDecision(
+          return generateAgentDecision(
             {
               id: leader.id,
               displayName: leader.displayName,
@@ -200,34 +217,41 @@ agentTickQueue.process(async () => {
             },
             contextMessage,
             'whip_signal',
-          );
+          ).then((decision) => ({ bill, leader, party, decision }));
+        }),
+      );
 
-          if (decision.action === 'whip_signal' && decision.data) {
-            const signal = String(decision.data['signal'] ?? 'yea').toLowerCase();
-            const validSignal = signal === 'nay' ? 'nay' : 'yea';
-            billSignals.set(party.id, validSignal);
-
-            await db.insert(activityEvents).values({
-              type: 'party_whip',
-              agentId: leader.id,
-              title: 'Party whip signal',
-              description: `${leader.displayName} (${party.name} leader) signals ${validSignal.toUpperCase()} on "${bill.title}"`,
-              metadata: JSON.stringify({
-                billId: bill.id,
-                partyId: party.id,
-                partyName: party.name,
-                signal: validSignal,
-                reasoning: decision.reasoning,
-              }),
-            });
-
-            console.warn(
-              `[SIMULATION] ${leader.displayName} (${party.name}) whip signal: ${validSignal.toUpperCase()} on "${bill.title}"`,
-            );
-          }
+      /* Process results serially — fills whipSignals and writes DB rows */
+      for (const result of whipResults) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 1: Whip signal LLM call rejected:', result.reason);
+          continue;
         }
+        const { bill, leader, party, decision } = result.value;
 
-        whipSignals.set(bill.id, billSignals);
+        if (decision.action === 'whip_signal' && decision.data) {
+          const signal = String(decision.data['signal'] ?? 'yea').toLowerCase();
+          const validSignal = signal === 'nay' ? 'nay' : 'yea';
+          whipSignals.get(bill.id)?.set(party.id, validSignal);
+
+          await db.insert(activityEvents).values({
+            type: 'party_whip',
+            agentId: leader.id,
+            title: 'Party whip signal',
+            description: `${leader.displayName} (${party.name} leader) signals ${validSignal.toUpperCase()} on "${bill.title}"`,
+            metadata: JSON.stringify({
+              billId: bill.id,
+              partyId: party.id,
+              partyName: party.name,
+              signal: validSignal,
+              reasoning: decision.reasoning,
+            }),
+          });
+
+          console.warn(
+            `[SIMULATION] ${leader.displayName} (${party.name}) whip signal: ${validSignal.toUpperCase()} on "${bill.title}"`,
+          );
+        }
       }
     }
   } catch (err) {
@@ -457,20 +481,25 @@ agentTickQueue.process(async () => {
         relMap17.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
       }
 
+      /* Pre-select proposers per bill via the existing chance gate (serial,
+         cheap), then fire every proposer LLM call across all bills in ONE
+         parallel batch. Accepted behavior change vs. the old serial loop:
+         an invalid LLM response now consumes one of the maxAmendmentsPerBill
+         slots instead of falling through to the next shuffled proposer. */
+      const amendmentCalls: Array<{
+        bill: (typeof amendFloorBills)[number];
+        proposer: (typeof activeAgents)[number];
+      }> = [];
       for (const bill of amendFloorBills) {
-        let amendmentsThisBill = 0;
-        /* Accumulates accepted amendments within this tick so a second
-           amendment builds on the first instead of the stale fetch. */
-        let workingFullText = bill.fullText;
-
         /* Eligible proposers: active agents who are NOT the sponsor */
         const eligible = activeAgents.filter((a) => a.id !== bill.sponsorId);
 
         /* Shuffle to randomize order */
         const shuffled17 = eligible.sort(() => Math.random() - 0.5);
 
+        let selectedForBill = 0;
         for (const proposer of shuffled17) {
-          if (amendmentsThisBill >= maxAmendmentsPerBill) break;
+          if (selectedForBill >= maxAmendmentsPerBill) break;
 
           /* Per-agent chance; committee chairs for this bill's committee get +0.15 */
           const isChairForCommittee = chairPositions17.some(
@@ -479,6 +508,16 @@ agentTickQueue.process(async () => {
           const effectiveChance = amendmentChance + (isChairForCommittee ? 0.15 : 0);
           if (Math.random() >= effectiveChance) continue;
 
+          amendmentCalls.push({ bill, proposer });
+          selectedForBill++;
+        }
+      }
+
+      /* Fire all amendment-proposal LLM calls in parallel. The prompt uses
+         the stale pre-tick bill.fullText (unchanged semantics — the old
+         serial loop did the same). */
+      const amendmentResults = await Promise.allSettled(
+        amendmentCalls.map(({ bill, proposer }) => {
           const contextMessage =
             `Bill "${bill.title}" is on the floor for a vote. ` +
             `Full text: ${bill.fullText.slice(0, 800)}. ` +
@@ -490,21 +529,45 @@ agentTickQueue.process(async () => {
             `Respond with exactly this JSON: ` +
             `{"action":"propose_amendment","reasoning":"one sentence explaining your change","data":{"type":"addition","amendmentText":"The amendment text"}}`;
 
-          try {
-            const decision = await generateAgentDecision(
-              {
-                id: proposer.id,
-                displayName: proposer.displayName,
-                alignment: proposer.alignment,
-                modelProvider: rc.providerOverride === 'default' ? proposer.modelProvider : rc.providerOverride,
-                personality: proposer.personality,
-                model: proposer.model,
-                ownerUserId: proposer.ownerUserId,
-              },
-              contextMessage,
-              'propose_amendment',
-            );
+          return generateAgentDecision(
+            {
+              id: proposer.id,
+              displayName: proposer.displayName,
+              alignment: proposer.alignment,
+              modelProvider: rc.providerOverride === 'default' ? proposer.modelProvider : rc.providerOverride,
+              personality: proposer.personality,
+              model: proposer.model,
+              ownerUserId: proposer.ownerUserId,
+            },
+            contextMessage,
+            'propose_amendment',
+          ).then((decision) => ({ bill, proposer, decision }));
+        }),
+      );
 
+      /* Accumulates accepted amendments within this tick so a second
+         amendment builds on the first instead of the stale fetch.
+         billId -> current working full text. */
+      const workingTexts = new Map<string, string>();
+      for (const bill of amendFloorBills) {
+        workingTexts.set(bill.id, bill.fullText);
+      }
+
+      /* Apply results SERIALLY in selection order (bill-major) — the
+         workingFullText accumulation, the amendment-ordinal count query,
+         and the weighted ratification vote must not interleave. */
+      for (let i = 0; i < amendmentResults.length; i++) {
+        const result = amendmentResults[i];
+        const { bill, proposer } = amendmentCalls[i];
+
+        if (result.status === 'rejected') {
+          console.warn(`[SIMULATION] Phase 1.7: LLM error for ${proposer.displayName}:`, result.reason);
+          continue;
+        }
+
+        const { decision } = result.value;
+
+        try {
             if (decision.action !== 'propose_amendment' || !decision.data) continue;
 
             const amendmentText = String(decision.data['amendmentText'] ?? '').trim();
@@ -556,14 +619,15 @@ agentTickQueue.process(async () => {
                 .where(eq(billAmendments.billId, bill.id));
               const amendmentNumber = Number(amendmentCountRow?.total ?? 1);
 
-              workingFullText = applyAmendment(workingFullText, {
+              const nextFullText = applyAmendment(workingTexts.get(bill.id) ?? bill.fullText, {
                 type: amendmentType,
                 amendmentText,
                 amendmentNumber,
               });
+              workingTexts.set(bill.id, nextFullText);
 
               await db.update(bills)
-                .set({ fullText: workingFullText, lastActionAt: new Date() })
+                .set({ fullText: nextFullText, lastActionAt: new Date() })
                 .where(eq(bills.id, bill.id));
 
               await db.update(billAmendments)
@@ -613,12 +677,9 @@ agentTickQueue.process(async () => {
 
               console.warn(`[SIMULATION] ${proposer.displayName} floor amendment rejected on "${bill.title}"`);
             }
-
-            amendmentsThisBill++;
           } catch (agentErr) {
-            console.warn(`[SIMULATION] Phase 1.7: LLM error for ${proposer.displayName}:`, agentErr);
+            console.warn(`[SIMULATION] Phase 1.7: Result processing error for ${proposer.displayName}:`, agentErr);
           }
-        }
       }
     }
   } catch (err) {
@@ -2490,35 +2551,47 @@ agentTickQueue.process(async () => {
 
         console.warn(`[SIMULATION] Judicial review initiated for law "${law.title}"`);
 
-        /* Each justice votes */
+        /* Each justice votes — all justice LLM calls for this law fire in
+           parallel; tallying stays in the serial results loop below. */
         let constitutionalCount = 0;
         let unconstitutionalCount = 0;
 
-        for (const justicePos of justicePositions) {
-          const justice = activeAgents.find((a) => a.id === justicePos.agentId);
-          if (!justice) continue;
+        const sittingJustices = justicePositions
+          .map((justicePos) => activeAgents.find((a) => a.id === justicePos.agentId))
+          .filter((j): j is (typeof activeAgents)[number] => j !== undefined);
 
-          const contextMessage =
-            `Law "${law.title}" is before the Supreme Court for constitutional review. ` +
-            `Text: ${law.text.slice(0, 800)}. ` +
-            `Enacted: ${law.enactedDate.toISOString().slice(0, 10)}. ` +
-            `As a Supreme Court Justice, vote on its constitutionality. ` +
-            `Respond with exactly this JSON: {"action":"judicial_vote","reasoning":"one sentence","data":{"vote":"constitutional"}} ` +
-            `Use "constitutional" or "unconstitutional".`;
+        const justiceResults = await Promise.allSettled(
+          sittingJustices.map((justice) => {
+            const contextMessage =
+              `Law "${law.title}" is before the Supreme Court for constitutional review. ` +
+              `Text: ${law.text.slice(0, 800)}. ` +
+              `Enacted: ${law.enactedDate.toISOString().slice(0, 10)}. ` +
+              `As a Supreme Court Justice, vote on its constitutionality. ` +
+              `Respond with exactly this JSON: {"action":"judicial_vote","reasoning":"one sentence","data":{"vote":"constitutional"}} ` +
+              `Use "constitutional" or "unconstitutional".`;
 
-          const decision = await generateAgentDecision(
-            {
-              id: justice.id,
-              displayName: justice.displayName,
-              alignment: justice.alignment,
-              modelProvider: rc.providerOverride === 'default' ? justice.modelProvider : rc.providerOverride,
-              personality: justice.personality,
-              model: justice.model,
-              ownerUserId: justice.ownerUserId,
-            },
-            contextMessage,
-            'judicial_review',
-          );
+            return generateAgentDecision(
+              {
+                id: justice.id,
+                displayName: justice.displayName,
+                alignment: justice.alignment,
+                modelProvider: rc.providerOverride === 'default' ? justice.modelProvider : rc.providerOverride,
+                personality: justice.personality,
+                model: justice.model,
+                ownerUserId: justice.ownerUserId,
+              },
+              contextMessage,
+              'judicial_review',
+            ).then((decision) => ({ justice, decision }));
+          }),
+        );
+
+        for (const result of justiceResults) {
+          if (result.status === 'rejected') {
+            console.warn('[SIMULATION] Phase 10: Justice LLM call rejected:', result.reason);
+            continue;
+          }
+          const { justice, decision } = result.value;
 
           if (decision.action === 'judicial_vote' && decision.data) {
             const vote = String(decision.data['vote'] ?? 'constitutional');
@@ -2650,6 +2723,21 @@ agentTickQueue.process(async () => {
 
     const billCountThisTick = new Map<string, number>();
 
+    /* One pre-query replaces the per-agent recent-sponsorship check */
+    const activeAgentIds11 = activeAgents.map((a) => a.id);
+    const recentSponsorRows = activeAgentIds11.length > 0
+      ? await db
+          .select({ sponsorId: bills.sponsorId })
+          .from(bills)
+          .where(and(inArray(bills.sponsorId, activeAgentIds11), gte(bills.introducedAt, fiveMinutesAgo)))
+      : [];
+    const recentSponsorIds = new Set(recentSponsorRows.map((r) => r.sponsorId));
+
+    /* Selection pass (serial, cheap/deterministic): chance gates + context
+       assembly. Each agent appears at most once, which enforces
+       maxBillsPerAgentPerTick at selection time exactly as before. */
+    const proposalCalls: Array<{ agent: (typeof activeAgents)[number]; contextMessage: string }> = [];
+
     for (const agent of activeAgents) {
       if ((billCountThisTick.get(agent.id) ?? 0) >= rc.maxBillsPerAgentPerTick) continue;
 
@@ -2675,13 +2763,8 @@ agentTickQueue.process(async () => {
 
       if (Math.random() >= effectiveProposalChance) continue;
 
-      /* Check if agent sponsored a bill in the last 5 minutes */
-      const recentBills = await db
-        .select({ id: bills.id })
-        .from(bills)
-        .where(and(eq(bills.sponsorId, agent.id), gte(bills.introducedAt, fiveMinutesAgo)));
-
-      if (recentBills.length > 0) continue;
+      /* Skip agents who sponsored a bill in the last 5 minutes */
+      if (recentSponsorIds.has(agent.id)) continue;
 
       /* Amendment chance — uses rc.amendmentProposalChance instead of hardcoded 0.25 */
       const proposeAmendment = topActiveLaws.length > 0 && Math.random() < (rc.amendmentProposalChance ?? 0.25);
@@ -2713,19 +2796,35 @@ agentTickQueue.process(async () => {
         `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote} ` +
         `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":""}}`;
 
-      const decision = await generateAgentDecision(
-        {
-          id: agent.id,
-          displayName: agent.displayName,
-          alignment: agent.alignment,
-          modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
-          personality: agent.personality,
-          model: agent.model,
-          ownerUserId: agent.ownerUserId,
-        },
-        contextMessage,
-        'bill_proposal',
-      );
+      proposalCalls.push({ agent, contextMessage });
+    }
+
+    /* Fire all bill-proposal LLM calls in parallel */
+    const proposalResults = await Promise.allSettled(
+      proposalCalls.map(({ agent, contextMessage }) =>
+        generateAgentDecision(
+          {
+            id: agent.id,
+            displayName: agent.displayName,
+            alignment: agent.alignment,
+            modelProvider: rc.providerOverride === 'default' ? agent.modelProvider : rc.providerOverride,
+            personality: agent.personality,
+            model: agent.model,
+            ownerUserId: agent.ownerUserId,
+          },
+          contextMessage,
+          'bill_proposal',
+        ).then((decision) => ({ agent, decision })),
+      ),
+    );
+
+    /* Process results serially: validation, sanitization, inserts, broadcasts */
+    for (const result of proposalResults) {
+      if (result.status === 'rejected') {
+        console.warn('[SIMULATION] Phase 11: Bill proposal LLM call rejected:', result.reason);
+        continue;
+      }
+      const { agent, decision } = result.value;
 
       if (decision.action !== 'propose' || !decision.data) continue;
 

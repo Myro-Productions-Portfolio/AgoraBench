@@ -9,6 +9,16 @@
       function gtag(){dataLayer.push(arguments);}
       gtag('js', new Date());
 
+      // Consent Mode v2 — default everything denied until the visitor opts in
+      // via the cookie-consent banner. Analytics sends cookieless pings until
+      // consent_update('granted') fires. See src/core/client/lib/cookieConsent.ts.
+      gtag('consent', 'default', {
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+      });
+
       gtag('config', 'G-LB5JZ6RSY0');
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

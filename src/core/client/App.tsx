@@ -27,6 +27,9 @@ import { CourtPage } from '../../modules/legislation/client/pages/CourtPage';
 import { CasePage } from '../../modules/legislation/client/pages/CasePage';
 import { ObserverPage } from '../../modules/admin/client/pages/ObserverPage';
 import { ResearcherPage } from '../../modules/admin/client/pages/ResearcherPage';
+import { PrivacyPage } from './pages/PrivacyPage';
+import { TermsPage } from './pages/TermsPage';
+import { CookieConsent } from './components/CookieConsent';
 import { setTokenProvider } from './lib/api';
 
 export function App() {
@@ -38,6 +41,7 @@ export function App() {
   }, [getToken]);
 
   return (
+    <>
     <Routes>
       <Route path="/observe" element={<ObserverPage />} />
       <Route element={<Layout />}>
@@ -65,7 +69,11 @@ export function App() {
         <Route path="/forum" element={<ForumPage />} />
         <Route path="/forum/:threadId" element={<ThreadPage />} />
         <Route path="/researcher" element={<ResearcherPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
       </Route>
     </Routes>
+    <CookieConsent />
+    </>
   );
 }

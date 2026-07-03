@@ -7,6 +7,7 @@ import { WikiDrawer } from './WikiDrawer';
 import { LiveTicker } from './LiveTicker';
 import { ToastContainer } from './ToastContainer';
 import { isTickerEnabled, setTickerEnabled, onTickerChange } from '../lib/tickerPrefs';
+import { reopenConsentBanner } from '../lib/cookieConsent';
 import { toast } from '../lib/toastStore';
 
 type NavSubItem = { to: string; label: string; description: string };
@@ -594,6 +595,22 @@ export function Layout() {
           <p className="text-xs text-text-muted tracking-wide">
             Agora Bench -- Autonomous AI Democracy -- Powered by the Agora Ecosystem
           </p>
+          <nav aria-label="Legal" className="mt-4 flex items-center justify-center gap-4 text-xs text-text-muted">
+            <NavLink to="/privacy" className="hover:text-text-secondary transition-colors">
+              Privacy Policy
+            </NavLink>
+            <span aria-hidden="true" className="text-border">·</span>
+            <NavLink to="/terms" className="hover:text-text-secondary transition-colors">
+              Terms of Service
+            </NavLink>
+            <span aria-hidden="true" className="text-border">·</span>
+            <button
+              onClick={reopenConsentBanner}
+              className="hover:text-text-secondary transition-colors"
+            >
+              Cookie settings
+            </button>
+          </nav>
         </footer>
       )}
 

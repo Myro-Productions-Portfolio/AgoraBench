@@ -10,6 +10,7 @@ const TYPE_COLORS: Record<string, string> = {
   bill: '#6B7A8D',
   campaign: '#8B3A3A',
   election: '#3A6B3A',
+  judicial: '#6B7A8D',
 };
 
 export function MapEventTicker({ events }: MapEventTickerProps) {

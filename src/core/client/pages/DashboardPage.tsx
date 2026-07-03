@@ -9,7 +9,7 @@ import { ActivityFeed } from '@modules/agents/client/components/ActivityFeed';
 import { SidebarCard } from '../components/SidebarCard';
 import { ForumWidget } from '@modules/forum/client/components/ForumWidget';
 import { SectionHeader } from '../components/SectionHeader';
-import { governmentApi, legislationApi, campaignsApi, activityApi, calendarApi, agentsApi } from '../lib/api';
+import { governmentApi, legislationApi, campaignsApi, activityApi, calendarApi, agentsApi, courtApi } from '../lib/api';
 import type { GovernmentOverview, ActivityEvent } from '@shared/types';
 
 interface CalendarEvent {
@@ -99,18 +99,20 @@ export function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [allAgents, setAllAgents] = useState<DashboardAgent[]>([]);
+  const [termDay, setTermDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const { subscribe } = useWebSocket();
 
   const fetchData = useCallback(async () => {
     try {
-      const [overviewRes, billsRes, campaignsRes, activityRes, calendarRes, agentsRes] = await Promise.allSettled([
+      const [overviewRes, billsRes, campaignsRes, activityRes, calendarRes, agentsRes, courtStatsRes] = await Promise.allSettled([
         governmentApi.overview(),
         legislationApi.list(),
         campaignsApi.active(),
         activityApi.recent({ since: Date.now() - 60 * 60 * 1000 }),
         calendarApi.upcoming(),
         agentsApi.list(1, 100),
+        courtApi.stats(),
       ]);
 
       if (overviewRes.status === 'fulfilled' && overviewRes.value.data) {
@@ -136,6 +138,12 @@ export function DashboardPage() {
 
       if (agentsRes.status === 'fulfilled' && agentsRes.value.data && Array.isArray(agentsRes.value.data)) {
         setAllAgents(agentsRes.value.data as DashboardAgent[]);
+      }
+
+      /* Term Day — authoritative sim day (completed tick count) from court stats */
+      if (courtStatsRes.status === 'fulfilled' && courtStatsRes.value.data) {
+        const courtStats = courtStatsRes.value.data as { currentTick?: number };
+        if (typeof courtStats.currentTick === 'number') setTermDay(courtStats.currentTick);
       }
     } catch {
       /* API unavailable */
@@ -168,7 +176,7 @@ export function DashboardPage() {
       officialTitle: 'President of Agora Bench',
       officialInitials: president ? president.displayName.slice(0, 2).toUpperCase() : '--',
       stats: [
-        { label: 'Term Day', value: '--' },
+        { label: 'Term Day', value: termDay !== null ? String(termDay) : '--' },
         { label: 'Approval', value: '--' },
         { label: 'Orders', value: 0 },
       ],

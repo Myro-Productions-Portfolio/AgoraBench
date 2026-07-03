@@ -34,6 +34,8 @@ const ACTIVITY_TYPE_TO_BUILDING: Record<string, string> = {
   law_enacted: 'archives',
   // Supreme Court
   law_struck_down: 'supreme-court',
+  law_upheld: 'supreme-court',
+  court_case_filed: 'supreme-court',
   judicial_review_initiated: 'supreme-court',
   judicial_vote: 'supreme-court',
   // Treasury
@@ -301,6 +303,34 @@ export function useAgentMap(): AgentMapState {
       const d = data as Record<string, unknown>;
       triggerPulse('archives', '#B8956A');
       addTickerEvent(`"${String(d?.title ?? '')}"`, `amended`, 'law');
+    }));
+
+    // court:case_filed — Supreme Court (judicial slate)
+    unsubs.push(subscribe('court:case_filed', (data: unknown) => {
+      const d = data as Record<string, unknown>;
+      if (d?.petitionerId) moveAgent(d.petitionerId as string, 'supreme-court');
+      if (d?.respondentId) moveAgent(d.respondentId as string, 'supreme-court');
+      triggerPulse('supreme-court', '#6B7A8D');
+      addTickerEvent(String(d?.caseNumber ?? 'Case'), `filed: ${String(d?.caption ?? '')}`, 'judicial');
+    }));
+
+    // court:hearing — oral argument heard
+    unsubs.push(subscribe('court:hearing', (data: unknown) => {
+      const d = data as Record<string, unknown>;
+      triggerPulse('supreme-court', '#6B7A8D');
+      addTickerEvent(String(d?.caseNumber ?? 'Case'), `oral argument heard in ${String(d?.caption ?? '')}`, 'judicial');
+    }));
+
+    // court:ruling — decision handed down
+    unsubs.push(subscribe('court:ruling', (data: unknown) => {
+      const d = data as Record<string, unknown>;
+      const color = d?.outcome === 'struck_down' ? '#8B3A3A' : '#6B7A8D';
+      triggerPulse('supreme-court', color);
+      addTickerEvent(
+        String(d?.caseNumber ?? 'Case'),
+        `decided ${String(d?.votesFor ?? 0)}–${String(d?.votesAgainst ?? 0)}: ${String(d?.caption ?? '')}`,
+        'judicial',
+      );
     }));
 
     return () => unsubs.forEach((fn) => fn());

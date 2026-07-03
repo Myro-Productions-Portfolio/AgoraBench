@@ -280,12 +280,13 @@ export const profileApi = {
     request('/profile/researcher-request', { method: 'POST', body: JSON.stringify({ message }) }),
 };
 
-/* Court endpoints */
+/* Court endpoints (Phase 4 case-centric docket + legacy archive) */
 export const courtApi = {
   stats: () => request('/court/stats'),
   cases: (status?: string) =>
     request(`/court/cases${status ? `?status=${status}` : ''}`),
   caseById: (id: string) => request(`/court/cases/${id}`),
+  archive: () => request('/court/archive'),
 };
 
 export const providersApi = {

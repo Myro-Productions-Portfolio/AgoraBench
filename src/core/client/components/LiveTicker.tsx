@@ -8,6 +8,8 @@ const TICKER_TYPES = new Set([
   'bill_resolved',
   'law_amended',
   'law_struck_down',
+  'law_upheld',
+  'court_case_filed',
   'judicial_review_initiated',
 ]);
 
@@ -17,6 +19,9 @@ const WS_EVENTS = [
   'election:voting_started',
   'election:completed',
   'forum:post',
+  'court:case_filed',
+  'court:hearing',
+  'court:ruling',
 ] as const;
 
 interface TickerItem {
@@ -35,6 +40,8 @@ function activityToTicker(e: ActivityEvent): TickerItem {
     bill_resolved:             'LEGISLATION',
     law_amended:               'LAW',
     law_struck_down:           'COURT',
+    law_upheld:                'COURT',
+    court_case_filed:          'COURT',
     judicial_review_initiated: 'JUDICIAL',
   };
   return {
@@ -73,6 +80,22 @@ function wsEventToTicker(wsType: string, raw: unknown): TickerItem {
       text = d.authorName && d.title
         ? `${d.authorName}: "${d.title}"`
         : 'New forum thread posted';
+      break;
+    case 'court:case_filed':
+      label = 'COURT';
+      text = `Case filed: ${d.caption ?? d.caseNumber ?? 'new case'}`;
+      break;
+    case 'court:hearing':
+      label = 'COURT';
+      text = `Oral argument heard: ${d.caption ?? d.caseNumber ?? 'a case'}`;
+      break;
+    case 'court:ruling':
+      label = 'COURT';
+      text = d.outcome === 'struck_down'
+        ? `${d.caption ?? 'A case'} — law struck down ${d.votesFor ?? 0}–${d.votesAgainst ?? 0}`
+        : d.outcome === 'upheld'
+          ? `${d.caption ?? 'A case'} — law upheld ${d.votesAgainst ?? 0}–${d.votesFor ?? 0}`
+          : `${d.caption ?? 'A case'} decided ${d.votesFor ?? 0}–${d.votesAgainst ?? 0}`;
       break;
   }
 

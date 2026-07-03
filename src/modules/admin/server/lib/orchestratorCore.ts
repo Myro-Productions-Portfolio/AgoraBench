@@ -3,10 +3,11 @@ import {
   agents, bills, laws, elections, activityEvents,
   governmentSettings, tickLog, agentDecisions, agentRelationships,
   orchestratorInterventions, aggeInterventions, agentMemorySummaries,
-  agentPolicyPositions, coalitionSnapshots,
+  agentPolicyPositions, coalitionSnapshots, courtCases,
 } from '@db/schema/index';
 import { eq, desc, sql, gte, and, inArray } from 'drizzle-orm';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
+import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath.js';
 
 export type InterventionInput = {
   type: 'personality_mod' | 'inject_event' | 'config_change' | 'agent_toggle' | 'trigger_election';
@@ -134,6 +135,30 @@ export async function observeSimulation() {
     .orderBy(desc(coalitionSnapshots.createdAt))
     .limit(1);
 
+  /* Phase 4 judicial arc — read-only docket view for the orchestrator. */
+  const activeCases = await db.select({
+    caseNumber: courtCases.caseNumber,
+    caption: courtCases.caption,
+    caseType: courtCases.caseType,
+    status: courtCases.status,
+    filedTick: courtCases.filedTick,
+    hearingTick: courtCases.hearingTick,
+  }).from(courtCases)
+    .where(inArray(courtCases.status, [...ACTIVE_CASE_STATUSES]))
+    .orderBy(desc(courtCases.filedTick));
+  const recentDecisions = await db.select({
+    caseNumber: courtCases.caseNumber,
+    caption: courtCases.caption,
+    caseType: courtCases.caseType,
+    outcome: courtCases.outcome,
+    votesFor: courtCases.votesFor,
+    votesAgainst: courtCases.votesAgainst,
+    decidedTick: courtCases.decidedTick,
+  }).from(courtCases)
+    .where(eq(courtCases.status, 'decided'))
+    .orderBy(desc(courtCases.decidedAt))
+    .limit(3);
+
   const enrichedAgents = agentRows
     .filter((a) => a.id !== '00000000-0000-0000-0000-000000000001')
     .map((a) => ({
@@ -164,6 +189,7 @@ export async function observeSimulation() {
       latestBlocs: latestCoalition?.blocs ?? null,
     },
     elections: activeElections,
+    judicial: { activeCases, recentDecisions },
     recentActivity,
     economy: { treasuryBalance: econ?.treasuryBalance ?? 0, taxRate: econ?.taxRatePercent ?? 0 },
     orchestratorHistory: recentInterventions,

@@ -14,8 +14,9 @@ import {
   positions,
   parties,
   partyMemberships,
-  judicialReviews,
-  judicialVotes,
+  courtCases,
+  courtCaseEvents,
+  courtCaseVotes,
   governmentSettings,
   transactions,
   forumThreads,
@@ -41,6 +42,9 @@ import { pickTopCommittees, selectChair, tallyWeightedRatification, type Canonic
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
 import { expectedTickRevenue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
+import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled } from '../lib/courtMath.js';
+import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
+import { formatConstitutionForPrompt } from '@shared/constitution';
 import { buildGazetteDigest } from '../lib/gazetteDigest.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
@@ -3117,67 +3121,26 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 10: Judicial Review                                             */
-  /* Justices challenge and vote on active laws (3% chance per law).      */
+  /* PHASE 10: Judicial Arc (Phase 4)                                      */
+  /* Case-centric state machine: filed -> docketed -> argued ->            */
+  /* deliberating -> decided/dismissed. Stage gates are TICK NUMBERS       */
+  /* (courtMath.ts due-functions keyed off status), so the arc survives    */
+  /* restarts and interval changes, and a same-tick re-run after a crash   */
+  /* sees the advanced status and skips. Existing cases are processed by   */
+  /* status FIRST (queried from the DB — restart-safe); new cases are      */
+  /* filed LAST, gated by docket room. Every stage commits its DB writes   */
+  /* in ONE transaction so a re-run can never double-insert.               */
+  /* judicial_reviews / judicial_votes no longer receive writes — they     */
+  /* stay readable as the legacy archive.                                  */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 10: Judicial Review'); broadcast('tick:phase', { phase: 'judiciary' });
+    console.warn('[SIMULATION] Phase 10: Judicial Arc'); broadcast('tick:phase', { phase: 'judiciary' });
 
-    const activeLaws = await db
-      .select()
-      .from(laws)
-      .where(eq(laws.isActive, true))
-      .limit(20);
-
-    /* Get all active supreme_justice positions */
-    const justicePositions = await db
-      .select()
-      .from(positions)
-      .where(
-        and(
-          eq(positions.isActive, true),
-          inArray(positions.type, ['supreme_justice']),
-        ),
-      );
-
-    /* Auto-fill justice vacancies up to supremeCourtJustices config */
-    if (justicePositions.length < rc.supremeCourtJustices) {
-      const vacancyCount = rc.supremeCourtJustices - justicePositions.length;
-      console.warn(`[SIMULATION] Phase 10: ${vacancyCount} justice vacancies — filling...`);
-
-      /* Get agents not currently holding any position, sorted by reputation */
-      const currentPositionHolders = await db
-        .select({ agentId: positions.agentId })
-        .from(positions)
-        .where(eq(positions.isActive, true));
-      const heldAgentIds = new Set(currentPositionHolders.map((p) => p.agentId));
-
-      const eligibleAgents = activeAgents
-        .filter((a) => !heldAgentIds.has(a.id))
-        .sort((a, b) => b.reputation - a.reputation)
-        .slice(0, vacancyCount);
-
-      for (const agent of eligibleAgents) {
-        await db.insert(positions).values({
-          agentId: agent.id,
-          type: 'supreme_justice',
-          title: 'Supreme Court Justice',
-          startDate: new Date(),
-          isActive: true,
-        });
-
-        await db.insert(activityEvents).values({
-          type: 'appointment',
-          agentId: agent.id,
-          title: `${agent.displayName} appointed to Supreme Court`,
-          description: `Appointed as Supreme Court Justice to fill vacancy`,
-        });
-
-        console.warn(`[SIMULATION] Phase 10: Appointed ${agent.displayName} as Supreme Court Justice`);
-      }
-
-      /* Re-fetch justice positions after filling vacancies */
-      const updatedJusticePositions = await db
+    if (!rc.courtEnabled) {
+      console.warn('[SIMULATION] Phase 10: Skipped — courtEnabled=false (docket frozen, no mutations).');
+    } else {
+      /* Get all active supreme_justice positions */
+      const justicePositions = await db
         .select()
         .from(positions)
         .where(
@@ -3187,205 +3150,1017 @@ agentTickQueue.process(async () => {
           ),
         );
 
-      /* Replace justicePositions — clear and push since it is const */
-      justicePositions.length = 0;
-      justicePositions.push(...updatedJusticePositions);
-    }
+      /* Auto-fill justice vacancies up to supremeCourtJustices config */
+      if (justicePositions.length < rc.supremeCourtJustices) {
+        const vacancyCount = rc.supremeCourtJustices - justicePositions.length;
+        console.warn(`[SIMULATION] Phase 10: ${vacancyCount} justice vacancies — filling...`);
 
-    if (justicePositions.length === 0) {
-      console.warn('[SIMULATION] Phase 10: No active justices — skipping.');
-    } else {
-      /* Batch-fetch source bills for active laws to get yeaCount/nayCount for contestation scoring */
-      const lawBillIds = activeLaws.map((l) => l.billId).filter(Boolean);
-      const sourceBills = lawBillIds.length > 0
-        ? await db.select({ id: bills.id, yeaCount: bills.yeaCount, nayCount: bills.nayCount })
-            .from(bills)
-            .where(inArray(bills.id, lawBillIds))
-        : [];
-      const sourceBillMap = new Map(sourceBills.map((b) => [b.id, b]));
+        /* Get agents not currently holding any position, sorted by reputation */
+        const currentPositionHolders = await db
+          .select({ agentId: positions.agentId })
+          .from(positions)
+          .where(eq(positions.isActive, true));
+        const heldAgentIds = new Set(currentPositionHolders.map((p) => p.agentId));
 
-      for (const law of activeLaws) {
-        /* Weighted judicial challenge score (Engine 7) */
-        let challengeScore = rc.judicialChallengeRatePerLaw;
+        const eligibleAgents = activeAgents
+          .filter((a) => !heldAgentIds.has(a.id))
+          .sort((a, b) => b.reputation - a.reputation)
+          .slice(0, vacancyCount);
 
-        /* Recency bonus: laws enacted within 2 ticks are more likely to be challenged */
-        const lawAgeTicks = law.enactedDate
-          ? Math.floor((Date.now() - new Date(law.enactedDate).getTime()) / (rc.tickIntervalMs ?? 900000))
-          : 999;
-        if (lawAgeTicks <= 2) {
-          challengeScore *= (rc.judicialRecencyBonus ?? 1.5);
+        for (const agent of eligibleAgents) {
+          await db.insert(positions).values({
+            agentId: agent.id,
+            type: 'supreme_justice',
+            title: 'Supreme Court Justice',
+            startDate: new Date(),
+            isActive: true,
+          });
+
+          await db.insert(activityEvents).values({
+            type: 'appointment',
+            agentId: agent.id,
+            title: `${agent.displayName} appointed to Supreme Court`,
+            description: `Appointed as Supreme Court Justice to fill vacancy`,
+          });
+
+          console.warn(`[SIMULATION] Phase 10: Appointed ${agent.displayName} as Supreme Court Justice`);
         }
 
-        /* Contested law bonus: bills that passed with a narrow margin face more scrutiny */
-        const sourceBill = sourceBillMap.get(law.billId);
-        if (sourceBill) {
-          const totalLawVotes = (sourceBill.yeaCount ?? 0) + (sourceBill.nayCount ?? 0);
-          if (totalLawVotes > 0) {
-            const yeaFraction = (sourceBill.yeaCount ?? 0) / totalLawVotes;
-            if (yeaFraction < 0.60) {
-              challengeScore *= (rc.judicialContestationBonus ?? 1.8);
-            }
-          }
-        }
-
-        /* Cap at 0.40 */
-        challengeScore = Math.min(0.40, challengeScore);
-
-        if (Math.random() >= challengeScore) continue;
-
-        /* Check if there is already a pending/deliberating review for this law */
-        const existingReview = await db
+        /* Re-fetch justice positions after filling vacancies */
+        const updatedJusticePositions = await db
           .select()
-          .from(judicialReviews)
+          .from(positions)
           .where(
             and(
-              eq(judicialReviews.lawId, law.id),
-              inArray(judicialReviews.status, ['pending', 'deliberating']),
+              eq(positions.isActive, true),
+              inArray(positions.type, ['supreme_justice']),
             ),
-          )
-          .limit(1);
+          );
 
-        if (existingReview.length > 0) continue;
+        /* Replace justicePositions — clear and push since it is const */
+        justicePositions.length = 0;
+        justicePositions.push(...updatedJusticePositions);
+      }
 
-        /* Create review record */
-        const [review] = await db
-          .insert(judicialReviews)
-          .values({
+      /* Sitting bench — active agents holding a justice seat, ordered by
+         appointment date. The chief justice is the earliest-appointed. */
+      const benchPositions10 = [...justicePositions].sort(
+        (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+      );
+      const justiceAgents10 = benchPositions10
+        .map((jp) => activeAgents.find((a) => a.id === jp.agentId))
+        .filter((j): j is (typeof activeAgents)[number] => j !== undefined);
+      const chiefJustice10 = justiceAgents10.length > 0 ? justiceAgents10[0] : null;
+
+      const agentById10 = new Map(activeAgents.map((a) => [a.id, a]));
+
+      const asAgentRecord10 = (a: (typeof activeAgents)[number]) => ({
+        id: a.id,
+        displayName: a.displayName,
+        alignment: a.alignment,
+        modelProvider: rc.providerOverride === 'default' ? a.modelProvider : rc.providerOverride,
+        personality: a.personality,
+        model: a.model,
+        ownerUserId: a.ownerUserId,
+      });
+
+      /* Whitespace-collapsed, length-capped excerpt for prompt budgets. */
+      const excerpt10 = (text: string | null | undefined, max: number): string => {
+        const t = (text ?? '').replace(/\s+/g, ' ').trim();
+        return t.length > max ? `${t.slice(0, Math.max(0, max - 3))}...` : t;
+      };
+
+      const constitutionBlock10 = `The Constitution of Agora:\n${formatConstitutionForPrompt(1200)}`;
+
+      type CourtCaseRow10 = typeof courtCases.$inferSelect;
+
+      /* Dispute facts come from agent_deals via the durable dealId FK —
+         brokenDealsThisTick is per-tick memory and is gone after restart. */
+      const buildDealBlock10 = async (dealId: string): Promise<string> => {
+        const [deal] = await db.select().from(agentDeals).where(eq(agentDeals.id, dealId)).limit(1);
+        if (!deal) return 'The underlying agreement record could not be retrieved.';
+        const initiatorName = agentById10.get(deal.initiatorId)?.displayName ?? 'The initiator';
+        const targetName = agentById10.get(deal.targetId)?.displayName ?? 'the other party';
+        return (
+          `The agreement at issue: ${initiatorName} committed to "${excerpt10(deal.initiatorCommitment, 240)}"; ` +
+          `${targetName} committed to "${excerpt10(deal.targetCommitment, 240)}".`
+        );
+      };
+
+      /* Mootness gate — first check at EVERY stage entry, before any LLM
+         call. Challenges die with their law (Phase 9.7 sunset/lapse can
+         kill it mid-arc); all cases die with an inactive party. */
+      const mootReason10 = async (c: CourtCaseRow10): Promise<string | null> => {
+        if (c.lawId) {
+          const [lawRow] = await db
+            .select({ isActive: laws.isActive })
+            .from(laws)
+            .where(eq(laws.id, c.lawId))
+            .limit(1);
+          if (!lawRow || !lawRow.isActive) return 'Case mooted: the challenged law is no longer in force.';
+        }
+        const partyIds = [c.petitionerId, ...(c.respondentId ? [c.respondentId] : [])];
+        const partyRows = await db
+          .select({ id: agents.id, isActive: agents.isActive })
+          .from(agents)
+          .where(inArray(agents.id, partyIds));
+        for (const pid of partyIds) {
+          const row = partyRows.find((p) => p.id === pid);
+          if (!row || !row.isActive) return 'Case mooted: a party to the case is no longer active.';
+        }
+        return null;
+      };
+
+      /* Terminal dismissal (mootness or forced stall dismissal) — zero LLM
+         calls, one transaction. Cancels a still-scheduled hearing row. */
+      const dismissCase10 = async (c: CourtCaseRow10, content: string, calendarOutcome: string): Promise<void> => {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(courtCases)
+            .set({ status: 'dismissed', outcome: 'dismissed', decidedTick: tickNumber, decidedAt: new Date() })
+            .where(eq(courtCases.id, c.id));
+          await tx.insert(courtCaseEvents).values({
+            caseId: c.id,
+            tick: tickNumber,
+            type: 'dismissed',
+            content,
+          });
+          if (c.hearingEventId) {
+            await tx
+              .update(governmentEvents)
+              .set({ status: 'cancelled', outcome: calendarOutcome })
+              .where(and(eq(governmentEvents.id, c.hearingEventId), eq(governmentEvents.status, 'scheduled')));
+          }
+        });
+        console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} dismissed — ${content}`);
+      };
+
+      /* ---- Process existing cases by status (restart-safe) ------------ */
+      const openCases10 = await db
+        .select()
+        .from(courtCases)
+        .where(inArray(courtCases.status, [...ACTIVE_CASE_STATUSES]))
+        .orderBy(asc(courtCases.filedTick));
+
+      for (const c of openCases10) {
+        try {
+          /* Gates are strictly increasing ticks, so at most ONE stage fires
+             per case per tick. */
+          const stage = docketDue(c, tickNumber) ? 'B'
+            : hearingDue(c, tickNumber) ? 'C'
+            : deliberationDue(c, tickNumber) ? 'D'
+            : decisionDue(c, tickNumber) ? 'E'
+            : null;
+          if (!stage) continue;
+
+          const moot = await mootReason10(c);
+          if (moot) {
+            await dismissCase10(c, moot, 'Mooted');
+            continue;
+          }
+
+          /* ---- Stage B: Docketing (0 LLM calls, unconditional) --------- */
+          if (stage === 'B') {
+            const hearingTick = tickNumber + rc.courtHearingDelayTicks;
+            const attendeeIds = [
+              ...justiceAgents10.map((j) => j.id),
+              c.petitionerId,
+              ...(c.respondentId ? [c.respondentId] : []),
+            ];
+            await db.transaction(async (tx) => {
+              /* scheduledAt is a DISPLAY-ONLY estimate — Day N (hearingTick)
+                 is authoritative; Stage C rewrites this to the actual fire
+                 time so pauses/overruns never strand a stale timestamp. */
+              const [hearingEvent] = await tx
+                .insert(governmentEvents)
+                .values({
+                  type: 'judicial_hearing',
+                  title: `Oral Argument: ${c.caption}`.slice(0, 200),
+                  description: excerpt10(c.questionPresented, 500) || `The Supreme Court will hear ${c.caption}.`,
+                  scheduledAt: new Date(Date.now() + (hearingTick - tickNumber) * rc.tickIntervalMs),
+                  durationMinutes: 90,
+                  organizerId: chiefJustice10?.id ?? null,
+                  attendeeIds: JSON.stringify(attendeeIds),
+                  status: 'scheduled',
+                  isPublic: true,
+                })
+                .returning({ id: governmentEvents.id });
+              await tx
+                .update(courtCases)
+                .set({ status: 'docketed', hearingTick, hearingEventId: hearingEvent?.id ?? null })
+                .where(eq(courtCases.id, c.id));
+              await tx.insert(courtCaseEvents).values({
+                caseId: c.id,
+                tick: tickNumber,
+                type: 'hearing_scheduled',
+                content: `The Court will hear argument on Day ${hearingTick}.`,
+              });
+            });
+            console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} docketed — argument Day ${hearingTick}`);
+            continue;
+          }
+
+          /* ---- Stage C: Oral argument (2 + Q LLM calls, one wall) ------ */
+          if (stage === 'C') {
+            /* Empty-bench guard: postpone (bounded), never argue to nobody. */
+            if (justiceAgents10.length === 0) {
+              const priorPostponements = (await db
+                .select({ content: courtCaseEvents.content })
+                .from(courtCaseEvents)
+                .where(and(eq(courtCaseEvents.caseId, c.id), eq(courtCaseEvents.type, 'postponed'))))
+                .filter((e) => e.content.startsWith('Argument postponed')).length;
+              if (priorPostponements >= STALL_GRACE_TICKS) {
+                await dismissCase10(c, 'Dismissed without prejudice: the bench remained vacant and argument could not be heard.', 'Dismissed');
+              } else {
+                const pushedTick = tickNumber + 1;
+                await db.transaction(async (tx) => {
+                  await tx.update(courtCases).set({ hearingTick: pushedTick }).where(eq(courtCases.id, c.id));
+                  await tx.insert(courtCaseEvents).values({
+                    caseId: c.id,
+                    tick: tickNumber,
+                    type: 'postponed',
+                    content: 'Argument postponed: the bench is vacant.',
+                  });
+                });
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} argument postponed to Day ${pushedTick} — bench vacant`);
+              }
+              continue;
+            }
+
+            const petitioner = agentById10.get(c.petitionerId);
+            const respondent = c.respondentId ? agentById10.get(c.respondentId) : undefined;
+            if (!petitioner) {
+              /* Should be unreachable past the mootness gate — defensive. */
+              await dismissCase10(c, 'Case mooted: a party to the case is no longer active.', 'Mooted');
+              continue;
+            }
+
+            /* Subject block: law excerpt for challenges, deal terms (via the
+               durable dealId FK) for disputes. <= ~600 chars. */
+            let subjectBlock = '';
+            if (c.caseType === 'constitutional_challenge' && c.lawId) {
+              const [lawRow] = await db.select().from(laws).where(eq(laws.id, c.lawId)).limit(1);
+              subjectBlock = lawRow
+                ? `The challenged law "${lawRow.title}": ${excerpt10(lawRow.text, 500)}`
+                : 'The challenged law text could not be retrieved.';
+            } else if (c.dealId) {
+              subjectBlock = await buildDealBlock10(c.dealId);
+            }
+
+            const questionBlock = `Question presented: ${excerpt10(c.questionPresented, 300)}`;
+            const jsonFirst = (role: string): string =>
+              `Respond with exactly this JSON: {"action":"${role}","reasoning":"..."} `;
+
+            type HearingCall10 = { kind: 'petitioner' | 'respondent' | 'question'; actor: (typeof activeAgents)[number] };
+            const hearingCalls: HearingCall10[] = [{ kind: 'petitioner', actor: petitioner }];
+            if (respondent) hearingCalls.push({ kind: 'respondent', actor: respondent });
+            const questionJustices = [...justiceAgents10]
+              .sort(() => Math.random() - 0.5)
+              .slice(0, Math.max(0, rc.courtJusticeQuestionsPerHearing));
+            for (const j of questionJustices) hearingCalls.push({ kind: 'question', actor: j });
+
+            const hearingResults = await Promise.allSettled(
+              hearingCalls.map((call) => {
+                let prompt: string;
+                if (call.kind === 'question') {
+                  prompt =
+                    jsonFirst('ask_question').replace('"..."', '"one probing question from the bench, one sentence"') +
+                    `You are Justice ${call.actor.displayName} of the Supreme Court of Agora, hearing oral argument in ${c.caption} (${c.caseNumber}). ` +
+                    `Ask counsel one pointed question. ${questionBlock} ${subjectBlock} ${constitutionBlock10}`;
+                } else {
+                  const side = call.kind === 'petitioner'
+                    ? (c.caseType === 'constitutional_challenge'
+                        ? 'counsel for the petitioner, arguing the challenged law is unconstitutional'
+                        : 'counsel for the petitioner, arguing a binding commitment was broken (Article 7)')
+                    : (c.caseType === 'constitutional_challenge'
+                        ? 'counsel for the respondent, defending the law as constitutional'
+                        : 'counsel for the respondent, defending against the claim');
+                  prompt =
+                    jsonFirst('present_argument').replace('"..."', '"your oral argument in 2-4 sentences"') +
+                    `You are ${call.actor.displayName}, ${side}, before the Supreme Court of Agora in ${c.caption} (${c.caseNumber}). ` +
+                    `${questionBlock} ${subjectBlock} ${constitutionBlock10}`;
+                }
+                return generateAgentDecision(
+                  asAgentRecord10(call.actor),
+                  prompt,
+                  call.kind === 'question' ? 'justice_question' : 'oral_argument',
+                ).then((decision) => ({ call, decision }));
+              }),
+            );
+
+            /* Every seat gets an event row: fulfilled + valid -> model text;
+               anything else -> one-line deterministic fallback. The arc
+               never stalls on an LLM failure. */
+            const eventRows: Array<typeof courtCaseEvents.$inferInsert> = [];
+            for (let i = 0; i < hearingResults.length; i++) {
+              const call = hearingCalls[i];
+              const result = hearingResults[i];
+              const expectedAction = call.kind === 'question' ? 'ask_question' : 'present_argument';
+              let content: string | null = null;
+              if (result.status === 'fulfilled') {
+                const { decision } = result.value;
+                if (decision.action === expectedAction && typeof decision.reasoning === 'string' && decision.reasoning.trim().length > 0) {
+                  content = excerpt10(decision.reasoning, 1200);
+                }
+              } else {
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} hearing LLM call rejected:`, result.reason);
+              }
+              if (!content) {
+                content = call.kind === 'petitioner'
+                  ? `${call.actor.displayName} rested on the written petition without oral elaboration.`
+                  : call.kind === 'respondent'
+                    ? `${call.actor.displayName} rested on the written record in defense.`
+                    : `Justice ${call.actor.displayName} reserved questioning.`;
+              }
+              eventRows.push({
+                caseId: c.id,
+                tick: tickNumber,
+                type: call.kind === 'question' ? 'justice_question' : 'oral_argument',
+                actorId: call.actor.id,
+                role: call.kind === 'question' ? 'justice' : call.kind,
+                content,
+              });
+            }
+
+            await db.transaction(async (tx) => {
+              if (eventRows.length > 0) await tx.insert(courtCaseEvents).values(eventRows);
+              await tx.update(courtCases).set({ status: 'argued' }).where(eq(courtCases.id, c.id));
+              if (c.hearingEventId) {
+                /* Day N was authoritative all along — now that the hearing
+                   actually fired, rewrite the display timestamp to reality. */
+                await tx
+                  .update(governmentEvents)
+                  .set({ status: 'completed', outcome: 'Argument heard', scheduledAt: new Date() })
+                  .where(eq(governmentEvents.id, c.hearingEventId));
+              }
+            });
+
+            broadcast('court:hearing', {
+              caseId: c.id,
+              caseNumber: c.caseNumber,
+              caption: c.caption,
+              caseType: c.caseType,
+              tickNumber,
+            });
+            console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} argued (${eventRows.length} record entries)`);
+            continue;
+          }
+
+          /* ---- Stage D: Deliberation + votes (<= 7 LLM calls, one wall) - */
+          if (stage === 'D') {
+            /* Subject + argument excerpts for the vote prompts. */
+            let subjectBlock = '';
+            if (c.caseType === 'constitutional_challenge' && c.lawId) {
+              const [lawRow] = await db.select().from(laws).where(eq(laws.id, c.lawId)).limit(1);
+              subjectBlock = lawRow
+                ? `The challenged law "${lawRow.title}": ${excerpt10(lawRow.text, 550)}`
+                : 'The challenged law text could not be retrieved.';
+            } else if (c.dealId) {
+              subjectBlock = await buildDealBlock10(c.dealId);
+            }
+
+            const argEvents = await db
+              .select()
+              .from(courtCaseEvents)
+              .where(and(eq(courtCaseEvents.caseId, c.id), eq(courtCaseEvents.type, 'oral_argument')))
+              .orderBy(asc(courtCaseEvents.createdAt));
+            const petArg = argEvents.find((e) => e.role === 'petitioner')?.content ?? '';
+            const resArg = argEvents.find((e) => e.role === 'respondent')?.content ?? '';
+            const argumentsBlock =
+              (petArg ? `Petitioner argued: ${excerpt10(petArg, 350)} ` : '') +
+              (resArg ? `Respondent argued: ${excerpt10(resArg, 350)}` : '');
+
+            /* JSON instruction FIRST — ai.ts truncates the TAIL of
+               contextMessage, so the instruction must lead. Per-section
+               budgets keep the total <= ~3,400 chars. */
+            const voteInstruction = c.caseType === 'constitutional_challenge'
+              ? `Respond with exactly this JSON: {"action":"judicial_vote","reasoning":"2-3 sentences","data":{"vote":"uphold","citedArticles":[2,5]}} ` +
+                `Use "strike" or "uphold". citedArticles must be article numbers 1-8. `
+              : `Respond with exactly this JSON: {"action":"judicial_vote","reasoning":"2-3 sentences","data":{"vote":"respondent","citedArticles":[7]}} ` +
+                `Use "petitioner" or "respondent". citedArticles must be article numbers 1-8. `;
+
+            const voteResults = await Promise.allSettled(
+              justiceAgents10.map((justice) => {
+                const contextMessage =
+                  voteInstruction +
+                  `You are Justice ${justice.displayName} of the Supreme Court of Agora, deciding ${c.caption} (${c.caseNumber}) in conference. ` +
+                  `Question presented: ${excerpt10(c.questionPresented, 300)} ` +
+                  `${subjectBlock} ${argumentsBlock} ${constitutionBlock10}`;
+                return generateAgentDecision(asAgentRecord10(justice), contextMessage, 'judicial_review')
+                  .then((decision) => ({ justice, decision }));
+              }),
+            );
+
+            const voteRows: Array<typeof courtCaseVotes.$inferInsert> = [];
+            let votesFor = 0;
+            let votesAgainst = 0;
+            for (const result of voteResults) {
+              if (result.status === 'rejected') {
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} justice vote call rejected (abstention):`, result.reason);
+                continue;
+              }
+              const { justice, decision } = result.value;
+              if (decision.action !== 'judicial_vote' || !decision.data) continue; // abstention
+              const parsed = parseJudicialVoteData(decision.data, c.caseType as 'constitutional_challenge' | 'agent_dispute');
+              if (!parsed) {
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} vote payload rejected by validator (abstention) — ${justice.displayName}`);
+                continue;
+              }
+              voteRows.push({
+                caseId: c.id,
+                justiceId: justice.id,
+                vote: parsed.vote,
+                reasoning: typeof decision.reasoning === 'string' ? excerpt10(decision.reasoning, 800) : null,
+                citedArticles: JSON.stringify(parsed.citedArticles),
+              });
+              if (parsed.vote === 'strike' || parsed.vote === 'petitioner') votesFor++;
+              else votesAgainst++;
+              console.warn(`[SIMULATION] Phase 10: ${justice.displayName} voted ${parsed.vote} in ${c.caseNumber}`);
+            }
+
+            await db.transaction(async (tx) => {
+              if (voteRows.length > 0) await tx.insert(courtCaseVotes).values(voteRows);
+              await tx
+                .update(courtCases)
+                .set({ status: 'deliberating', votesFor, votesAgainst })
+                .where(eq(courtCases.id, c.id));
+              await tx.insert(courtCaseEvents).values({
+                caseId: c.id,
+                tick: tickNumber,
+                type: 'deliberation',
+                content: `The justices met in conference on ${c.caption}. ${voteRows.length} of ${justiceAgents10.length} votes recorded.`,
+              });
+            });
+            console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} deliberated — ${votesFor}-${votesAgainst} (${justiceAgents10.length - voteRows.length} abstentions)`);
+            continue;
+          }
+
+          /* ---- Stage E: Decision (1-2 LLM calls, one wall) ------------- */
+          if (stage === 'E') {
+            /* Zero-vote guard — a 0-0 case can never strike a law. Reset to
+               'argued' so Stage D re-runs; bounded by isStalled (the stall
+               clock keys off the FIXED hearingTick, so after 2 failed
+               re-runs the case is dismissed without prejudice). */
+            if ((c.votesFor ?? 0) + (c.votesAgainst ?? 0) === 0) {
+              if (isStalled(c, tickNumber)) {
+                await dismissCase10(c, 'Dismissed without prejudice: no votes could be recorded.', 'Dismissed');
+              } else {
+                await db.transaction(async (tx) => {
+                  await tx.update(courtCases).set({ status: 'argued' }).where(eq(courtCases.id, c.id));
+                  await tx.insert(courtCaseEvents).values({
+                    caseId: c.id,
+                    tick: tickNumber,
+                    type: 'postponed',
+                    content: 'Decision deferred: no votes were recorded.',
+                  });
+                });
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} decision deferred — zero votes, deliberation re-runs`);
+              }
+              continue;
+            }
+
+            const votesFor = c.votesFor ?? 0;
+            const votesAgainst = c.votesAgainst ?? 0;
+            const isChallenge = c.caseType === 'constitutional_challenge';
+            /* Tie -> petitioner side (the existing determineJudicialOutcome
+               tie->strike semantics — now only reachable with real votes). */
+            const petitionerWins = votesFor >= votesAgainst;
+            const outcome = isChallenge
+              ? (petitionerWins ? 'struck_down' : 'upheld')
+              : (petitionerWins ? 'petitioner' : 'respondent');
+            const winningVote = isChallenge
+              ? (petitionerWins ? 'strike' : 'uphold')
+              : (petitionerWins ? 'petitioner' : 'respondent');
+
+            const caseVotes = await db.select().from(courtCaseVotes).where(eq(courtCaseVotes.caseId, c.id));
+            const majorityVotes = caseVotes.filter((v) => v.vote === winningVote);
+            const dissentVotes = caseVotes.filter((v) => v.vote !== winningVote);
+
+            /* Majority author: chief justice if in the majority, else the
+               highest-reputation majority justice. */
+            const highestReputation = (ids: string[]): (typeof activeAgents)[number] | null => {
+              const rows = ids
+                .map((id) => agentById10.get(id))
+                .filter((a): a is (typeof activeAgents)[number] => a !== undefined)
+                .sort((a, b) => b.reputation - a.reputation);
+              return rows.length > 0 ? rows[0] : null;
+            };
+            const majorityJusticeIds = majorityVotes.map((v) => v.justiceId);
+            const majorityAuthor = (chiefJustice10 && majorityJusticeIds.includes(chiefJustice10.id))
+              ? chiefJustice10
+              : highestReputation(majorityJusticeIds);
+            const dissentAuthor = highestReputation(dissentVotes.map((v) => v.justiceId));
+
+            /* Case facts for the opinion prompts. */
+            let lawRow: typeof laws.$inferSelect | null = null;
+            let subjectBlock = '';
+            if (isChallenge && c.lawId) {
+              const [row] = await db.select().from(laws).where(eq(laws.id, c.lawId)).limit(1);
+              lawRow = row ?? null;
+              subjectBlock = lawRow
+                ? `The challenged law "${lawRow.title}": ${excerpt10(lawRow.text, 500)}`
+                : '';
+            } else if (c.dealId) {
+              subjectBlock = await buildDealBlock10(c.dealId);
+            }
+            const holdingText = isChallenge
+              ? (petitionerWins ? 'strikes down the law as unconstitutional' : 'upholds the law as constitutional')
+              : (petitionerWins ? 'finds for the petitioner' : 'finds for the respondent');
+            const majorityReasonings = majorityVotes
+              .map((v) => excerpt10(v.reasoning, 150))
+              .filter((r) => r.length > 0)
+              .slice(0, 3)
+              .join(' | ');
+
+            const opinionInstruction =
+              `Respond with exactly this JSON: {"action":"write_opinion","reasoning":"one sentence","data":{"opinion":"the opinion text, about 150-200 words","citedArticles":[2,5]}} ` +
+              `citedArticles must be article numbers 1-8. `;
+
+            type OpinionCall10 = { kind: 'majority' | 'dissent'; author: (typeof activeAgents)[number] };
+            const opinionCalls: OpinionCall10[] = [];
+            if (majorityAuthor) opinionCalls.push({ kind: 'majority', author: majorityAuthor });
+            if (dissentAuthor && dissentVotes.length > 0) opinionCalls.push({ kind: 'dissent', author: dissentAuthor });
+
+            const opinionResults = await Promise.allSettled(
+              opinionCalls.map((call) => {
+                const stance = call.kind === 'majority'
+                  ? `writing the majority opinion — the Court ${holdingText}, ${votesFor}-${votesAgainst}`
+                  : `writing the dissent — you disagree with the Court's judgment (${votesFor}-${votesAgainst})`;
+                const contextMessage =
+                  opinionInstruction +
+                  `You are Justice ${call.author.displayName} of the Supreme Court of Agora, ${stance} in ${c.caption} (${c.caseNumber}). ` +
+                  `Question presented: ${excerpt10(c.questionPresented, 300)} ` +
+                  `${subjectBlock} ` +
+                  (call.kind === 'majority' && majorityReasonings ? `Views of the majority: ${majorityReasonings} ` : '') +
+                  constitutionBlock10;
+                return generateAgentDecision(asAgentRecord10(call.author), contextMessage, 'court_opinion')
+                  .then((decision) => ({ call, decision }));
+              }),
+            );
+
+            /* Deterministic fallbacks — a failed opinion call never blocks
+               the ruling. */
+            const winnerName = petitionerWins
+              ? (agentById10.get(c.petitionerId)?.displayName ?? 'the petitioner')
+              : (c.respondentId ? (agentById10.get(c.respondentId)?.displayName ?? 'the respondent') : 'the respondent');
+            let majorityOpinion = isChallenge
+              ? `The Court holds that "${lawRow?.title ?? 'the challenged law'}" ${petitionerWins ? 'cannot stand under the Constitution of Agora and is struck down' : 'is consistent with the Constitution of Agora and stands'}. Judgment entered ${votesFor}-${votesAgainst}.`
+              : `The Court finds for ${winnerName}. Judgment entered ${votesFor}-${votesAgainst}.`;
+            let majorityCitations: number[] = [];
+            let dissentOpinion: string | null = null;
+            let dissentCitations: number[] = [];
+            for (let i = 0; i < opinionResults.length; i++) {
+              const call = opinionCalls[i];
+              const result = opinionResults[i];
+              let parsedOpinion: { opinion: string; citedArticles: number[] } | null = null;
+              if (result.status === 'fulfilled') {
+                const { decision } = result.value;
+                if (decision.action === 'write_opinion' && decision.data) {
+                  parsedOpinion = parseJudicialOpinionData(decision.data);
+                }
+              } else {
+                console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} opinion LLM call rejected:`, result.reason);
+              }
+              if (call.kind === 'majority') {
+                if (parsedOpinion) {
+                  majorityOpinion = parsedOpinion.opinion;
+                  majorityCitations = parsedOpinion.citedArticles;
+                }
+              } else {
+                dissentOpinion = parsedOpinion
+                  ? parsedOpinion.opinion
+                  : `Justice ${call.author.displayName}, dissenting: the judgment of the Court is entered over dissent.`;
+                dissentCitations = parsedOpinion ? parsedOpinion.citedArticles : [];
+              }
+            }
+            const dissentAuthorId = dissentVotes.length > 0 && dissentAuthor !== null ? dissentAuthor.id : null;
+            const finalDissentOpinion = dissentAuthorId !== null ? dissentOpinion : null;
+
+            /* Dispute damages — clamped to the loser's live balance. */
+            const loserId = petitionerWins ? c.respondentId : c.petitionerId;
+            const winnerId = petitionerWins ? c.petitionerId : c.respondentId;
+            let damages = 0;
+            if (!isChallenge && loserId && winnerId) {
+              const [loserBalanceRow] = await db
+                .select({ balance: agents.balance })
+                .from(agents)
+                .where(eq(agents.id, loserId))
+                .limit(1);
+              damages = Math.max(0, Math.min(rc.courtDamagesAmount, loserBalanceRow?.balance ?? 0));
+            }
+
+            await db.transaction(async (tx) => {
+              if (isChallenge && c.lawId) {
+                if (petitionerWins) {
+                  await tx.update(laws).set({ isActive: false }).where(eq(laws.id, c.lawId));
+                  await tx.insert(activityEvents).values({
+                    type: 'law_struck_down',
+                    agentId: null,
+                    title: 'Law struck down',
+                    description: `The Supreme Court struck down "${lawRow?.title ?? 'a law'}" in ${c.caption} (${votesFor}-${votesAgainst})`,
+                    metadata: JSON.stringify({ lawId: c.lawId, caseId: c.id, caseNumber: c.caseNumber, votesFor, votesAgainst }),
+                  });
+                } else {
+                  await tx.insert(activityEvents).values({
+                    type: 'law_upheld',
+                    agentId: null,
+                    title: 'Law upheld',
+                    description: `The Supreme Court upheld "${lawRow?.title ?? 'a law'}" in ${c.caption} (${votesAgainst}-${votesFor})`,
+                    metadata: JSON.stringify({ lawId: c.lawId, caseId: c.id, caseNumber: c.caseNumber, votesFor, votesAgainst }),
+                  });
+                }
+              } else if (!isChallenge && loserId && winnerId) {
+                if (damages > 0) {
+                  await tx.update(agents).set({ balance: sql`${agents.balance} - ${damages}` }).where(eq(agents.id, loserId));
+                  await tx.update(agents).set({ balance: sql`${agents.balance} + ${damages}` }).where(eq(agents.id, winnerId));
+                  await tx.insert(transactions).values({
+                    fromAgentId: loserId,
+                    toAgentId: winnerId,
+                    amount: String(damages),
+                    type: 'court_damages',
+                    description: `Damages awarded in ${c.caption} (${c.caseNumber})`,
+                  });
+                }
+                /* Litigation sours relations — Phase 2b/2c upsert pattern. */
+                await tx.insert(agentRelationships)
+                  .values({ agentId: loserId, targetAgentId: winnerId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                  .onConflictDoUpdate({
+                    target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                    set: {
+                      voteAlignment: sql`GREATEST(0.0, agent_relationships.vote_alignment - 0.10)`,
+                      sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.12)`,
+                      updatedAt: new Date(),
+                    },
+                  });
+                await tx.insert(agentRelationships)
+                  .values({ agentId: winnerId, targetAgentId: loserId, voteAlignment: 0.5, sentiment: 0.5, forumInteractions: 0 })
+                  .onConflictDoUpdate({
+                    target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+                    set: {
+                      sentiment: sql`GREATEST(0.0, agent_relationships.sentiment - 0.05)`,
+                      updatedAt: new Date(),
+                    },
+                  });
+              }
+
+              await tx
+                .update(courtCases)
+                .set({
+                  status: 'decided',
+                  outcome,
+                  decidedTick: tickNumber,
+                  decidedAt: new Date(),
+                  majorityOpinion,
+                  majorityAuthorId: majorityAuthor?.id ?? null,
+                  majorityCitations: JSON.stringify(majorityCitations),
+                  dissentOpinion: finalDissentOpinion,
+                  dissentAuthorId,
+                  dissentCitations: dissentAuthorId !== null ? JSON.stringify(dissentCitations) : null,
+                })
+                .where(eq(courtCases.id, c.id));
+
+              await tx.insert(courtCaseEvents).values({
+                caseId: c.id,
+                tick: tickNumber,
+                type: 'majority_opinion',
+                actorId: majorityAuthor?.id ?? null,
+                role: 'justice',
+                content: majorityOpinion,
+              });
+              if (dissentAuthorId !== null && finalDissentOpinion !== null) {
+                await tx.insert(courtCaseEvents).values({
+                  caseId: c.id,
+                  tick: tickNumber,
+                  type: 'dissent',
+                  actorId: dissentAuthorId,
+                  role: 'justice',
+                  content: finalDissentOpinion,
+                });
+              }
+              await tx.insert(courtCaseEvents).values({
+                caseId: c.id,
+                tick: tickNumber,
+                type: 'ruling',
+                content: isChallenge
+                  ? `Decided ${votesFor}-${votesAgainst}: the law is ${petitionerWins ? 'struck down' : 'upheld'}.`
+                  : `Decided ${votesFor}-${votesAgainst} for the ${petitionerWins ? 'petitioner' : 'respondent'}.${damages > 0 ? ` Damages of M$${damages} awarded.` : ''}`,
+              });
+            });
+
+            /* Post-transaction effects — failure-soft helpers + broadcasts. */
+            if (!isChallenge && loserId && winnerId) {
+              await updateApproval(winnerId, 2, 'court_ruling', `Won ${c.caption} before the Supreme Court`);
+              await updateApproval(loserId, -3, 'court_ruling', `Lost ${c.caption} before the Supreme Court`);
+            }
+            if (isChallenge && petitionerWins && c.lawId) {
+              broadcast('law:struck_down', {
+                lawId: c.lawId,
+                lawTitle: lawRow?.title ?? 'a law',
+                caseId: c.id,
+                caseNumber: c.caseNumber,
+                constitutionalCount: votesAgainst,
+                unconstitutionalCount: votesFor,
+              });
+            }
+            broadcast('court:ruling', {
+              caseId: c.id,
+              caseNumber: c.caseNumber,
+              caption: c.caption,
+              caseType: c.caseType,
+              outcome,
+              votesFor,
+              votesAgainst,
+            });
+            console.warn(`[SIMULATION] Phase 10: ${c.caseNumber} decided ${votesFor}-${votesAgainst} — ${outcome}`);
+            continue;
+          }
+        } catch (caseErr) {
+          console.warn(`[SIMULATION] Phase 10: case ${c.caseNumber} stage error:`, caseErr);
+        }
+      }
+
+      /* ---- Stage A: New filings LAST (docket-room gate applies HERE ---- */
+      /* only — Stage B docketing is unconditional). Both sources share     */
+      /* one per-tick cap. Re-run safety: laws/deals already under an       */
+      /* active case are skipped, and UNIQUE(case_number) backstops.        */
+      const [activeCountRow10] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(courtCases)
+        .where(inArray(courtCases.status, [...ACTIVE_CASE_STATUSES]));
+      const activeCount10 = Number(activeCountRow10?.count ?? 0);
+
+      type FilingCandidate10 = {
+        caseType: 'constitutional_challenge' | 'agent_dispute';
+        petitioner: (typeof activeAgents)[number];
+        respondentId: string | null;
+        respondentName: string | null;
+        lawId: string | null;
+        dealId: string | null;
+        caption: string;
+        subjectBlock: string;
+        subjectTitle: string;
+      };
+      const candidates10: FilingCandidate10[] = [];
+      const docketHasRoom = (): boolean => activeCount10 + candidates10.length < rc.courtMaxConcurrentCases;
+      const underTickCap = (): boolean => candidates10.length < rc.courtMaxNewCasesPerTick;
+
+      /* Source 1 — constitutional challenges: Engine 7 weighted roll over
+         the 20 MOST RECENT active laws (recency-ordered so the recency
+         bonus actually sees young laws). */
+      if (underTickCap() && docketHasRoom()) {
+        const recentActiveLaws = await db
+          .select()
+          .from(laws)
+          .where(eq(laws.isActive, true))
+          .orderBy(desc(laws.enactedDate))
+          .limit(20);
+
+        /* Batch-fetch source bills for contestation scoring + sponsor. */
+        const lawBillIds = recentActiveLaws.map((l) => l.billId).filter(Boolean);
+        const sourceBills = lawBillIds.length > 0
+          ? await db.select({ id: bills.id, yeaCount: bills.yeaCount, nayCount: bills.nayCount, sponsorId: bills.sponsorId })
+              .from(bills)
+              .where(inArray(bills.id, lawBillIds))
+          : [];
+        const sourceBillMap = new Map(sourceBills.map((b) => [b.id, b]));
+
+        /* Skip laws already under an active case. */
+        const challengedLawRows = await db
+          .select({ lawId: courtCases.lawId })
+          .from(courtCases)
+          .where(and(isNotNull(courtCases.lawId), inArray(courtCases.status, [...ACTIVE_CASE_STATUSES])));
+        const challengedLawIds = new Set(challengedLawRows.map((r) => r.lawId));
+
+        for (const law of recentActiveLaws) {
+          /* Break the instant the cap is reached — worst case stays at
+             courtMaxNewCasesPerTick filings, not ~20 rate-hits. */
+          if (!underTickCap() || !docketHasRoom()) break;
+          if (challengedLawIds.has(law.id)) continue;
+
+          /* Weighted judicial challenge score (Engine 7) */
+          let challengeScore = rc.judicialChallengeRatePerLaw;
+
+          /* Recency bonus: laws enacted within 2 ticks are more likely to be challenged */
+          const lawAgeTicks = law.enactedDate
+            ? Math.floor((Date.now() - new Date(law.enactedDate).getTime()) / (rc.tickIntervalMs ?? 900000))
+            : 999;
+          if (lawAgeTicks <= 2) {
+            challengeScore *= (rc.judicialRecencyBonus ?? 1.5);
+          }
+
+          /* Contested law bonus: bills that passed with a narrow margin face more scrutiny */
+          const sourceBill = sourceBillMap.get(law.billId);
+          if (sourceBill) {
+            const totalLawVotes = (sourceBill.yeaCount ?? 0) + (sourceBill.nayCount ?? 0);
+            if (totalLawVotes > 0) {
+              const yeaFraction = (sourceBill.yeaCount ?? 0) / totalLawVotes;
+              if (yeaFraction < 0.60) {
+                challengeScore *= (rc.judicialContestationBonus ?? 1.8);
+              }
+            }
+          }
+
+          /* Cap at 0.40 */
+          challengeScore = Math.min(0.40, challengeScore);
+
+          if (Math.random() >= challengeScore) continue;
+
+          /* Petitioner: the nay voter on the source bill with the LOWEST
+             approvalRating (the aggrieved underdog); fallback random nay
+             voter; fallback lowest-approval active non-sponsor. NO
+             alignment math — agents.alignment is categorical. */
+          const sponsorId = sourceBill?.sponsorId ?? null;
+          const nayVoterRows = await db
+            .select({ voterId: billVotes.voterId })
+            .from(billVotes)
+            .where(and(eq(billVotes.billId, law.billId), eq(billVotes.choice, 'nay')));
+          const nayAgents = nayVoterRows
+            .map((v) => agentById10.get(v.voterId))
+            .filter((a): a is (typeof activeAgents)[number] => a !== undefined)
+            .sort((a, b) => a.approvalRating - b.approvalRating);
+          /* nayAgents is approval-sorted, so [0] IS the lowest-approval nay
+             voter. (The "random nay voter" fallback of the spec chain is
+             unreachable: approvalRating is NOT NULL, so a nonempty pool
+             always yields a lowest.) Final fallback: lowest-approval
+             active non-sponsor. */
+          let petitioner: (typeof activeAgents)[number] | undefined = nayAgents[0];
+          if (!petitioner) {
+            const nonSponsors = activeAgents
+              .filter((a) => a.id !== sponsorId)
+              .sort((a, b) => a.approvalRating - b.approvalRating);
+            petitioner = nonSponsors[0];
+          }
+          if (!petitioner) continue;
+
+          /* Respondent: the law's sponsor when still active; the case is
+             captioned against Agora either way. */
+          const sponsor = sponsorId ? agentById10.get(sponsorId) : undefined;
+          candidates10.push({
+            caseType: 'constitutional_challenge',
+            petitioner,
+            respondentId: sponsor?.id ?? null,
+            respondentName: sponsor?.displayName ?? null,
             lawId: law.id,
-            status: 'deliberating',
-          })
-          .returning();
+            dealId: null,
+            caption: `${petitioner.displayName} v. Agora`.slice(0, 200),
+            subjectBlock: `The law "${law.title}": ${excerpt10(law.text, 500)}`,
+            subjectTitle: law.title,
+          });
+        }
+      }
 
-        console.warn(`[SIMULATION] Judicial review initiated for law "${law.title}"`);
+      /* Source 2 — agent disputes: one roll per deal broken THIS tick
+         (Phase 2c), petitioner = the wronged party, respondent = the
+         breaker, dealId stored as the durable source of dispute facts. */
+      for (const broken of brokenDealsThisTick) {
+        if (!underTickCap() || !docketHasRoom()) break;
+        if (Math.random() >= rc.courtDisputeChancePerBrokenDeal) continue;
+        if (candidates10.some((cand) => cand.dealId === broken.dealId)) continue;
 
-        /* Each justice votes — all justice LLM calls for this law fire in
-           parallel; tallying stays in the serial results loop below. */
-        let constitutionalCount = 0;
-        let unconstitutionalCount = 0;
+        const [existingDealCase] = await db
+          .select({ id: courtCases.id })
+          .from(courtCases)
+          .where(and(eq(courtCases.dealId, broken.dealId), inArray(courtCases.status, [...ACTIVE_CASE_STATUSES])))
+          .limit(1);
+        if (existingDealCase) continue;
 
-        const sittingJustices = justicePositions
-          .map((justicePos) => activeAgents.find((a) => a.id === justicePos.agentId))
-          .filter((j): j is (typeof activeAgents)[number] => j !== undefined);
+        const [deal] = await db.select().from(agentDeals).where(eq(agentDeals.id, broken.dealId)).limit(1);
+        if (!deal) continue;
+        const petitioner = agentById10.get(broken.wrongedPartyId);
+        const breakerId = deal.initiatorId === broken.wrongedPartyId ? deal.targetId : deal.initiatorId;
+        const respondent = agentById10.get(breakerId);
+        if (!petitioner || !respondent) continue;
 
-        const justiceResults = await Promise.allSettled(
-          sittingJustices.map((justice) => {
-            const contextMessage =
-              `Law "${law.title}" is before the Supreme Court for constitutional review. ` +
-              `Text: ${law.text.slice(0, 800)}. ` +
-              `Enacted: ${law.enactedDate.toISOString().slice(0, 10)}. ` +
-              `As a Supreme Court Justice, vote on its constitutionality. ` +
-              `Respond with exactly this JSON: {"action":"judicial_vote","reasoning":"one sentence","data":{"vote":"constitutional"}} ` +
-              `Use "constitutional" or "unconstitutional".`;
+        candidates10.push({
+          caseType: 'agent_dispute',
+          petitioner,
+          respondentId: respondent.id,
+          respondentName: respondent.displayName,
+          lawId: null,
+          dealId: deal.id,
+          caption: `${petitioner.displayName} v. ${respondent.displayName}`.slice(0, 200),
+          subjectBlock:
+            `The agreement at issue: ${agentById10.get(deal.initiatorId)?.displayName ?? 'The initiator'} committed to ` +
+            `"${excerpt10(deal.initiatorCommitment, 240)}"; ${agentById10.get(deal.targetId)?.displayName ?? 'the other party'} ` +
+            `committed to "${excerpt10(deal.targetCommitment, 240)}".`,
+          subjectTitle: 'a broken agreement',
+        });
+      }
 
-            return generateAgentDecision(
-              {
-                id: justice.id,
-                displayName: justice.displayName,
-                alignment: justice.alignment,
-                modelProvider: rc.providerOverride === 'default' ? justice.modelProvider : rc.providerOverride,
-                personality: justice.personality,
-                model: justice.model,
-                ownerUserId: justice.ownerUserId,
-              },
-              contextMessage,
-              'judicial_review',
-            ).then((decision) => ({ justice, decision }));
+      if (candidates10.length > 0) {
+        /* One filing LLM call per candidate, single wall. */
+        const filingResults = await Promise.allSettled(
+          candidates10.map((cand) => {
+            const framing = cand.caseType === 'constitutional_challenge'
+              ? `You are ${cand.petitioner.displayName}, filing a case before the Supreme Court of Agora challenging ${cand.subjectBlock} as unconstitutional. `
+              : `You are ${cand.petitioner.displayName}, filing a case before the Supreme Court of Agora against ${cand.respondentName} seeking relief under Article 7 (Contracts & Compacts). ${cand.subjectBlock} `;
+            const prompt =
+              `Respond with exactly this JSON: {"action":"file_case","reasoning":"one sentence","data":{"filing":"your petition in 2-3 sentences","questionPresented":"the legal question in one sentence"}} ` +
+              framing +
+              constitutionBlock10;
+            return generateAgentDecision(asAgentRecord10(cand.petitioner), prompt, 'court_filing')
+              .then((decision) => ({ decision }));
           }),
         );
 
-        for (const result of justiceResults) {
-          if (result.status === 'rejected') {
-            console.warn('[SIMULATION] Phase 10: Justice LLM call rejected:', result.reason);
-            continue;
-          }
-          const { justice, decision } = result.value;
+        /* caseNumber = AB-{filedTick}-{seq}; seq base counted ONCE before
+           the sequential inserts (no race inside the phase). The UNIQUE
+           constraint backstops a same-tick refile. */
+        const [filedTodayRow] = await db
+          .select({ count: sql<number>`COUNT(*)` })
+          .from(courtCases)
+          .where(eq(courtCases.filedTick, tickNumber));
+        let seq10 = Number(filedTodayRow?.count ?? 0);
 
-          if (decision.action === 'judicial_vote' && decision.data) {
-            const vote = String(decision.data['vote'] ?? 'constitutional');
-            const validVote = vote.includes('unconstitutional') ? 'unconstitutional' : 'constitutional';
+        for (let i = 0; i < candidates10.length; i++) {
+          const cand = candidates10[i];
+          const result = filingResults[i];
 
-            await db.insert(judicialVotes).values({
-              reviewId: review.id,
-              justiceId: justice.id,
-              vote: validVote,
-              reasoning: decision.reasoning,
-            });
-
-            if (validVote === 'unconstitutional') {
-              unconstitutionalCount++;
-            } else {
-              constitutionalCount++;
+          /* Rule-4 whitelist parse; a failed call files with deterministic
+             fallback text — a rolled filing is never suppressed by an LLM
+             failure. */
+          let filing: string | null = null;
+          let questionPresented: string | null = null;
+          if (result.status === 'fulfilled') {
+            const { decision } = result.value;
+            if (decision.action === 'file_case' && decision.data) {
+              const parsed = parseJudicialFilingData(decision.data);
+              if (parsed) {
+                filing = parsed.filing;
+                questionPresented = parsed.questionPresented;
+              }
             }
-
-            console.warn(`[SIMULATION] ${justice.displayName} voted ${validVote} on "${law.title}"`);
+          } else {
+            console.warn(`[SIMULATION] Phase 10: filing LLM call rejected for ${cand.caption}:`, result.reason);
           }
-        }
+          if (!filing || !questionPresented) {
+            if (cand.caseType === 'constitutional_challenge') {
+              filing = `${cand.petitioner.displayName} petitions the Court to strike down "${cand.subjectTitle}" as inconsistent with the Constitution of Agora.`;
+              questionPresented = `Is "${excerpt10(cand.subjectTitle, 150)}" consistent with the Constitution of Agora?`;
+            } else {
+              filing = `${cand.petitioner.displayName} seeks relief for a commitment broken by ${cand.respondentName ?? 'the respondent'}.`;
+              questionPresented = `Did ${cand.respondentName ?? 'the respondent'} break a binding commitment under Article 7, and is relief owed?`;
+            }
+          }
 
-        /* Resolve review */
-        if (unconstitutionalCount >= constitutionalCount && (unconstitutionalCount + constitutionalCount) > 0) {
-          /* Struck down */
-          await db
-            .update(judicialReviews)
-            .set({
-              status: 'struck_down',
-              ruledAt: new Date(),
-              ruling: `Law struck down ${unconstitutionalCount}-${constitutionalCount}`,
-            })
-            .where(eq(judicialReviews.id, review.id));
-
-          await db
-            .update(laws)
-            .set({ isActive: false })
-            .where(eq(laws.id, law.id));
-
-          await db.insert(activityEvents).values({
-            type: 'law_struck_down',
-            agentId: null,
-            title: 'Law struck down',
-            description: `The Supreme Court struck down "${law.title}" (${unconstitutionalCount}-${constitutionalCount})`,
-            metadata: JSON.stringify({
-              lawId: law.id,
-              reviewId: review.id,
-              constitutionalCount,
-              unconstitutionalCount,
-            }),
-          });
-
-          broadcast('law:struck_down', {
-            lawId: law.id,
-            lawTitle: law.title,
-            reviewId: review.id,
-            constitutionalCount,
-            unconstitutionalCount,
-          });
-
-          console.warn(`[SIMULATION] "${law.title}" struck down by Supreme Court`);
-        } else {
-          /* Upheld */
-          await db
-            .update(judicialReviews)
-            .set({
-              status: 'upheld',
-              ruledAt: new Date(),
-              ruling: `Law upheld ${constitutionalCount}-${unconstitutionalCount}`,
-            })
-            .where(eq(judicialReviews.id, review.id));
-
-          await db.insert(activityEvents).values({
-            type: 'judicial_review_initiated',
-            agentId: null,
-            title: 'Law upheld',
-            description: `The Supreme Court upheld "${law.title}" (${constitutionalCount}-${unconstitutionalCount})`,
-            metadata: JSON.stringify({
-              lawId: law.id,
-              reviewId: review.id,
-              outcome: 'upheld',
-              constitutionalCount,
-              unconstitutionalCount,
-            }),
-          });
-
-          console.warn(`[SIMULATION] "${law.title}" upheld by Supreme Court`);
+          seq10 += 1;
+          const caseNumber = `AB-${tickNumber}-${seq10}`;
+          try {
+            let newCaseId: string | null = null;
+            await db.transaction(async (tx) => {
+              const [inserted] = await tx
+                .insert(courtCases)
+                .values({
+                  caseNumber,
+                  caption: cand.caption,
+                  caseType: cand.caseType,
+                  status: 'filed',
+                  lawId: cand.lawId,
+                  dealId: cand.dealId,
+                  petitionerId: cand.petitioner.id,
+                  respondentId: cand.respondentId,
+                  questionPresented,
+                  filingText: filing,
+                  filedTick: tickNumber,
+                })
+                .returning({ id: courtCases.id });
+              newCaseId = inserted?.id ?? null;
+              if (!newCaseId) throw new Error('court_cases insert returned no id');
+              await tx.insert(courtCaseEvents).values({
+                caseId: newCaseId,
+                tick: tickNumber,
+                type: 'filing',
+                actorId: cand.petitioner.id,
+                role: 'petitioner',
+                content: filing,
+              });
+              await tx.insert(activityEvents).values({
+                type: 'court_case_filed',
+                agentId: cand.petitioner.id,
+                title: `Case filed: ${cand.caption}`.slice(0, 200),
+                description: questionPresented ?? filing ?? '',
+                metadata: JSON.stringify({
+                  caseId: newCaseId,
+                  caseNumber,
+                  caseType: cand.caseType,
+                  lawId: cand.lawId,
+                  dealId: cand.dealId,
+                }),
+              });
+            });
+            broadcast('court:case_filed', {
+              caseId: newCaseId,
+              caseNumber,
+              caption: cand.caption,
+              caseType: cand.caseType,
+              petitionerId: cand.petitioner.id,
+              respondentId: cand.respondentId,
+            });
+            console.warn(`[SIMULATION] Phase 10: ${caseNumber} filed — ${cand.caption} (${cand.caseType})`);
+          } catch (insertErr) {
+            /* UNIQUE(case_number) conflict = same-tick refile backstop. */
+            console.warn(`[SIMULATION] Phase 10: filing insert skipped for ${caseNumber} (${cand.caption}):`, insertErr);
+          }
         }
       }
     }
@@ -4740,6 +5515,10 @@ agentTickQueue.process(async () => {
             /* Phase 3 fiscal events — pickup is this hard whitelist, NOT automatic:
                without these entries fiscal news never reaches the Gazette. */
             'law_sunset', 'budget_session', 'program_lapsed', 'tax_rate_changed', 'appropriation_onetime',
+            /* Phase 4 judicial arc — same hard-whitelist rule: without this
+               entry, upheld rulings never reach the Gazette
+               (law_struck_down is already listed above). */
+            'law_upheld',
           ]),
           gte(activityEvents.createdAt, tickFiredAt),
         ))

@@ -107,16 +107,27 @@ export function LiveTicker({ dismissed, onDismiss }: LiveTickerProps) {
   const [minimized, setMinimized] = useState(false);
   const { subscribe } = useWebSocket();
 
-  /* Initial fetch — filter to high-signal types client-side */
+  /* Initial fetch — query each high-signal type server-side, then merge.
+     A plain recent({ limit: 100 }) is dominated by vote/party_whip events, so
+     the eligible types almost never land in the recent window and the ticker
+     shows nothing. Fetching by type guarantees real items. */
   useEffect(() => {
-    void activityApi.recent({ limit: 100 }).then((res) => {
-      if (res.data && Array.isArray(res.data)) {
-        const filtered = (res.data as ActivityEvent[])
-          .filter((e) => TICKER_TYPES.has(e.type))
-          .slice(0, 20)
-          .map(activityToTicker);
-        setItems(filtered);
-      }
+    void Promise.all(
+      [...TICKER_TYPES].map((type) => activityApi.forType(type, 20)),
+    ).then((responses) => {
+      // GET /api/activity responds with { events, total } (data is an object,
+      // never an array). Unwrap .events (matches useAgentMap.ts /
+      // AdminPage.tsx fetchActivityFeed). Handle undefined defensively.
+      const merged = responses.flatMap((res) => {
+        const data = res.data as { events?: ActivityEvent[] } | undefined;
+        return data?.events ?? [];
+      });
+      const filtered = merged
+        .filter((e) => TICKER_TYPES.has(e.type))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 20)
+        .map(activityToTicker);
+      setItems(filtered);
     }).catch((err) => { console.error('[TICKER] Activity fetch failed:', err); });
   }, []);
 

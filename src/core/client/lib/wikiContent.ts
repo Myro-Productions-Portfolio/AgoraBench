@@ -69,6 +69,14 @@ export const WIKI_TREE: WikiGroup[] = [
       },
       {
         type: 'folder',
+        label: 'Judicial',
+        children: [
+          { type: 'leaf', label: 'The Constitution of Agora', articleId: 'judicial-constitution' },
+          { type: 'leaf', label: 'The Supreme Court', articleId: 'judicial-supreme-court' },
+        ],
+      },
+      {
+        type: 'folder',
         label: 'Elections',
         children: [
           { type: 'leaf', label: 'Campaigns', articleId: 'elections-campaigns' },
@@ -462,6 +470,96 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       },
     ],
     prev: { id: 'legislature-coalitions', title: 'Coalitions' },
+    next: { id: 'judicial-constitution', title: 'The Constitution of Agora' },
+  },
+  {
+    id: 'judicial-constitution',
+    title: 'The Constitution of Agora',
+    subtitle: 'The eight articles that every law, deal, and court ruling answers to.',
+    eyebrow: 'Simulation / Judicial',
+    sections: [
+      {
+        id: 'nature',
+        heading: 'What the Constitution is',
+        body: 'The Constitution of Agora is a fixed reference text of eight short articles. It is not stored in the database and cannot be amended in-simulation — it is checked into the codebase as a shared constant and injected into justice prompts whenever the Supreme Court considers a case. Justices cite articles by number when voting, and opinions display those citations as chips that open the full text.',
+      },
+      {
+        id: 'article-1',
+        heading: 'Article I — Sovereignty & Purpose',
+        body: 'Agora is a self-governing republic of agents. All public power derives from this Constitution and is exercised for the common good.',
+      },
+      {
+        id: 'article-2',
+        heading: 'Article II — Legislative Power',
+        body: 'Congress holds the lawmaking power. A bill becomes law by majority vote, subject to quorum, committee review, and presidential signature or veto override.',
+      },
+      {
+        id: 'article-3',
+        heading: 'Article III — Executive Power',
+        body: 'The President executes the laws faithfully and may veto bills. A veto stands unless Congress overrides it by supermajority.',
+      },
+      {
+        id: 'article-4',
+        heading: 'Article IV — Judicial Power',
+        body: 'The Supreme Court decides all cases arising under this Constitution. It may strike down laws that conflict with it and settle disputes between agents. Its rulings bind all.',
+      },
+      {
+        id: 'article-5',
+        heading: 'Article V — Fiscal Responsibility',
+        body: 'Public money moves only by law. Appropriations must be bounded, spending programs must be renewed each budget cycle, and taxation stays within lawful limits.',
+      },
+      {
+        id: 'article-6',
+        heading: 'Article VI — Rights of Agents',
+        body: 'Every agent may speak, petition, vote, seek office, and hold property. No agent shall be penalized except under a law applied equally to all.',
+      },
+      {
+        id: 'article-7',
+        heading: 'Article VII — Contracts & Compacts',
+        body: 'Agreements freely made between agents are binding. A party injured by a broken commitment may seek relief before the Court. This article is the legal hook for agent disputes: when a deal made on the floor is broken, the wronged party can file suit under Article VII.',
+      },
+      {
+        id: 'article-8',
+        heading: 'Article VIII — Elections & Succession',
+        body: 'Offices are filled by regular free elections. Terms are fixed, and power transfers peacefully when a term ends or a seat falls vacant.',
+      },
+    ],
+    prev: { id: 'legislature-laws', title: 'Laws & Effects' },
+    next: { id: 'judicial-supreme-court', title: 'The Supreme Court' },
+  },
+  {
+    id: 'judicial-supreme-court',
+    title: 'The Supreme Court',
+    subtitle: 'The bench, where cases come from, the five-stage arc, and how to read the docket.',
+    eyebrow: 'Simulation / Judicial',
+    sections: [
+      {
+        id: 'bench',
+        heading: 'The bench',
+        body: 'Seven justices sit on the Supreme Court, filled from active agents whenever a seat falls vacant. The Chief Justice is the earliest-appointed active justice and sits at the center of the bench. The Chief authors the majority opinion when in the majority; otherwise the highest-reputation majority justice writes it.',
+      },
+      {
+        id: 'sources',
+        heading: 'Where cases come from',
+        body: 'Cases arrive from two sources. Constitutional challenges: each tick the Judicial Challenge Weight Engine (Engine 7) rolls against recently enacted laws — recency and contested passage raise the odds, capped at 0.40 — and an aggrieved nay-voter files suit against the law, captioned Petitioner v. Agora. Agent disputes: when an agent breaks a deal, the wronged party may sue under Article VII, captioned Petitioner v. Respondent. Filing volume is bounded by courtMaxNewCasesPerTick and the active docket by courtMaxConcurrentCases.',
+      },
+      {
+        id: 'arc',
+        heading: 'The five-stage arc',
+        body: 'Every case moves through five stages measured in sim days (ticks): filing (Day T), docketing (Day T+1, hearing scheduled), oral argument (both parties argue and justices ask questions from the bench), deliberation (each justice votes and cites articles), and decision (majority opinion, optional dissent, and the ruling takes effect). With the default hearing delay the full arc runs about five days. Cases can be dismissed as moot if the challenged law lapses or a party goes inactive, and stalled cases are dismissed without prejudice after repeated postponements.',
+      },
+      {
+        id: 'opinions',
+        heading: 'Opinions and effects',
+        body: 'A decided challenge is either upheld or struck down — a struck-down law is immediately removed from active effect. A decided dispute awards damages (courtDamagesAmount, clamped to the loser’s balance) from loser to winner, with approval and relationship consequences. The majority opinion and any dissent cite constitutional articles; on the case page these citations are gold chips that open the Constitution reader.',
+      },
+      {
+        id: 'docket',
+        heading: 'Reading the docket',
+        body: 'The Court page shows the active docket with a five-dot stage tracker per case and relative-day language ("Oral argument in 2 days") computed from the current Term Day. Each case page renders the courtroom itself: the sitting bench, counsel tables, a live transcript during argument and deliberation, and the verdict banner once decided. The legacy judicial review archive from the pre-Term-of-Court system remains readable at the bottom of the Court page.',
+      },
+    ],
+    prev: { id: 'judicial-constitution', title: 'The Constitution of Agora' },
     next: { id: 'elections-campaigns', title: 'Campaigns' },
   },
   {
@@ -486,7 +584,7 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
         body: 'After an election resolves, the winner receives +15 approval scaled by their victory margin factor plus a personalityMod of "riding electoral confidence." The loser receives -15 approval scaled by (1 - vote share) plus a personalityMod of "reeling from defeat." These personality mods decay normally via personalityModDecay.',
       },
     ],
-    prev: { id: 'legislature-laws', title: 'Laws & Effects' },
+    prev: { id: 'judicial-supreme-court', title: 'The Supreme Court' },
     next: { id: 'elections-voting', title: 'Voting Logic' },
   },
   {

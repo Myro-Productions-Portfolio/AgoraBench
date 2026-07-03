@@ -118,8 +118,17 @@ export function useAgentMap(): AgentMapState {
         const agentList = (agentRes.data as Agent[]) ?? [];
         setAgents(agentList);
 
-        // Derive each agent's location from their most recent activity
-        const activityList = (activityRes.data as Array<{ agentId: string | null; type: string }>) ?? [];
+        // Derive each agent's location from their most recent activity.
+        // GET /api/activity responds with { events, total } (see
+        // src/modules/agents/server/routes/activity.ts), not a bare array —
+        // unwrap .events here (matches the working pattern in AdminPage.tsx's
+        // fetchActivityFeed). Casting activityRes.data straight to an array
+        // made it non-iterable, throwing on every load and leaving
+        // agentLocations permanently empty — which is why CapitolMapPage's
+        // `agentLocations[agent.id] ?? 'party-hall'` fallback put every
+        // agent in Party Hall.
+        const activityData = activityRes.data as { events?: Array<{ agentId: string | null; type: string }> } | undefined;
+        const activityList = activityData?.events ?? [];
         const locations: Record<string, string> = {};
 
         // Process activities newest-first; only set location for agent if not already set

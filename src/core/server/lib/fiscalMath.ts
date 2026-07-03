@@ -107,6 +107,71 @@ export function budgetSessionDue(
   return tickNumber - last >= cycleTicks;
 }
 
+/* ── UI countdown helpers (budget endpoint + detail enrichment) ────────── */
+/* "currentTick" here is the COUNT of completed ticks (the same tick_log
+   COUNT the sim derives tickNumber from — the next tick to run is count+1).
+   All three return whole ticks remaining, floored at 0 ("due now/overdue"). */
+
+/**
+ * Ticks until a law's sunset is due: max(0, enactedTick + sunsetTicks - currentTick).
+ * Returns null for laws with no sunset (legacy: NULL columns) or bad input.
+ */
+export function ticksUntilSunset(
+  currentTick: number,
+  enactedTick: number | null | undefined,
+  sunsetTicks: number | null | undefined,
+): number | null {
+  if (!Number.isFinite(currentTick)) return null;
+  if (enactedTick === null || enactedTick === undefined || !Number.isFinite(enactedTick)) return null;
+  if (sunsetTicks === null || sunsetTicks === undefined || !Number.isFinite(sunsetTicks) || sunsetTicks <= 0) return null;
+  return Math.max(0, Math.floor(enactedTick) + Math.floor(sunsetTicks) - Math.floor(currentTick));
+}
+
+/**
+ * Ticks until a program's funding lapse is DUE (the actual program_active
+ * flip executes at the next budget session at/after that point):
+ * max(0, max(enactedTick, lastRenewedTick) + cycleTicks - currentTick).
+ * Returns null when the program has no enactedTick (legacy) or bad input.
+ */
+export function ticksUntilLapse(
+  currentTick: number,
+  enactedTick: number | null | undefined,
+  lastRenewedTick: number | null | undefined,
+  cycleTicks: number,
+): number | null {
+  if (!Number.isFinite(currentTick)) return null;
+  if (enactedTick === null || enactedTick === undefined || !Number.isFinite(enactedTick)) return null;
+  if (!Number.isFinite(cycleTicks) || cycleTicks <= 0) return null;
+  const renewed = lastRenewedTick !== null && lastRenewedTick !== undefined && Number.isFinite(lastRenewedTick)
+    ? lastRenewedTick
+    : enactedTick;
+  const anchor = Math.max(Math.floor(enactedTick), Math.floor(renewed));
+  return Math.max(0, anchor + Math.floor(cycleTicks) - Math.floor(currentTick));
+}
+
+/**
+ * Ticks from now until the next budget session fires. Phase 9.7 fires at
+ * tick n when n - lastSessionTick >= cycleTicks, and the next tick to run
+ * is currentTick + 1, so the session tick is
+ * max(currentTick + 1, lastSessionTick + cycleTicks) — always >= 1 away.
+ * Corrupt/missing marker is treated as 0 (matches budgetSessionDue).
+ * Returns null on bad currentTick/cycle (caller renders no countdown).
+ */
+export function ticksUntilNextBudgetSession(
+  currentTick: number,
+  lastSessionTick: number | null | undefined,
+  cycleTicks: number,
+): number | null {
+  if (!Number.isFinite(currentTick)) return null;
+  if (!Number.isFinite(cycleTicks) || cycleTicks <= 0) return null;
+  const last = lastSessionTick !== null && lastSessionTick !== undefined && Number.isFinite(lastSessionTick)
+    ? Math.floor(lastSessionTick)
+    : 0;
+  const cur = Math.floor(currentTick);
+  const sessionTick = Math.max(cur + 1, last + Math.floor(cycleTicks));
+  return sessionTick - cur;
+}
+
 /* ── Phase 11 renewal-pressure note ────────────────────────────────────── */
 
 const EXPIRING_NOTE_MAX_PROGRAMS = 3;

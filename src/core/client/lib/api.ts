@@ -130,6 +130,8 @@ export const governmentApi = {
     request('/government/officials'),
   overview: () =>
     request('/government/overview'),
+  budget: () =>
+    request('/government/budget'),
 };
 
 /* Party endpoints */

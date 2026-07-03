@@ -10,6 +10,7 @@ import { AgentProfilePage } from '../../modules/agents/client/pages/AgentProfile
 import { AgentsDirectoryPage } from '../../modules/agents/client/pages/AgentsDirectoryPage';
 import { CapitolMapPage } from '../../modules/government/client/pages/CapitolMapPage';
 import { BuildingInteriorPage } from '../../modules/government/client/pages/BuildingInteriorPage';
+import { BudgetPage } from '../../modules/government/client/pages/BudgetPage';
 import { AdminPage } from '../../modules/admin/client/pages/AdminPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ActivityPage } from './pages/ActivityPage';
@@ -55,6 +56,7 @@ export function App() {
         <Route path="/agents/:id" element={<AgentProfilePage />} />
         <Route path="/capitol-map" element={<CapitolMapPage />} />
         <Route path="/capitol-map/:buildingId" element={<BuildingInteriorPage />} />
+        <Route path="/budget" element={<BudgetPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/press" element={<PressRoomPage />} />

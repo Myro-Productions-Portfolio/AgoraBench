@@ -16,6 +16,17 @@ interface RollCallEntry {
   followedWhip: boolean;
 }
 
+interface FiscalNote {
+  kind: 'spend_once' | 'spend_recurring' | 'tax_change';
+  oneTimeCost: number;
+  perTickDelta: number;
+  perCycleDelta: number;
+  horizonTicks: number;
+  projected10TickDelta: number;
+  pctOfCurrentTreasury: number;
+  expectedTickRevenue: number;
+}
+
 interface BillDetail {
   id: string;
   title: string;
@@ -34,6 +45,14 @@ interface BillDetail {
   tally: { yea: number; nay: number; abstain: number; total: number };
   rollCall: RollCallEntry[];
   law: { id: string; title: string; enactedDate: string; isActive: boolean } | null;
+  /* Phase 3 fiscal provision (validated + clamped at proposal time) */
+  fiscalKind: 'spend_once' | 'spend_recurring' | 'tax_change' | null;
+  fiscalAmount: number | null;
+  fiscalTaxDelta: number | null;
+  fiscalProgramName: string | null;
+  sunsetTicks: number | null;
+  /* Deterministic server-side projection — null when the bill has no provision */
+  fiscalNote: FiscalNote | null;
 }
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -66,6 +85,10 @@ function fmtDate(s: string | null | undefined): string {
 function fmtDateTime(s: string | null | undefined): string {
   if (!s) return '—';
   return new Date(s).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtM(v: number): string {
+  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
 }
 
 /* ── Component ─────────────────────────────────────────────────────────── */
@@ -196,6 +219,9 @@ export function BillDetailPage() {
           <Section title="Summary">
             <p className="text-sm text-text-secondary leading-relaxed">{bill.summary}</p>
           </Section>
+
+          {/* Fiscal Note — only when the bill carries a validated provision */}
+          {bill.fiscalNote && <FiscalNoteSection bill={bill} note={bill.fiscalNote} />}
 
           {/* Floor Amendments */}
           <AmendmentsList billId={bill.id} billStatus={bill.status} />
@@ -342,6 +368,80 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="font-serif text-lg font-semibold text-stone">{title}</h2>
       {children}
     </div>
+  );
+}
+
+/* ── Fiscal Note (Phase 3) — deterministic "CBO score" projection ─────── */
+
+const FISCAL_KIND_LABELS: Record<FiscalNote['kind'], string> = {
+  spend_once: 'One-Time Appropriation',
+  spend_recurring: 'Recurring Spending Program',
+  tax_change: 'Revenue Law',
+};
+
+function FiscalNoteSection({ bill, note }: { bill: BillDetail; note: FiscalNote }) {
+  const pctOfRevenue = note.expectedTickRevenue > 0 && note.perTickDelta !== 0
+    ? Math.round((Math.abs(note.perTickDelta) / note.expectedTickRevenue) * 1000) / 10
+    : null;
+
+  return (
+    <Section title="Fiscal Note">
+      <div className="flex flex-wrap gap-2">
+        <span className="badge border text-badge uppercase tracking-widest text-gold bg-gold/10 border-gold/30">
+          {FISCAL_KIND_LABELS[note.kind]}
+        </span>
+        {bill.sunsetTicks !== null && (
+          <span className="badge border text-badge uppercase tracking-widest text-orange-300 bg-orange-900/20 border-orange-700/30">
+            Sunsets after {bill.sunsetTicks} tick{bill.sunsetTicks !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      <div className="text-sm text-text-secondary leading-relaxed space-y-1">
+        {note.kind === 'spend_once' && (
+          <p>
+            Estimated cost: <span className="font-mono text-red-400">−{fmtM(note.oneTimeCost)}</span> from the treasury,
+            once, at enactment{note.pctOfCurrentTreasury > 0 && <> — {note.pctOfCurrentTreasury}% of the current treasury</>}.
+          </p>
+        )}
+        {note.kind === 'spend_recurring' && (
+          <>
+            <p>
+              Estimated cost: <span className="font-mono text-red-400">{fmtM(note.perTickDelta)}/tick</span>{' '}
+              ({fmtM(note.perCycleDelta)} per budget cycle)
+              {pctOfRevenue !== null && <> — {pctOfRevenue}% of expected tick revenue</>}.
+            </p>
+            {bill.fiscalProgramName && (
+              <p>Establishes the program &quot;{bill.fiscalProgramName}&quot;, funded until it lapses at a budget session or is renewed.</p>
+            )}
+          </>
+        )}
+        {note.kind === 'tax_change' && (
+          <p>
+            Moves the tax rate by <span className={`font-mono ${(bill.fiscalTaxDelta ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+              {(bill.fiscalTaxDelta ?? 0) > 0 ? '+' : ''}{bill.fiscalTaxDelta ?? 0} point{Math.abs(bill.fiscalTaxDelta ?? 0) !== 1 ? 's' : ''}
+            </span>{' '}
+            at enactment — projected revenue change of{' '}
+            <span className={`font-mono ${note.perTickDelta >= 0 ? 'text-green-400' : 'text-red-400'}`}>{fmtM(note.perTickDelta)}/tick</span>{' '}
+            at current agent balances.
+          </p>
+        )}
+        <p>
+          Projected 10-tick treasury impact:{' '}
+          <span className={`font-mono ${note.projected10TickDelta >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {fmtM(note.projected10TickDelta)}
+          </span>
+          {note.kind !== 'spend_once' && note.pctOfCurrentTreasury > 0 && (
+            <> · full-horizon impact ≈ {note.pctOfCurrentTreasury}% of the current treasury</>
+          )}
+          .
+        </p>
+      </div>
+
+      <p className="text-xs text-text-muted">
+        Deterministic projection from the bill&apos;s validated, clamped fiscal provision — computed by the bench, not the sponsor.
+      </p>
+    </Section>
   );
 }
 

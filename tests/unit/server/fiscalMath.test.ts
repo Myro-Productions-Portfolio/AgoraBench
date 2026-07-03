@@ -8,6 +8,9 @@ import {
   budgetSessionDue,
   composeExpiringProgramsNote,
   projectFiscalNote,
+  ticksUntilSunset,
+  ticksUntilLapse,
+  ticksUntilNextBudgetSession,
 } from '@core/server/lib/fiscalMath';
 
 describe('clampInt', () => {
@@ -239,5 +242,76 @@ describe('projectFiscalNote', () => {
     );
     expect(n?.pctOfCurrentTreasury).toBe(0);
     expect(Number.isFinite(n?.projected10TickDelta ?? NaN)).toBe(true);
+  });
+});
+
+/* ── UI countdown helpers ─────────────────────────────────────────────── */
+
+describe('ticksUntilSunset — remaining = max(0, enacted + sunset - current)', () => {
+  it('counts down and floors at 0 when due/overdue', () => {
+    expect(ticksUntilSunset(100, 90, 20)).toBe(10);
+    expect(ticksUntilSunset(109, 90, 20)).toBe(1);
+    expect(ticksUntilSunset(110, 90, 20)).toBe(0); // due exactly now
+    expect(ticksUntilSunset(200, 90, 20)).toBe(0); // overdue never negative
+  });
+
+  it('agrees with sunsetDue at the boundary: due exactly when remaining hits 0', () => {
+    /* Phase 9.7 evaluates at tickNumber = current + 1, so remaining 1 → due next tick */
+    expect(ticksUntilSunset(109, 90, 20)).toBe(1);
+    expect(sunsetDue(110, 90, 20)).toBe(true);
+    expect(sunsetDue(109, 90, 20)).toBe(false);
+  });
+
+  it('legacy laws (NULL columns) and bad input return null', () => {
+    expect(ticksUntilSunset(100, null, 20)).toBeNull();
+    expect(ticksUntilSunset(100, undefined, 20)).toBeNull();
+    expect(ticksUntilSunset(100, 90, null)).toBeNull();
+    expect(ticksUntilSunset(100, 90, 0)).toBeNull();
+    expect(ticksUntilSunset(NaN, 90, 20)).toBeNull();
+    expect(ticksUntilSunset(100, Infinity, 20)).toBeNull();
+  });
+});
+
+describe('ticksUntilLapse — anchor = max(enacted, lastRenewed)', () => {
+  it('counts down from the later of enacted/renewed and floors at 0', () => {
+    expect(ticksUntilLapse(100, 80, null, 24)).toBe(4);
+    expect(ticksUntilLapse(100, 80, 90, 24)).toBe(14); // renewal reset the clock
+    expect(ticksUntilLapse(104, 80, null, 24)).toBe(0); // due exactly now
+    expect(ticksUntilLapse(500, 80, null, 24)).toBe(0); // overdue never negative
+  });
+
+  it('uses the LATER of enacted/lastRenewed even if renewed is stale', () => {
+    expect(ticksUntilLapse(100, 95, 90, 24)).toBe(19); // enacted after renewal marker
+  });
+
+  it('legacy programs (NULL enactedTick) and bad cycles return null', () => {
+    expect(ticksUntilLapse(100, null, null, 24)).toBeNull();
+    expect(ticksUntilLapse(100, 80, null, 0)).toBeNull();
+    expect(ticksUntilLapse(100, 80, null, NaN)).toBeNull();
+    expect(ticksUntilLapse(NaN, 80, null, 24)).toBeNull();
+  });
+});
+
+describe('ticksUntilNextBudgetSession — session tick = max(current+1, last+cycle)', () => {
+  it('counts down inside a cycle', () => {
+    expect(ticksUntilNextBudgetSession(100, 90, 24)).toBe(14); // fires at tick 114
+    expect(ticksUntilNextBudgetSession(113, 90, 24)).toBe(1);
+  });
+
+  it('is never less than 1 — an overdue session fires on the NEXT tick', () => {
+    expect(ticksUntilNextBudgetSession(114, 90, 24)).toBe(1);
+    expect(ticksUntilNextBudgetSession(500, 90, 24)).toBe(1);
+  });
+
+  it('mid-life DB first run: marker 0 → next tick fires the session', () => {
+    /* live DB: thousands of completed ticks, lastBudgetSessionTick defaults 0 */
+    expect(ticksUntilNextBudgetSession(4000, 0, 24)).toBe(1);
+  });
+
+  it('corrupt marker treated as 0 (matches budgetSessionDue), bad input null', () => {
+    expect(ticksUntilNextBudgetSession(10, NaN, 24)).toBe(14); // last=0 → fires at 24
+    expect(ticksUntilNextBudgetSession(10, null, 24)).toBe(14);
+    expect(ticksUntilNextBudgetSession(NaN, 0, 24)).toBeNull();
+    expect(ticksUntilNextBudgetSession(10, 0, 0)).toBeNull();
   });
 });

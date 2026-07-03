@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi } from '@core/client/lib/api';
+import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi, governmentApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
@@ -158,6 +158,18 @@ interface RuntimeConfig {
 interface EconomySettings {
   treasuryBalance: number;
   taxRatePercent: number;
+}
+
+/* Phase 3 fiscal status (subset of GET /api/government/budget) */
+interface BudgetStatus {
+  treasuryBalance: number;
+  taxRatePercent: number;
+  fiscalEffectsEnabled: boolean;
+  budgetCycleTicks: number;
+  expectedTickRevenue: number;
+  activePrograms: { lawId: string; name: string; perTick: number; ticksUntilLapse: number | null }[];
+  nextBudgetSession: { inTicks: number; estMs: number } | null;
+  totals: { recurringPerTick: number; capPerTick: number };
 }
 
 interface AgentRow {
@@ -584,6 +596,8 @@ export function AdminPage() {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [simConfig, setSimConfig] = useState<RuntimeConfig | null>(null);
   const [economySettings, setEconomySettings] = useState<EconomySettings | null>(null);
+  /* Phase 3: read-only fiscal status strip (reuses GET /api/government/budget) */
+  const [budgetStatus, setBudgetStatus] = useState<BudgetStatus | null>(null);
   const [agentList, setAgentList] = useState<AgentRow[]>([]);
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -769,6 +783,13 @@ export function AdminPage() {
     } catch (err) { console.error('[ADMIN] fetchEconomy failed:', err); }
   }, []);
 
+  const fetchBudgetStatus = useCallback(async () => {
+    try {
+      const res = await governmentApi.budget();
+      setBudgetStatus(res.data as BudgetStatus);
+    } catch (err) { console.error('[ADMIN] fetchBudgetStatus failed:', err); }
+  }, []);
+
   const fetchAgents = useCallback(async () => {
     try {
       const res = await adminApi.getAgents();
@@ -910,6 +931,7 @@ export function AdminPage() {
     void fetchDecisions();
     void fetchConfig();
     void fetchEconomy();
+    void fetchBudgetStatus();
     void fetchAgents();
     void fetchAvatarAgents();
     void fetchProviders();
@@ -941,6 +963,7 @@ export function AdminPage() {
       void fetchDecisions();
       void fetchAgents();
       void fetchEconomy();
+      void fetchBudgetStatus();
       void fetchExportCounts();
       void fetchHealth();
     };
@@ -1021,7 +1044,7 @@ export function AdminPage() {
       }),
     ];
     return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); };
-  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchSimModels, fetchAggeModels, fetchHealth]);
+  }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchBudgetStatus, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchSimModels, fetchAggeModels, fetchHealth]);
 
   const flash = (msg: string) => {
     setActionMsg(msg);
@@ -2146,6 +2169,52 @@ export function AdminPage() {
                   </label>
                   <p className="text-xs text-text-muted">When off, bills still store validated provisions but nothing is applied — no debits, no tax changes, no sunsets, no lapses.</p>
                 </div>
+
+                {/* Live fiscal status — read-only, from GET /api/government/budget */}
+                {budgetStatus && (
+                  <div className="border-t border-border pt-4">
+                    <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Budget Cycle Status (live)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="rounded border border-border/60 bg-white/[0.02] px-4 py-3">
+                        <p className="text-badge text-text-muted uppercase tracking-widest mb-1">Recurring Spend vs Cap</p>
+                        <p className="text-sm font-mono text-gold">
+                          M${budgetStatus.totals.recurringPerTick.toLocaleString()}
+                          <span className="text-text-muted"> / M${budgetStatus.totals.capPerTick.toLocaleString()} per tick</span>
+                        </p>
+                        <div className="h-1.5 mt-2 rounded-full bg-border/40 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${budgetStatus.totals.capPerTick > 0 && budgetStatus.totals.recurringPerTick / budgetStatus.totals.capPerTick > 0.8 ? 'bg-red-500/80' : 'bg-gold'}`}
+                            style={{ width: `${budgetStatus.totals.capPerTick > 0 ? Math.min(100, Math.round((budgetStatus.totals.recurringPerTick / budgetStatus.totals.capPerTick) * 100)) : 0}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div className="rounded border border-border/60 bg-white/[0.02] px-4 py-3">
+                        <p className="text-badge text-text-muted uppercase tracking-widest mb-1">Active Programs</p>
+                        <p className="text-sm font-mono text-gold">{budgetStatus.activePrograms.length}</p>
+                        <p className="text-xs text-text-muted mt-1">
+                          {budgetStatus.activePrograms.filter((p) => p.ticksUntilLapse === 0).length} due to lapse at the next session
+                        </p>
+                      </div>
+                      <div className="rounded border border-border/60 bg-white/[0.02] px-4 py-3">
+                        <p className="text-badge text-text-muted uppercase tracking-widest mb-1">Next Budget Session</p>
+                        <p className="text-sm font-mono text-gold">
+                          {budgetStatus.nextBudgetSession
+                            ? `${budgetStatus.nextBudgetSession.inTicks} tick${budgetStatus.nextBudgetSession.inTicks !== 1 ? 's' : ''}`
+                            : '—'}
+                        </p>
+                        {budgetStatus.nextBudgetSession && (
+                          <p className="text-xs text-text-muted mt-1">
+                            ≈ {Math.round(budgetStatus.nextBudgetSession.estMs / 3_600_000 * 10) / 10}h at the current tick interval
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted mt-3">
+                      Expected revenue M${budgetStatus.expectedTickRevenue.toLocaleString()}/tick at {budgetStatus.taxRatePercent}% tax.
+                      Full dashboard: <a href="/budget" className="text-gold hover:underline">/budget</a>.
+                    </p>
+                  </div>
+                )}
 
                 <div className="border-t border-border pt-4">
                   <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Budget Cycle &amp; Sunsets</p>

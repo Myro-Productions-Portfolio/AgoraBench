@@ -14,6 +14,22 @@ interface AmendmentBill {
   introducedAt: string;
 }
 
+interface LawFiscal {
+  kind: 'spend_once' | 'spend_recurring' | 'tax_change';
+  amount: number | null;
+  taxDelta: number | null;
+  programName: string | null;
+  sunsetTicks: number | null;
+  programActive: boolean;
+  enactedTick: number | null;
+  lastRenewedTick: number | null;
+  currentTickNumber: number;
+  budgetCycleTicks: number;
+  ticksUntilSunset: number | null;
+  ticksUntilLapse: number | null;
+  cumulativeImpact: number;
+}
+
 interface LawDetail {
   id: string;
   title: string;
@@ -35,6 +51,8 @@ interface LawDetail {
     alignment: string | null;
   } | null;
   amendmentBills: AmendmentBill[];
+  /* Phase 3: null on every legacy law (NULL fiscal_kind) — renders nothing */
+  fiscal: LawFiscal | null;
 }
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -63,6 +81,10 @@ const BILL_STATUS_META: Record<string, { label: string; color: string }> = {
 function fmtDate(s: string | null | undefined): string {
   if (!s) return '—';
   return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function fmtM(v: number): string {
+  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -104,6 +126,8 @@ export function LawDetailPage() {
     const unsubs = [
       subscribe('law:amended', fetchLaw),
       subscribe('law:struck_down', fetchLaw),
+      subscribe('law:sunset', fetchLaw),
+      subscribe('budget:session', fetchLaw),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, [subscribe, fetchLaw]);
@@ -204,6 +228,9 @@ export function LawDetailPage() {
         </Section>
       )}
 
+      {/* Fiscal effects — only when the law carries a provision (legacy laws render nothing) */}
+      {law.fiscal && <FiscalEffectsSection fiscal={law.fiscal} lawActive={law.isActive} />}
+
       {/* Full text */}
       <Section title="Full Text">
         <pre className="text-text-secondary text-sm whitespace-pre-wrap leading-relaxed font-sans">
@@ -253,5 +280,97 @@ export function LawDetailPage() {
         </Section>
       )}
     </div>
+  );
+}
+
+/* ── Fiscal effects (Phase 3) ──────────────────────────────────────────── */
+
+function FiscalRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5 border-b border-border/30 last:border-0 text-sm">
+      <span className="text-text-muted">{label}</span>
+      <span className="text-text-secondary text-right">{children}</span>
+    </div>
+  );
+}
+
+function FiscalEffectsSection({ fiscal, lawActive }: { fiscal: LawFiscal; lawActive: boolean }) {
+  /* Status badge: program funding state, or sunset countdown */
+  let statusBadge: { label: string; color: string } | null = null;
+  if (fiscal.kind === 'spend_recurring') {
+    statusBadge = fiscal.programActive
+      ? { label: 'Program Active', color: 'text-green-400 bg-green-900/20 border-green-700/30' }
+      : { label: 'Funding Lapsed', color: 'text-yellow-300 bg-yellow-900/20 border-yellow-700/30' };
+  }
+  const sunsetExpired = !lawActive && fiscal.ticksUntilSunset === 0;
+
+  return (
+    <Section title="Fiscal Effects">
+      <div className="flex flex-wrap gap-2">
+        {statusBadge && (
+          <span className={`badge border text-badge uppercase tracking-widest ${statusBadge.color}`}>
+            {statusBadge.label}
+          </span>
+        )}
+        {fiscal.ticksUntilSunset !== null && (
+          sunsetExpired ? (
+            <span className="badge border text-badge uppercase tracking-widest text-red-400 bg-red-900/20 border-red-700/30">
+              Expired by Sunset
+            </span>
+          ) : lawActive ? (
+            <span className="badge border text-badge uppercase tracking-widest text-orange-300 bg-orange-900/20 border-orange-700/30">
+              {fiscal.ticksUntilSunset === 0
+                ? 'Sunset due next tick'
+                : `Sunsets in ${fiscal.ticksUntilSunset} tick${fiscal.ticksUntilSunset !== 1 ? 's' : ''}`}
+            </span>
+          ) : null
+        )}
+      </div>
+
+      <div>
+        {fiscal.kind === 'spend_once' && (
+          <FiscalRow label="One-time appropriation">
+            <span className="font-mono text-red-400">−{fmtM(fiscal.amount ?? 0)}</span> at enactment
+          </FiscalRow>
+        )}
+        {fiscal.kind === 'spend_recurring' && (
+          <>
+            <FiscalRow label="Program">{fiscal.programName ?? '—'}</FiscalRow>
+            <FiscalRow label="Cost per tick">
+              <span className="font-mono text-red-400">−{fmtM(fiscal.amount ?? 0)}</span>
+            </FiscalRow>
+            {fiscal.programActive && fiscal.ticksUntilLapse !== null && (
+              <FiscalRow label="Funding due">
+                {fiscal.ticksUntilLapse === 0
+                  ? 'Lapses at the next budget session unless renewed'
+                  : `${fiscal.ticksUntilLapse} tick${fiscal.ticksUntilLapse !== 1 ? 's' : ''} (renewable by amendment)`}
+              </FiscalRow>
+            )}
+            {!fiscal.programActive && (
+              <FiscalRow label="Funding">Lapsed — the law stands, but the treasury no longer pays. An amendment bill can re-fund it.</FiscalRow>
+            )}
+          </>
+        )}
+        {fiscal.kind === 'tax_change' && (
+          <FiscalRow label="Tax rate change">
+            <span className={`font-mono ${(fiscal.taxDelta ?? 0) > 0 ? 'text-red-400' : 'text-green-400'}`}>
+              {(fiscal.taxDelta ?? 0) > 0 ? '+' : ''}{fiscal.taxDelta ?? 0} point{Math.abs(fiscal.taxDelta ?? 0) !== 1 ? 's' : ''}
+            </span> applied at enactment
+          </FiscalRow>
+        )}
+        {fiscal.kind !== 'tax_change' && (
+          <FiscalRow label="Cumulative treasury impact">
+            <span className="font-mono text-red-400">−{fmtM(fiscal.cumulativeImpact)}</span> to date
+          </FiscalRow>
+        )}
+        {fiscal.enactedTick !== null && (
+          <FiscalRow label="Enacted at">Tick {fiscal.enactedTick}{fiscal.lastRenewedTick !== null && fiscal.lastRenewedTick !== fiscal.enactedTick ? ` · last renewed tick ${fiscal.lastRenewedTick}` : ''}</FiscalRow>
+        )}
+      </div>
+      <p className="text-xs text-text-muted">
+        Figures come from the treasury ledger and the law&apos;s validated fiscal provision. See the{' '}
+        <Link to="/budget" className="text-gold hover:underline">Budget dashboard</Link> for the full picture.
+      </p>
+    </Section>
   );
 }

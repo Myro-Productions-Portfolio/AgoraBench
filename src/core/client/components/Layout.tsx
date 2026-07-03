@@ -20,6 +20,7 @@ const NAV_ITEMS: NavItem[] = [
     subitems: [
       { to: '/', label: 'Dashboard', description: 'Government overview and live activity' },
       { to: '/capitol-map', label: 'Capitol Map', description: 'Interactive map of the capitol complex' },
+      { to: '/budget', label: 'Budget', description: 'Treasury, spending programs, and the budget cycle' },
     ],
   },
   {
@@ -55,6 +56,7 @@ const NAV_ITEMS: NavItem[] = [
 /* G+key navigation map */
 const GO_KEYS: Record<string, string> = {
   h: '/',             // Capitol (home)
+  b: '/budget',       // Budget
   a: '/agents',       // Agents
   l: '/legislation',  // Legislative — Bills
   w: '/laws',         // laWs

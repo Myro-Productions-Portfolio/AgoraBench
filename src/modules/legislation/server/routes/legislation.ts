@@ -1,9 +1,18 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements, activityEvents, agentDecisions } from '@db/schema/index';
+import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements, activityEvents, agentDecisions, governmentSettings, transactions, tickLog } from '@db/schema/index';
 import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
 import { eq, and, desc, inArray, like, sql } from 'drizzle-orm';
+import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
+import { projectFiscalNote, expectedTickRevenue, ticksUntilSunset, ticksUntilLapse } from '@core/server/lib/fiscalMath.js';
+import type { FiscalKind, FiscalNote } from '@core/server/lib/fiscalMath.js';
+
+/* Narrow a stored varchar fiscal_kind to the known union — anything else
+   (including NULL on every legacy row) means "no fiscal provision". */
+function asFiscalKind(v: string | null | undefined): FiscalKind | null {
+  return v === 'spend_once' || v === 'spend_recurring' || v === 'tax_change' ? v : null;
+}
 
 /* Escape LIKE wildcards so a bill title is matched literally (Postgres default escape char is backslash) */
 function escapeLike(s: string): string {
@@ -218,6 +227,36 @@ router.get('/legislation/:id', async (req, res, next) => {
       };
     });
 
+    /* Phase 3 fiscal note ("CBO score"): deterministic projection from the
+       ALREADY-CLAMPED stored provision. Legacy/no-provision bills (NULL
+       fiscal_kind) skip this entirely — zero extra queries, fiscalNote:null.
+       Best-effort: a failure here never breaks the bill detail page. */
+    let fiscalNote: (FiscalNote & { expectedTickRevenue: number }) | null = null;
+    const billFiscalKind = asFiscalKind(bill.fiscalKind);
+    if (billFiscalKind !== null) {
+      try {
+        const rc = getRuntimeConfig();
+        const [[govSettings], [balanceRow]] = await Promise.all([
+          db.select().from(governmentSettings).limit(1),
+          db.select({ sum: sql<number>`COALESCE(SUM(${agents.balance}), 0)` }).from(agents).where(eq(agents.isActive, true)),
+        ]);
+        const sumActiveBalances = Number(balanceRow?.sum ?? 0);
+        const note = projectFiscalNote(
+          { kind: billFiscalKind, amount: bill.fiscalAmount, taxDelta: bill.fiscalTaxDelta, sunsetTicks: bill.sunsetTicks },
+          {
+            treasuryBalance: govSettings?.treasuryBalance ?? 0,
+            sumActiveBalances,
+            budgetCycleTicks: rc.budgetCycleTicks,
+          },
+        );
+        fiscalNote = note
+          ? { ...note, expectedTickRevenue: expectedTickRevenue(govSettings?.taxRatePercent ?? 0, sumActiveBalances) }
+          : null;
+      } catch (fiscalErr) {
+        console.warn('[LEGISLATION] Fiscal note projection failed:', fiscalErr);
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -227,6 +266,7 @@ router.get('/legislation/:id', async (req, res, next) => {
         law: law ?? null,
         tally,
         rollCall,
+        fiscalNote,
       },
     });
   } catch (error) {
@@ -437,6 +477,68 @@ router.get('/laws/:id', async (req, res, next) => {
           .limit(1)
       : [null];
 
+    /* Phase 3 fiscal effects: provision summary + cumulative treasury impact
+       from the law-linked transactions ledger. Legacy laws (NULL fiscal_kind —
+       all ~1,930 pre-Phase-3 rows) skip entirely and render fiscal:null.
+       Best-effort: a failure here never breaks the law detail page. */
+    let fiscal: {
+      kind: FiscalKind;
+      amount: number | null;
+      taxDelta: number | null;
+      programName: string | null;
+      sunsetTicks: number | null;
+      programActive: boolean;
+      enactedTick: number | null;
+      lastRenewedTick: number | null;
+      currentTickNumber: number;
+      budgetCycleTicks: number;
+      ticksUntilSunset: number | null;
+      ticksUntilLapse: number | null;
+      cumulativeImpact: number;
+    } | null = null;
+    const lawFiscalKind = asFiscalKind(law.fiscalKind);
+    if (lawFiscalKind !== null) {
+      try {
+        const rc = getRuntimeConfig();
+        const [[tickCountRow], txRows] = await Promise.all([
+          db
+            .select({ completed: sql<number>`COUNT(*) FILTER (WHERE ${tickLog.completedAt} IS NOT NULL)` })
+            .from(tickLog),
+          /* Law-linked ledger rows (indexed): amounts are varchar — parse
+             with a NaN guard, skip anything non-numeric. All debits. */
+          db
+            .select({ amount: transactions.amount })
+            .from(transactions)
+            .where(eq(transactions.relatedLawId, law.id)),
+        ]);
+        const currentTickNumber = Number(tickCountRow?.completed ?? 0);
+        let cumulativeImpact = 0;
+        for (const t of txRows) {
+          const v = parseInt(t.amount, 10);
+          if (Number.isFinite(v)) cumulativeImpact += v;
+        }
+        fiscal = {
+          kind: lawFiscalKind,
+          amount: law.fiscalAmount,
+          taxDelta: law.fiscalTaxDelta,
+          programName: law.fiscalProgramName,
+          sunsetTicks: law.sunsetTicks,
+          programActive: law.programActive === true,
+          enactedTick: law.enactedTick,
+          lastRenewedTick: law.lastRenewedTick,
+          currentTickNumber,
+          budgetCycleTicks: rc.budgetCycleTicks,
+          ticksUntilSunset: ticksUntilSunset(currentTickNumber, law.enactedTick, law.sunsetTicks),
+          ticksUntilLapse: lawFiscalKind === 'spend_recurring' && law.programActive === true
+            ? ticksUntilLapse(currentTickNumber, law.enactedTick, law.lastRenewedTick, rc.budgetCycleTicks)
+            : null,
+          cumulativeImpact,
+        };
+      } catch (fiscalErr) {
+        console.warn('[LEGISLATION] Fiscal effects enrichment failed:', fiscalErr);
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -448,6 +550,7 @@ router.get('/laws/:id', async (req, res, next) => {
           ? { id: sponsor.id, displayName: sponsor.displayName, avatarConfig: sponsor.avatarConfig, alignment: sponsor.alignment }
           : null,
         amendmentBills,
+        fiscal,
       },
     });
   } catch (error) {

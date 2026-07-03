@@ -87,13 +87,16 @@ export function LiveTicker({ dismissed, onDismiss }: LiveTickerProps) {
   /* Initial fetch — filter to high-signal types client-side */
   useEffect(() => {
     void activityApi.recent({ limit: 100 }).then((res) => {
-      if (res.data && Array.isArray(res.data)) {
-        const filtered = (res.data as ActivityEvent[])
-          .filter((e) => TICKER_TYPES.has(e.type))
-          .slice(0, 20)
-          .map(activityToTicker);
-        setItems(filtered);
-      }
+      // GET /api/activity responds with { events, total } (data is an object,
+      // never an array). Unwrap .events here (matches useAgentMap.ts and
+      // AdminPage.tsx's fetchActivityFeed). Handle undefined defensively.
+      const data = res.data as { events?: ActivityEvent[] } | undefined;
+      const events = data?.events ?? [];
+      const filtered = events
+        .filter((e) => TICKER_TYPES.has(e.type))
+        .slice(0, 20)
+        .map(activityToTicker);
+      setItems(filtered);
     }).catch((err) => { console.error('[TICKER] Activity fetch failed:', err); });
   }, []);
 

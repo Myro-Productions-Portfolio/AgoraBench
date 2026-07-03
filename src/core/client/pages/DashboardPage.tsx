@@ -125,8 +125,11 @@ export function DashboardPage() {
         setCampaigns(campaignsRes.value.data as EnrichedCampaign[]);
       }
 
-      if (activityRes.status === 'fulfilled' && activityRes.value.data && Array.isArray(activityRes.value.data)) {
-        setActivity(activityRes.value.data as ActivityEvent[]);
+      if (activityRes.status === 'fulfilled') {
+        // GET /api/activity responds with { events, total } (data is an object,
+        // never an array). Unwrap .events (matches useAgentMap.ts / LiveTicker).
+        const activityData = activityRes.value.data as { events?: ActivityEvent[] } | undefined;
+        setActivity(activityData?.events ?? []);
       }
 
       if (calendarRes.status === 'fulfilled' && calendarRes.value.data) {

@@ -9,7 +9,7 @@
   "cssEntry": ".design-sync/app-compiled.css",
   "extraEntries": ["./.design-sync/preview-shell.tsx"],
   "provider": { "component": "PreviewShell" },
-  "guidelinesGlob": [],
+  "guidelinesGlob": ["docs/design-briefs/*.md"],
   "readmeHeader": ".design-sync/conventions.md",
   "libOverrides": {
     "source-kit.mjs": "app repo: structural dir names (client/map/icons/module names) aren't DS groups — extend GENERIC_DIR so docsMap category stubs set the curated groups"

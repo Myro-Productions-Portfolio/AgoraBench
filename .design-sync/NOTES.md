@@ -28,8 +28,11 @@ Repo-specific gotchas for the claude.ai/design sync. One bullet per item; append
 - **docsMap enumerates all 21 components** deliberately — no real per-component docs exist; every
   entry is a frontmatter-only regroup stub (the skill's regroup mechanism). Prompt bodies are
   synthesized from `.d.ts` + previews.
-- `guidelinesGlob: []` — the default glob swept backend/dev docs (`docs/TODO.md`,
-  `docs/BEST_PRACTICES.md`, …) into `guidelines/`; those are not design guidelines.
+- `guidelinesGlob` was `[]` because the default glob swept backend/dev docs (`docs/TODO.md`,
+  `docs/BEST_PRACTICES.md`, …) into `guidelines/`; those are not design guidelines. Now scoped to
+  `["docs/design-briefs/*.md"]` — the 7 UI-revamp briefs (README + 01-06) are synced as guidelines
+  and any re-sync picks them up automatically via that glob, no other config change needed per brief
+  added/edited under `docs/design-briefs/`.
 - **Playwright**: repo has no playwright dep; `.ds-sync` installs its own (chromium build must match
   `~/.cache/ms-playwright` — 1228 installed for playwright 1.61).
 

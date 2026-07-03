@@ -5,6 +5,8 @@ import {
   applyTaxDelta,
   sunsetDue,
   lapseDue,
+  budgetSessionDue,
+  composeExpiringProgramsNote,
   projectFiscalNote,
 } from '@core/server/lib/fiscalMath';
 
@@ -109,6 +111,81 @@ describe('lapseDue — age measured from max(enactedTick, lastRenewedTick)', () 
   it('rejects non-positive cycles and non-finite ticks', () => {
     expect(lapseDue(200, 100, null, 0)).toBe(false);
     expect(lapseDue(NaN, 100, null, 24)).toBe(false);
+  });
+});
+
+describe('budgetSessionDue — fires when tickNumber - lastSessionTick >= cycleTicks', () => {
+  it('fires exactly at the cycle edge, not before', () => {
+    expect(budgetSessionDue(123, 100, 24)).toBe(false); // 23 ticks since session
+    expect(budgetSessionDue(124, 100, 24)).toBe(true);  // 24 — due
+  });
+
+  it('first run on a mid-life DB: marker defaults 0, session fires and re-baselines', () => {
+    expect(budgetSessionDue(5_000, 0, 24)).toBe(true);
+  });
+
+  it('survives a tick-number gap past the edge (restart robustness)', () => {
+    /* Sim down for several cycles: the next completed tick still fires
+       exactly one session, which then re-baselines the marker. */
+    expect(budgetSessionDue(500, 100, 24)).toBe(true);
+  });
+
+  it('a session that just fired this tick is not due again', () => {
+    expect(budgetSessionDue(124, 124, 24)).toBe(false);
+  });
+
+  it('corrupt marker is treated as 0 (fire and re-baseline, never silence the cycle)', () => {
+    expect(budgetSessionDue(5_000, NaN, 24)).toBe(true);
+    expect(budgetSessionDue(5_000, null, 24)).toBe(true);
+    expect(budgetSessionDue(5_000, undefined, 24)).toBe(true);
+  });
+
+  it('bad tickNumber or non-positive cycle disables the session (conservative)', () => {
+    expect(budgetSessionDue(NaN, 100, 24)).toBe(false);
+    expect(budgetSessionDue(500, 100, 0)).toBe(false);
+    expect(budgetSessionDue(500, 100, -5)).toBe(false);
+    expect(budgetSessionDue(500, 100, NaN)).toBe(false);
+  });
+});
+
+describe('composeExpiringProgramsNote — bounded renewal-pressure prompt fragment', () => {
+  it('returns empty string when nothing expires', () => {
+    expect(composeExpiringProgramsNote([])).toBe('');
+  });
+
+  it('lists name and per-tick cost', () => {
+    expect(composeExpiringProgramsNote([{ name: 'Rural Broadband Fund', perTick: 40 }])).toBe(
+      ' Programs expiring at the next budget session: Rural Broadband Fund (M$40/tick).',
+    );
+  });
+
+  it('caps at 3 programs', () => {
+    const note = composeExpiringProgramsNote([
+      { name: 'A', perTick: 1 },
+      { name: 'B', perTick: 2 },
+      { name: 'C', perTick: 3 },
+      { name: 'D', perTick: 4 },
+    ]);
+    expect(note).toContain('A (M$1/tick)');
+    expect(note).toContain('C (M$3/tick)');
+    expect(note).not.toContain('D (M$4/tick)');
+  });
+
+  it('never exceeds 220 chars (prompt budget safety)', () => {
+    const note = composeExpiringProgramsNote(
+      Array.from({ length: 3 }, (_, i) => ({ name: `${'Very Long Program Name '.repeat(10)}${i}`, perTick: 1_000_000 })),
+    );
+    expect(note.length).toBeLessThanOrEqual(220);
+  });
+
+  it('slices long names, squashes whitespace, floors amounts, and guards non-finite', () => {
+    const note = composeExpiringProgramsNote([
+      { name: `  Spaced\n\nOut   Name  `, perTick: 40.9 },
+      { name: '', perTick: NaN },
+    ]);
+    expect(note).toContain('Spaced Out Name (M$40/tick)');
+    expect(note).toContain('Unnamed Program (M$0/tick)');
+    expect(note).not.toContain('\n');
   });
 });
 

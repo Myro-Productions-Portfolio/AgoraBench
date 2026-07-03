@@ -77,6 +77,28 @@ describe('buildGazetteDigest', () => {
     expect(line).not.toContain('\n');
   });
 
+  it('labels Phase 3 fiscal event types (pickup is a hard whitelist, not automatic)', () => {
+    const digest = buildGazetteDigest({
+      ...emptyInput(),
+      events: [
+        { type: 'law_sunset', title: 'Law sunset', description: 'Expired under its sunset clause' },
+        { type: 'budget_session', title: 'Budget session held', description: '2 programs lapsed' },
+        { type: 'program_lapsed', title: 'Program lapsed', description: 'Not renewed' },
+        { type: 'tax_rate_changed', title: 'Tax rate changed by law', description: '2% to 3%' },
+        { type: 'appropriation_onetime', title: 'One-time appropriation', description: 'M$400 spent' },
+      ],
+    });
+    expect(digest).toBe(
+      [
+        '- Sunset: Law sunset — Expired under its sunset clause',
+        '- Budget: Budget session held — 2 programs lapsed',
+        '- Budget: Program lapsed — Not renewed',
+        '- Treasury: Tax rate changed by law — 2% to 3%',
+        '- Treasury: One-time appropriation — M$400 spent',
+      ].join('\n'),
+    );
+  });
+
   it('labels unknown event types generically', () => {
     const digest = buildGazetteDigest({
       ...emptyInput(),

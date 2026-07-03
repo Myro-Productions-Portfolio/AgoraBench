@@ -85,6 +85,56 @@ export function lapseDue(
   return tickNumber - anchor >= cycleTicks;
 }
 
+/**
+ * Budget-session trigger — fires when tickNumber - lastSessionTick >= cycleTicks.
+ * lastSessionTick is NOT NULL DEFAULT 0 in the DB, so the first post-deploy
+ * check on a mid-life DB (tickNumber in the thousands) fires immediately and
+ * re-baselines — intended. A corrupt/non-finite marker is treated as 0 (fire
+ * and re-baseline) because a stuck marker must never silence the cycle forever;
+ * a non-finite tickNumber or non-positive cycle disables the session instead
+ * (conservative: no lapse on bad input).
+ */
+export function budgetSessionDue(
+  tickNumber: number,
+  lastSessionTick: number | null | undefined,
+  cycleTicks: number,
+): boolean {
+  if (!Number.isFinite(tickNumber)) return false;
+  if (!Number.isFinite(cycleTicks) || cycleTicks <= 0) return false;
+  const last = lastSessionTick !== null && lastSessionTick !== undefined && Number.isFinite(lastSessionTick)
+    ? lastSessionTick
+    : 0;
+  return tickNumber - last >= cycleTicks;
+}
+
+/* ── Phase 11 renewal-pressure note ────────────────────────────────────── */
+
+const EXPIRING_NOTE_MAX_PROGRAMS = 3;
+const EXPIRING_NOTE_MAX_CHARS = 220;
+const EXPIRING_NOTE_NAME_MAX_CHARS = 40;
+
+/**
+ * Server-composed, deterministic prompt fragment listing programs that will
+ * lapse at the next budget session — bounded to 3 programs / 220 chars so it
+ * can never blow the 4000-char prompt budget. Returns '' when nothing expires
+ * (callers append it unconditionally). Names are sliced defensively even
+ * though stored fiscalProgramName is already sanitized at parse time.
+ */
+export function composeExpiringProgramsNote(
+  programs: Array<{ name: string; perTick: number }>,
+): string {
+  if (programs.length === 0) return '';
+  const items = programs
+    .slice(0, EXPIRING_NOTE_MAX_PROGRAMS)
+    .map((p) => {
+      const name = p.name.replace(/\s+/g, ' ').trim().slice(0, EXPIRING_NOTE_NAME_MAX_CHARS) || 'Unnamed Program';
+      const perTick = Number.isFinite(p.perTick) ? Math.floor(p.perTick) : 0;
+      return `${name} (M$${perTick}/tick)`;
+    });
+  const note = ` Programs expiring at the next budget session: ${items.join(', ')}.`;
+  return note.length > EXPIRING_NOTE_MAX_CHARS ? note.slice(0, EXPIRING_NOTE_MAX_CHARS) : note;
+}
+
 /* ── Fiscal note ("CBO score") projection ──────────────────────────────── */
 
 export interface FiscalProvisionLike {

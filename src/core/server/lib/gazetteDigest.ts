@@ -26,6 +26,12 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   appointment: 'Appointment',
   tax_collected: 'Treasury',
   floor_amendment: 'Amendment',
+  /* Phase 3 fiscal events */
+  law_sunset: 'Sunset',
+  budget_session: 'Budget',
+  program_lapsed: 'Budget',
+  tax_rate_changed: 'Treasury',
+  appropriation_onetime: 'Treasury',
 };
 
 function squash(text: string): string {

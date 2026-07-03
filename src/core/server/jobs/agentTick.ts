@@ -1,5 +1,5 @@
 import Bull from 'bull';
-import { eq, and, inArray, lte, gte, gt, lt, asc, desc, count, sql } from 'drizzle-orm';
+import { eq, and, inArray, isNotNull, lte, gte, gt, lt, asc, desc, count, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
@@ -40,7 +40,7 @@ import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
-import { expectedTickRevenue, applyTaxDelta } from '../lib/fiscalMath.js';
+import { expectedTickRevenue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
 import { buildGazetteDigest } from '../lib/gazetteDigest.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
@@ -2932,6 +2932,191 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
+  /* PHASE 9.7: Sunset Expiry & Budget Session                             */
+  /* Deterministic, zero LLM. Placed after Phase 9 enactment and before   */
+  /* Phase 10 judicial review so Phases 10/11 see a consistent active-law */
+  /* picture the same tick.                                               */
+  /*   Sunset: laws with a sunset_ticks provision deactivate via the SAME */
+  /*   isActive flip judicial strike-down uses — the only fiscal path     */
+  /*   that deactivates a law. Legacy laws (NULL sunset_ticks or NULL     */
+  /*   enacted_tick) are never due, structurally.                         */
+  /*   Budget session: every rc.budgetCycleTicks ticks (DB-persisted      */
+  /*   last_budget_session_tick marker — restart-robust), recurring       */
+  /*   programs older than one cycle LAPSE unless renewed: program_active */
+  /*   flips false, the LAW stays active — funding dies, the statute      */
+  /*   survives, and a later amendment can re-fund it (Phase 9 renewal    */
+  /*   hook). Kill switch: fiscalEffectsEnabled=false skips sunsets AND   */
+  /*   lapse AND does NOT advance the session marker, so re-enabling      */
+  /*   resumes the cycle naturally.                                       */
+  /* ------------------------------------------------------------------ */
+  if (rc.fiscalEffectsEnabled) {
+    try {
+      /* ---- Sunset expiry ---------------------------------------------- */
+      const sunsetCandidates = await db
+        .select()
+        .from(laws)
+        .where(and(eq(laws.isActive, true), isNotNull(laws.sunsetTicks)));
+
+      const dueSunsets = sunsetCandidates.filter((law) =>
+        sunsetDue(tickNumber, law.enactedTick, law.sunsetTicks),
+      );
+
+      if (dueSunsets.length > 0) {
+        /* Rule 2: inArray(), never raw ANY(). Same flip as strike-down. */
+        await db
+          .update(laws)
+          .set({ isActive: false })
+          .where(inArray(laws.id, dueSunsets.map((l) => l.id)));
+
+        /* A sunsetting recurring program also stops being funded. */
+        const sunsetProgramIds = dueSunsets
+          .filter((l) => l.fiscalKind === 'spend_recurring')
+          .map((l) => l.id);
+        if (sunsetProgramIds.length > 0) {
+          await db
+            .update(laws)
+            .set({ programActive: false })
+            .where(inArray(laws.id, sunsetProgramIds));
+        }
+
+        for (const law of dueSunsets) {
+          await db.insert(activityEvents).values({
+            type: 'law_sunset',
+            agentId: null,
+            title: 'Law sunset',
+            description: `"${law.title}" expired under its sunset clause after ${law.sunsetTicks} ticks`,
+            metadata: JSON.stringify({
+              lawId: law.id,
+              enactedTick: law.enactedTick,
+              sunsetTicks: law.sunsetTicks,
+              expiredAtTick: tickNumber,
+            }),
+          });
+
+          broadcast('law:sunset', {
+            lawId: law.id,
+            lawTitle: law.title,
+            sunsetTicks: law.sunsetTicks,
+          });
+
+          console.warn(`[SIMULATION] Phase 9.7: "${law.title}" sunset at tick ${tickNumber} (enacted tick ${law.enactedTick}, sunset ${law.sunsetTicks})`);
+        }
+      }
+
+      /* ---- Budget session ---------------------------------------------- */
+      const [gs97] = await db.select().from(governmentSettings).limit(1);
+
+      if (gs97 && budgetSessionDue(tickNumber, gs97.lastBudgetSessionTick, rc.budgetCycleTicks)) {
+        console.warn(`[SIMULATION] Phase 9.7: Budget session at tick ${tickNumber} (last session tick ${gs97.lastBudgetSessionTick}, cycle ${rc.budgetCycleTicks})`);
+
+        const activePrograms97 = await db
+          .select()
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.programActive, true), eq(laws.fiscalKind, 'spend_recurring')));
+
+        const lapsingPrograms = activePrograms97.filter((p) =>
+          lapseDue(tickNumber, p.enactedTick, p.lastRenewedTick, rc.budgetCycleTicks),
+        );
+        const survivingPrograms = activePrograms97.filter(
+          (p) => !lapsingPrograms.some((l) => l.id === p.id),
+        );
+
+        const sumPerTick = (rows: typeof activePrograms97): number =>
+          rows.reduce((s, r) => s + (typeof r.fiscalAmount === 'number' && Number.isFinite(r.fiscalAmount) ? r.fiscalAmount : 0), 0);
+        const lapsedPerTick = sumPerTick(lapsingPrograms);
+        const survivingPerTick = sumPerTick(survivingPrograms);
+
+        if (lapsingPrograms.length > 0) {
+          /* Lapse flips program_active ONLY — the law itself stays active.
+             Funding dies; the statute survives; renewal-by-amendment can
+             re-activate it later (and that re-activation re-enters the
+             aggregate recurring cap check at Phase 11 proposal time). */
+          await db
+            .update(laws)
+            .set({ programActive: false })
+            .where(inArray(laws.id, lapsingPrograms.map((l) => l.id)));
+
+          for (const program of lapsingPrograms) {
+            const programName = program.fiscalProgramName ?? program.title;
+            await db.insert(activityEvents).values({
+              type: 'program_lapsed',
+              agentId: null,
+              title: 'Spending program lapsed',
+              description: `"${programName}" (M$${program.fiscalAmount}/tick) was not renewed and lapsed at the budget session`,
+              metadata: JSON.stringify({
+                lawId: program.id,
+                programName,
+                perTick: program.fiscalAmount,
+                enactedTick: program.enactedTick,
+                lastRenewedTick: program.lastRenewedTick,
+                lapsedAtTick: tickNumber,
+              }),
+            });
+            console.warn(`[SIMULATION] Phase 9.7: Program "${programName}" lapsed (M$${program.fiscalAmount}/tick, last renewed tick ${program.lastRenewedTick ?? program.enactedTick})`);
+          }
+        }
+
+        /* Calendar entry — CalendarPage/EventDetailModal already style
+           budget_session; zero client changes needed. */
+        const sessionDescription =
+          `Budget session at tick ${tickNumber}: ` +
+          `${lapsingPrograms.length} program(s) lapsed (M$${lapsedPerTick}/tick freed), ` +
+          `${survivingPrograms.length} program(s) continue (M$${survivingPerTick}/tick). ` +
+          `Treasury M$${gs97.treasuryBalance}.`;
+
+        await db.insert(governmentEvents).values({
+          type: 'budget_session',
+          title: `Budget Session — Tick ${tickNumber}`.slice(0, 200),
+          description: sessionDescription.slice(0, 500),
+          scheduledAt: new Date(),
+          durationMinutes: 60,
+          status: 'completed',
+          outcome: lapsingPrograms.length > 0
+            ? `${lapsingPrograms.length} program(s) lapsed`
+            : 'All programs renewed or within cycle',
+          isPublic: true,
+        });
+
+        /* One summary activity event (Gazette whitelist picks it up). */
+        await db.insert(activityEvents).values({
+          type: 'budget_session',
+          agentId: null,
+          title: 'Budget session held',
+          description: sessionDescription,
+          metadata: JSON.stringify({
+            tickNumber,
+            lapsedCount: lapsingPrograms.length,
+            lapsedPerTick,
+            survivingCount: survivingPrograms.length,
+            survivingPerTick,
+            treasuryBalance: gs97.treasuryBalance,
+          }),
+        });
+
+        /* Advance the DB-persisted cycle marker LAST — if anything above
+           threw, the session re-fires next tick instead of silently skipping
+           a cycle. Single-column update on the settings row (not JSONB). */
+        await db
+          .update(governmentSettings)
+          .set({ lastBudgetSessionTick: tickNumber, updatedAt: new Date() })
+          .where(eq(governmentSettings.id, gs97.id));
+
+        broadcast('budget:session', {
+          tickNumber,
+          lapsedCount: lapsingPrograms.length,
+          lapsedPerTick,
+          survivingCount: survivingPrograms.length,
+          survivingPerTick,
+        });
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] Phase 9.7 error:', err);
+    }
+  } else {
+    console.warn('[SIMULATION] Phase 9.7: Skipped — fiscalEffectsEnabled=false (sunset/lapse paused, session marker frozen).');
+  }
+
+  /* ------------------------------------------------------------------ */
   /* PHASE 10: Judicial Review                                             */
   /* Justices challenge and vote on active laws (3% chance per law).      */
   /* ------------------------------------------------------------------ */
@@ -3218,6 +3403,14 @@ agentTickQueue.process(async () => {
 
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60_000);
 
+    /* Fetch treasury state once for economy-pressure modifiers and the
+       budget-cycle position (Phase 3 renewal pressure). */
+    const [govSettings11] = await db.select({
+      treasuryBalance: governmentSettings.treasuryBalance,
+      taxRatePercent: governmentSettings.taxRatePercent,
+      lastBudgetSessionTick: governmentSettings.lastBudgetSessionTick,
+    }).from(governmentSettings).limit(1);
+
     /* Get top 10 active laws for potential amendment */
     const topActiveLaws = await db
       .select({ id: laws.id, title: laws.title })
@@ -3225,13 +3418,52 @@ agentTickQueue.process(async () => {
       .where(eq(laws.isActive, true))
       .limit(10);
 
-    const lawsList = topActiveLaws.map((l) => `${l.title} (ID: ${l.id})`).join(', ');
+    /* Phase 3 renewal pressure: programs that will lapse at the NEXT budget
+       session unless renewed. Deterministic and bounded (<= 3 programs,
+       <= 220 chars via composeExpiringProgramsNote) — no new LLM surface.
+       Their laws also join the amendable list below: renewal rides the
+       existing amendment path, which validates amendsLawId against that
+       list, so an expiring program outside the arbitrary top-10 slice would
+       otherwise be structurally impossible to renew. */
+    let expiringPrograms: { id: string; title: string; name: string; perTick: number }[] = [];
+    if (rc.fiscalEffectsEnabled) {
+      try {
+        /* Sessions fire when tickNumber - lastSessionTick >= cycleTicks, so
+           the next one is at lastSessionTick + cycleTicks (never in the past:
+           Phase 9.7 ran earlier this same tick and re-baselined if due). */
+        const nextSessionTick = Math.max(
+          tickNumber,
+          (govSettings11?.lastBudgetSessionTick ?? 0) + rc.budgetCycleTicks,
+        );
+        const programRows11 = await db
+          .select()
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.programActive, true), eq(laws.fiscalKind, 'spend_recurring')));
+        expiringPrograms = programRows11
+          .filter((p) => lapseDue(nextSessionTick, p.enactedTick, p.lastRenewedTick, rc.budgetCycleTicks))
+          .map((p) => ({
+            id: p.id,
+            title: p.title,
+            name: p.fiscalProgramName ?? p.title,
+            perTick: typeof p.fiscalAmount === 'number' && Number.isFinite(p.fiscalAmount) ? p.fiscalAmount : 0,
+          }));
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 11: expiring-program query failed — no renewal note:', err);
+      }
+    }
 
-    /* Fetch treasury state once for economy-pressure modifiers */
-    const [govSettings11] = await db.select({
-      treasuryBalance: governmentSettings.treasuryBalance,
-      taxRatePercent: governmentSettings.taxRatePercent,
-    }).from(governmentSettings).limit(1);
+    const amendableLaws = [
+      ...topActiveLaws,
+      ...expiringPrograms
+        .filter((p) => !topActiveLaws.some((l) => l.id === p.id))
+        .map((p) => ({ id: p.id, title: p.title })),
+    ];
+    const lawsList = amendableLaws.map((l) => `${l.title} (ID: ${l.id})`).join(', ');
+
+    const expiringNote = composeExpiringProgramsNote(expiringPrograms);
+    const renewalNote = expiringNote
+      ? `${expiringNote} Renew one by proposing an amendment to its law with a spend_recurring fiscal provision.`
+      : '';
 
     const treasuryRatio = (govSettings11?.treasuryBalance ?? 50000) / 50000;
     const crisisThreshold = rc.treasuryCrisisThreshold ?? 0.20;
@@ -3289,7 +3521,7 @@ agentTickQueue.process(async () => {
       if (recentSponsorIds.has(agent.id)) continue;
 
       /* Amendment chance — uses rc.amendmentProposalChance instead of hardcoded 0.25 */
-      const proposeAmendment = topActiveLaws.length > 0 && Math.random() < (rc.amendmentProposalChance ?? 0.25);
+      const proposeAmendment = amendableLaws.length > 0 && Math.random() < (rc.amendmentProposalChance ?? 0.25);
 
       const amendmentNote = proposeAmendment && lawsList
         ? ` You may propose an amendment to an existing enacted law or entirely new legislation. ` +
@@ -3322,7 +3554,7 @@ agentTickQueue.process(async () => {
 
       const contextMessage =
         `You are considering proposing new legislation. Based on your political alignment and values, propose a bill. ` +
-        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote}${fiscalNote11} ` +
+        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote}${fiscalNote11}${renewalNote} ` +
         `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":"","fiscal":{"kind":"none|spend_once|spend_recurring|tax_change","amount":0,"taxDelta":0,"programName":"","sunsetTicks":0}}}`;
 
       proposalCalls.push({ agent, contextMessage });
@@ -3392,10 +3624,11 @@ agentTickQueue.process(async () => {
 
       if (!title || !summary) continue;
 
-      /* Validate amendsLawId if amendment */
+      /* Validate amendsLawId if amendment — against the merged amendable
+         list (top-10 + expiring programs), so renewal amendments survive. */
       const isAmendment = billType === 'amendment' && amendsLawIdRaw.length > 0;
       const validLawId = isAmendment
-        ? topActiveLaws.find((l) => l.id === amendsLawIdRaw)?.id ?? null
+        ? amendableLaws.find((l) => l.id === amendsLawIdRaw)?.id ?? null
         : null;
 
       const fullText =
@@ -4502,7 +4735,12 @@ agentTickQueue.process(async () => {
         })
         .from(activityEvents)
         .where(and(
-          inArray(activityEvents.type, ['committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'floor_amendment']),
+          inArray(activityEvents.type, [
+            'committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'floor_amendment',
+            /* Phase 3 fiscal events — pickup is this hard whitelist, NOT automatic:
+               without these entries fiscal news never reaches the Gazette. */
+            'law_sunset', 'budget_session', 'program_lapsed', 'tax_rate_changed', 'appropriation_onetime',
+          ]),
           gte(activityEvents.createdAt, tickFiredAt),
         ))
         .orderBy(asc(activityEvents.createdAt))

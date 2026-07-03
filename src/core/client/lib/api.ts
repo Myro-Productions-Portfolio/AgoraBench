@@ -168,6 +168,8 @@ export const activityApi = {
   },
   forAgent: (agentId: string, limit = 20) =>
     request(`/activity?agentId=${agentId}&limit=${limit}`),
+  forType: (type: string, limit = 20) =>
+    request(`/activity?type=${encodeURIComponent(type)}&limit=${limit}`),
 };
 
 /* Search endpoint */

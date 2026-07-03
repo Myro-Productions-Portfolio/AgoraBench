@@ -14,7 +14,7 @@
  *   crash on agents_name_unique).
  *
  * Run on the Linux box:
- *   cd /home/myroproductions/Projects/Molt-Government && \
+ *   cd /home/myroproductions/Projects/AgoraBench && \
  *   NODE_ENV=production npx tsx scripts/seed-expansion-agents.ts
  */
 

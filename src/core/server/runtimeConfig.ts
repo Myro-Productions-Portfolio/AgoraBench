@@ -142,6 +142,15 @@ export interface RuntimeConfig {
   taxRateMaxPercent: number;                 // hard ceiling for the tax rate (5-50); must exceed taxRateMinPercent
   maxSunsetTicks: number;                    // longest allowed sunset clause in ticks (10-1000)
   treasuryHardFloor: number;                 // program debits suspend below this (may be negative; -1000000-0)
+
+  /* ---- Judicial (Phase 4) ---- */
+  courtEnabled: boolean;                     // kill switch: Phase 10 freezes (no mutations) when false
+  courtMaxConcurrentCases: number;           // active-docket cap, gates FILING only (1-10)
+  courtMaxNewCasesPerTick: number;           // total new filings per tick, both sources (1-5)
+  courtHearingDelayTicks: number;            // ticks between docketing and oral argument (1-4)
+  courtDisputeChancePerBrokenDeal: number;   // 0.0 - 1.0 roll per broken deal
+  courtJusticeQuestionsPerHearing: number;   // LLM justice questions per hearing (0-4)
+  courtDamagesAmount: number;                // M$ transferred loser -> winner in disputes (0-500)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -275,6 +284,15 @@ const DEFAULTS: RuntimeConfig = {
   taxRateMaxPercent: 25,
   maxSunsetTicks: 200,
   treasuryHardFloor: -50_000,
+
+  /* Judicial (Phase 4) */
+  courtEnabled: true,
+  courtMaxConcurrentCases: 2,
+  courtMaxNewCasesPerTick: 1,
+  courtHearingDelayTicks: 2,
+  courtDisputeChancePerBrokenDeal: 0.25,
+  courtJusticeQuestionsPerHearing: 2,
+  courtDamagesAmount: 50,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

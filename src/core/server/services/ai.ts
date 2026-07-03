@@ -50,6 +50,11 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   propose_amendment:   'propose_amendment',
   bill_withdrawal:     'bill_withdrawal',
   public_statement:    'public_statement',
+  /* Phase 4 judicial arc */
+  court_filing:        'file_case',
+  oral_argument:       'present_argument',
+  justice_question:    'ask_question',
+  court_opinion:       'write_opinion',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action
@@ -113,6 +118,22 @@ const ACTION_ALIASES: Record<string, string[]> = {
   public_statement: [
     'statement', 'press_statement', 'press_release', 'announce',
     'address', 'public_address', 'respond', 'issue_statement',
+  ],
+  /* Phase 4 judicial arc */
+  file_case: [
+    'file_lawsuit', 'file', 'lawsuit', 'file_suit', 'sue', 'petition',
+    'file_petition', 'challenge', 'file_challenge', 'complaint', 'file_complaint',
+  ],
+  present_argument: [
+    'argument', 'argue', 'oral_argument', 'present', 'make_argument',
+    'plead', 'opening_statement', 'closing_argument', 'statement',
+  ],
+  ask_question: [
+    'question', 'ask', 'justice_question', 'ask_questions', 'inquire', 'query', 'questioning',
+  ],
+  write_opinion: [
+    'opinion', 'ruling', 'write_ruling', 'majority_opinion', 'dissent',
+    'dissent_opinion', 'draft_opinion', 'author_opinion', 'decision', 'write_decision',
   ],
 };
 

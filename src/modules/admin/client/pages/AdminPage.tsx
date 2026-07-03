@@ -153,6 +153,14 @@ interface RuntimeConfig {
   taxRateMaxPercent: number;
   maxSunsetTicks: number;
   treasuryHardFloor: number;
+  /* Judicial (Phase 4) */
+  courtEnabled: boolean;
+  courtMaxConcurrentCases: number;
+  courtMaxNewCasesPerTick: number;
+  courtHearingDelayTicks: number;
+  courtDisputeChancePerBrokenDeal: number;
+  courtJusticeQuestionsPerHearing: number;
+  courtDamagesAmount: number;
 }
 
 interface EconomySettings {
@@ -2543,6 +2551,85 @@ export function AdminPage() {
                       <p className="text-xs text-text-muted">{desc}</p>
                     </div>
                   ))}
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Supreme Court (Phase 4 judicial arc) */}
+            {simConfig && (
+              <CollapsibleSection
+                id="supreme_court"
+                title="Supreme Court"
+                subtitle="Multi-tick case arc: filing, docketing, oral argument, deliberation, ruling"
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Court Enabled (kill switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.courtEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, courtEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ courtEnabled: simConfig.courtEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, the court phase freezes: no filings, no stage advances, no rulings — existing cases hold their current stage.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Docket &amp; Timing</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {([
+                      ['courtMaxConcurrentCases', 'Max Concurrent Cases', 1, 10, 'Active-docket cap. Gates new filings only — cases already filed always proceed.'],
+                      ['courtMaxNewCasesPerTick', 'Max New Cases / Tick', 1, 5, 'Total new filings per tick across challenges and disputes.'],
+                      ['courtHearingDelayTicks', 'Hearing Delay (ticks)', 1, 4, 'Ticks between docketing and oral argument. Default 2 gives a 5-tick arc.'],
+                      ['courtJusticeQuestionsPerHearing', 'Justice Questions / Hearing', 0, 4, 'Questions from the bench at oral argument. Each is one LLM call.'],
+                    ] as [keyof RuntimeConfig, string, number, number, string][]).map(([key, label, min, max, desc]) => (
+                      <div key={key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">{label}</label>
+                          <span className="text-sm text-gold font-mono">{simConfig[key] as number}</span>
+                        </div>
+                        <input type="number" min={min} max={max} step={1}
+                          value={simConfig[key] as number}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseInt(e.target.value) || min } : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Disputes &amp; Damages</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Dispute Chance / Broken Deal</label>
+                        <span className="text-sm text-gold font-mono">{Math.round(simConfig.courtDisputeChancePerBrokenDeal * 100)}%</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={Math.round(simConfig.courtDisputeChancePerBrokenDeal * 100)}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, courtDisputeChancePerBrokenDeal: parseInt(e.target.value) / 100 } : c)}
+                        onMouseUp={() => void saveConfig({ courtDisputeChancePerBrokenDeal: simConfig.courtDisputeChancePerBrokenDeal })}
+                        onTouchEnd={() => void saveConfig({ courtDisputeChancePerBrokenDeal: simConfig.courtDisputeChancePerBrokenDeal })}
+                        className="w-full accent-gold" />
+                      <p className="text-xs text-text-muted">Probability a broken vote-pact deal becomes a court case.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Damages Amount (M$)</label>
+                        <span className="text-sm text-gold font-mono">M${simConfig.courtDamagesAmount}</span>
+                      </div>
+                      <input type="number" min={0} max={500} step={1}
+                        value={simConfig.courtDamagesAmount}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, courtDamagesAmount: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ courtDamagesAmount: simConfig.courtDamagesAmount })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Transferred loser to winner in dispute rulings, clamped to the loser&apos;s balance.</p>
+                    </div>
+                  </div>
                 </div>
               </CollapsibleSection>
             )}

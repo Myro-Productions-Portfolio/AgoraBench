@@ -50,6 +50,13 @@
       "when": 1783036295727,
       "tag": "0006_dear_mac_gargan",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783092212414,
+      "tag": "0007_first_black_tarantula",
+      "breakpoints": true
     }
   ]
 }

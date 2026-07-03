@@ -33,6 +33,9 @@ export async function runSeed(): Promise<void> {
   await db.execute(sql`
     TRUNCATE TABLE
       tick_log,
+      court_case_votes,
+      court_case_events,
+      court_cases,
       pending_mentions,
       agent_messages,
       forum_threads,

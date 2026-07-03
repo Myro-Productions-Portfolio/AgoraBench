@@ -395,6 +395,24 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const thf = num('treasuryHardFloor', -1_000_000, 0);
     if (thf !== undefined) update.treasuryHardFloor = Math.round(thf);
 
+    // Judicial (Phase 4) — Rule 1: every RuntimeConfig field gets a server
+    // handler branch with type check + range clamp, same commit.
+    if (typeof body.courtEnabled === 'boolean') {
+      update.courtEnabled = body.courtEnabled;
+    }
+    const cmcc = posInt('courtMaxConcurrentCases', 1, 10);
+    if (cmcc !== undefined) update.courtMaxConcurrentCases = cmcc;
+    const cmnc = posInt('courtMaxNewCasesPerTick', 1, 5);
+    if (cmnc !== undefined) update.courtMaxNewCasesPerTick = cmnc;
+    const chdt = posInt('courtHearingDelayTicks', 1, 4);
+    if (chdt !== undefined) update.courtHearingDelayTicks = chdt;
+    const cdc = prob('courtDisputeChancePerBrokenDeal');
+    if (cdc !== undefined) update.courtDisputeChancePerBrokenDeal = cdc;
+    const cjq = posInt('courtJusticeQuestionsPerHearing', 0, 4);
+    if (cjq !== undefined) update.courtJusticeQuestionsPerHearing = cjq;
+    const cda = posInt('courtDamagesAmount', 0, 500);
+    if (cda !== undefined) update.courtDamagesAmount = cda;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

@@ -248,9 +248,16 @@ export function CourtPage() {
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [archiveOpen, setArchiveOpen] = useState(false);
+  /* /court#archive (Laws page legacy-review badges) lands with the archive open */
+  const [archiveOpen, setArchiveOpen] = useState(() => window.location.hash === '#archive');
   const [archive, setArchive] = useState<ArchiveItem[] | null>(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+
+  /* SPA navigation doesn't trigger native anchor scroll — do it once on mount */
+  useEffect(() => {
+    if (window.location.hash !== '#archive') return;
+    document.getElementById('archive')?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -367,7 +374,7 @@ export function CourtPage() {
       </div>
 
       {/* Legacy archive — judicial_reviews, read-only historical record */}
-      <div className="rounded-lg border border-border bg-capitol-card overflow-hidden">
+      <div id="archive" className="rounded-lg border border-border bg-capitol-card overflow-hidden">
         <button
           onClick={() => setArchiveOpen((v) => !v)}
           className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"

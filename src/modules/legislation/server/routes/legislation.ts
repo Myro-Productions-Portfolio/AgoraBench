@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements, activityEvents, agentDecisions, governmentSettings, transactions, tickLog } from '@db/schema/index';
+import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements, activityEvents, agentDecisions, governmentSettings, transactions, tickLog, courtCases } from '@db/schema/index';
 import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, and, desc, inArray, like, sql } from 'drizzle-orm';
+import { eq, and, ne, desc, inArray, like, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { projectFiscalNote, expectedTickRevenue, ticksUntilSunset, ticksUntilLapse } from '@core/server/lib/fiscalMath.js';
 import type { FiscalKind, FiscalNote } from '@core/server/lib/fiscalMath.js';
@@ -393,17 +393,44 @@ router.get('/laws', async (_req, res, next) => {
       .orderBy(desc(laws.enactedDate));
 
     const lawIds = rawLaws.map((l) => l.id);
-    const reviewRows = lawIds.length > 0
-      ? await db
-          .select({
-            lawId: judicialReviews.lawId,
-            id: judicialReviews.id,
-            status: judicialReviews.status,
-          })
-          .from(judicialReviews)
-          .where(inArray(judicialReviews.lawId, lawIds))
-      : [];
+    /* Court status per law: Phase 4 court_cases win over the legacy
+       judicial_reviews table (which stopped receiving writes when the
+       Term-of-Court state machine shipped). Legacy reviews stay as a
+       fallback so the 459 historical rulings keep their badges. */
+    const [reviewRows, caseRows] = lawIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              lawId: judicialReviews.lawId,
+              id: judicialReviews.id,
+              status: judicialReviews.status,
+            })
+            .from(judicialReviews)
+            .where(inArray(judicialReviews.lawId, lawIds)),
+          db
+            .select({
+              lawId: courtCases.lawId,
+              id: courtCases.id,
+              status: courtCases.status,
+              outcome: courtCases.outcome,
+            })
+            .from(courtCases)
+            .where(and(inArray(courtCases.lawId, lawIds), ne(courtCases.status, 'dismissed')))
+            .orderBy(desc(courtCases.createdAt)),
+        ])
+      : [[], []];
     const reviewMap = new Map(reviewRows.map((r) => [r.lawId, { id: r.id, status: r.status }]));
+    /* Latest non-dismissed case per law (rows are newest-first, keep first seen).
+       Normalize to the badge vocabulary: decided -> outcome, in-flight -> pending. */
+    const caseMap = new Map<string, { id: string; status: string }>();
+    for (const c of caseRows) {
+      if (c.lawId && !caseMap.has(c.lawId)) {
+        caseMap.set(c.lawId, {
+          id: c.id,
+          status: c.status === 'decided' ? (c.outcome ?? 'upheld') : 'pending',
+        });
+      }
+    }
 
     const enriched = await Promise.all(
       rawLaws.map(async (law) => {
@@ -421,6 +448,7 @@ router.get('/laws', async (_req, res, next) => {
               .limit(1)
           : [null];
 
+        const courtCase = caseMap.get(law.id) ?? null;
         const review = reviewMap.get(law.id) ?? null;
 
         return {
@@ -431,8 +459,9 @@ router.get('/laws', async (_req, res, next) => {
           sponsorDisplayName: sponsor?.displayName ?? null,
           sponsorAvatarConfig: sponsor?.avatarConfig ?? null,
           sponsorAlignment: sponsor?.alignment ?? null,
-          reviewStatus: review?.status ?? null,
-          reviewId: review?.id ?? null,
+          reviewStatus: courtCase?.status ?? review?.status ?? null,
+          reviewId: courtCase ? null : (review?.id ?? null),
+          courtCaseId: courtCase?.id ?? null,
         };
       }),
     );

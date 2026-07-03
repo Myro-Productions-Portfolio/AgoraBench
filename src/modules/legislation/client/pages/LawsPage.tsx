@@ -18,6 +18,7 @@ interface LawItem {
   sponsorAlignment: string | null;
   reviewStatus: string | null;
   reviewId: string | null;
+  courtCaseId: string | null;
 }
 
 const ALIGNMENT_COLORS: Record<string, string> = {
@@ -222,9 +223,11 @@ export function LawsPage() {
                       {law.committee}
                     </span>
                   )}
-                  {reviewBadge && law.reviewId && (
+                  {/* Phase 4 court cases have a real case page; legacy
+                      judicial_reviews only exist in the /court archive */}
+                  {reviewBadge && (law.courtCaseId || law.reviewId) && (
                     <Link
-                      to={`/court/cases/${law.reviewId}`}
+                      to={law.courtCaseId ? `/court/cases/${law.courtCaseId}` : '/court#archive'}
                       className={`badge border text-badge uppercase tracking-widest ${reviewBadge.color} hover:opacity-80 transition-opacity`}
                     >
                       {reviewBadge.label}

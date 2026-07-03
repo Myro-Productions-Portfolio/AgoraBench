@@ -111,16 +111,27 @@ src/core/db/
 
 **NEVER use `pnpm dev:local` to restart the live site.** The Cloudflare tunnel routes to port 3001, and Express only serves the frontend in production mode (built `dist/client`). `dev:local` causes `GET / 404` for all users.
 
+**The app server runs as a systemd user unit** (`agorabench.service`) on the Linux box — NOT a bare nohup process. This gives it boot persistence (survives reboots via `loginctl` linger, already enabled for `myroproductions`) and auto-restart on crash. `pnpm run restart` (and therefore `pnpm run deploy`, which calls it) now just runs `systemctl --user restart agorabench` — the old kill-by-port + nohup dance is gone. `pnpm run stop` (kill-by-port) is kept only as a manual escape hatch, not used by deploy/restart.
+
 **Deploy to live site (always):**
 ```bash
 ssh myroproductions@10.0.0.10 "cd /home/myroproductions/Projects/AgoraBench && git pull && pnpm run deploy >> /tmp/agorabench-deploy.log 2>&1 &"
 ```
 
-**Check logs** — two separate files; the server is the ONLY writer of `agorabench.log` (append-only), deploy output (build/purge) goes to `agorabench-deploy.log`. Deploy rotates the old server log to `agorabench.log.1`:
+**Check logs** — two separate files; the server is the ONLY writer of `agorabench.log` (append-only, unit uses `StandardOutput=append:` / `StandardError=append:` to the same path so this semantics is unchanged from the nohup era), deploy output (build/purge) goes to `agorabench-deploy.log`. Deploy rotates the old server log to `agorabench.log.1`:
 ```bash
 ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench.log"        # server runtime log
 ssh myroproductions@10.0.0.10 "tail -30 /tmp/agorabench-deploy.log" # deploy build/purge log
 ```
+
+**Systemd unit — status / logs / manual control:**
+```bash
+ssh myroproductions@10.0.0.10 "systemctl --user status agorabench"           # active/failed, uptime, recent journal lines
+ssh myroproductions@10.0.0.10 "journalctl --user -u agorabench -n 50"        # unit-level journal (crash/restart events; app logs are in /tmp/agorabench.log, not here)
+ssh myroproductions@10.0.0.10 "systemctl --user restart agorabench"          # manual restart
+ssh myroproductions@10.0.0.10 "systemctl --user stop agorabench"             # manual stop
+```
+Unit file: `~/.config/systemd/user/agorabench.service` on the box (not checked into this repo — the box's established pattern, same as `agorabench-watch.service`/`agorabench-pgdump.service`). `WorkingDirectory` is the deploy dir so `dotenv/config` picks up `.env` normally. `Restart=always` / `RestartSec=10` — the app tolerates Postgres being briefly unavailable at boot (DB load failure is caught and logged, `server.listen()` is unconditional), so `always` is a cheap safety net rather than a strict requirement. User units can't order against system `docker.service`, so this is best-effort (`After=network-online.target`) — if Postgres/Redis containers come up slower than the app on a cold boot, the app will log `[CONFIG] Failed to load config from DB` and serve with defaults until the next restart or a manual `systemctl --user restart agorabench`.
 
 **DB access:**
 ```bash

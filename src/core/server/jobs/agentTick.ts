@@ -33,11 +33,14 @@ import {
   committeeMemberships,
   governmentEvents,
   gazetteIssues,
+  fiscalTickSummaries,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
+import { parseFiscalField } from '../lib/fiscalParsing.js';
+import { expectedTickRevenue, applyTaxDelta } from '../lib/fiscalMath.js';
 import { buildGazetteDigest } from '../lib/gazetteDigest.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
@@ -110,6 +113,20 @@ agentTickQueue.process(async () => {
   const tickFiredAt = new Date();
   const [currentTick] = await db.insert(tickLog).values({ firedAt: tickFiredAt }).returning({ id: tickLog.id });
 
+  /* Tick number — DB-derived (COUNT of completed ticks + 1), so it is
+     restart-robust and immune to tick-interval changes. Same COUNT the
+     all-time status endpoint already uses. Used by Phase 9 (enactedTick /
+     lastRenewedTick) and Phase 13 (fiscal_tick_summaries). */
+  let tickNumber = 1;
+  try {
+    const [tickCountRow] = await db
+      .select({ completed: sql<number>`COUNT(*) FILTER (WHERE ${tickLog.completedAt} IS NOT NULL)` })
+      .from(tickLog);
+    tickNumber = Number(tickCountRow?.completed ?? 0) + 1;
+  } catch (err) {
+    console.warn('[SIMULATION] tickNumber derivation failed — defaulting to 1:', err);
+  }
+
   /* Fetch all active agents once — used across phases */
   const activeAgents = await db.select().from(agents).where(eq(agents.isActive, true));
   const activeAgentCount = activeAgents.length;
@@ -126,6 +143,10 @@ agentTickQueue.process(async () => {
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
   /* Election results from Phase 14, read by Phase 11.5 */
   let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
+  /* Government spending this tick (salaries + one-time appropriations +
+     recurring program debits) — accumulated by Phases 9 and 12, written to
+     fiscal_tick_summaries by Phase 13. Integer M$. */
+  let tickSpendingThisTick = 0;
 
   /* ------------------------------------------------------------------ */
   /* PHASE 0.5: Committee Assignment & Chair Succession                    */
@@ -2632,6 +2653,27 @@ agentTickQueue.process(async () => {
             })
             .where(eq(laws.id, existingLaw.id));
 
+          /* Phase 3 renewal hook: amending a recurring-program law renews
+             its funding clock. If the amendment bill itself carries a
+             validated spend_recurring provision, the program's per-tick
+             amount is updated (clamped at Phase 11) and a lapsed program
+             re-activates — renewal after lapse must be possible, otherwise
+             lapse is a death sentence. Bookkeeping only (no treasury
+             movement), so it stores regardless of the kill switch. */
+          if (existingLaw.fiscalKind === 'spend_recurring') {
+            const renewalPatch: Partial<typeof laws.$inferInsert> = { lastRenewedTick: tickNumber };
+            if (
+              bill.fiscalKind === 'spend_recurring' &&
+              typeof bill.fiscalAmount === 'number' && Number.isFinite(bill.fiscalAmount) && bill.fiscalAmount > 0
+            ) {
+              renewalPatch.fiscalAmount = bill.fiscalAmount;
+              renewalPatch.programActive = true;
+              if (bill.fiscalProgramName) renewalPatch.fiscalProgramName = bill.fiscalProgramName;
+            }
+            await db.update(laws).set(renewalPatch).where(eq(laws.id, existingLaw.id));
+            console.warn(`[SIMULATION] Program "${existingLaw.fiscalProgramName ?? existingLaw.title}" renewed at tick ${tickNumber} by "${bill.title}"`);
+          }
+
           await db
             .update(bills)
             .set({ status: 'law', lastActionAt: new Date() })
@@ -2711,14 +2753,106 @@ agentTickQueue.process(async () => {
       }
 
       /* Original bill or amendment without valid law — create new law */
-      /* ON CONFLICT DO NOTHING handles bills that were enacted by the old tick code */
-      await db.insert(laws).values({
+      /* ON CONFLICT DO NOTHING handles bills that were enacted by the old tick code.
+         Phase 3: fiscal provisions (validated + clamped at Phase 11 — the bill
+         columns are NULL unless parseFiscalField approved them) are copied to
+         the law row. .returning() detects a conflict-skip: fiscal effects must
+         apply exactly once, never on a re-run of an already-enacted bill. */
+      const hasFiscalProvision = bill.fiscalKind !== null;
+      const [enactedLaw] = await db.insert(laws).values({
         billId: bill.id,
         title: bill.title,
         text: bill.fullText,
         enactedDate: new Date(),
         isActive: true,
-      }).onConflictDoNothing();
+        fiscalKind: bill.fiscalKind,
+        fiscalAmount: bill.fiscalAmount,
+        fiscalTaxDelta: bill.fiscalTaxDelta,
+        fiscalProgramName: bill.fiscalProgramName,
+        sunsetTicks: bill.sunsetTicks,
+        programActive: bill.fiscalKind === 'spend_recurring' ? true : null,
+        enactedTick: tickNumber,
+        lastRenewedTick: tickNumber,
+      }).onConflictDoNothing().returning({ id: laws.id });
+
+      /* Deterministic fiscal effects at enactment — zero LLM, integer M$,
+         gated on the kill switch AND on the insert actually having happened. */
+      if (enactedLaw && hasFiscalProvision && rc.fiscalEffectsEnabled) {
+        try {
+          if (
+            bill.fiscalKind === 'spend_once' &&
+            typeof bill.fiscalAmount === 'number' && Number.isFinite(bill.fiscalAmount) && bill.fiscalAmount > 0
+          ) {
+            /* One-time appropriation: debit once, at enactment. May drive the
+               treasury negative (Engine 6 reacts). Read settings fresh per
+               bill — Phase 9 iterates serially and each debit must see the
+               previous one. */
+            const [gs] = await db.select().from(governmentSettings).limit(1);
+            if (gs) {
+              const newBalance = gs.treasuryBalance - bill.fiscalAmount;
+              await db.update(governmentSettings)
+                .set({ treasuryBalance: newBalance, updatedAt: new Date() })
+                .where(eq(governmentSettings.id, gs.id));
+              tickSpendingThisTick += bill.fiscalAmount;
+
+              await db.insert(transactions).values({
+                fromAgentId: undefined,
+                toAgentId: undefined,
+                amount: String(bill.fiscalAmount),
+                type: 'appropriation_onetime',
+                description: `One-time appropriation: "${bill.title}"`,
+                relatedLawId: enactedLaw.id,
+              });
+
+              await db.insert(activityEvents).values({
+                type: 'appropriation_onetime',
+                agentId: null,
+                title: 'One-time appropriation',
+                description: `M$${bill.fiscalAmount} appropriated from the treasury for "${bill.title}"`,
+                metadata: JSON.stringify({ lawId: enactedLaw.id, billId: bill.id, amount: bill.fiscalAmount, treasuryAfter: newBalance }),
+              });
+
+              broadcast('treasury:appropriation', { lawId: enactedLaw.id, title: bill.title, amount: bill.fiscalAmount, treasuryAfter: newBalance });
+              console.warn(`[SIMULATION] One-time appropriation M$${bill.fiscalAmount} for "${bill.title}" — treasury now M$${newBalance}`);
+            }
+          } else if (
+            bill.fiscalKind === 'tax_change' &&
+            typeof bill.fiscalTaxDelta === 'number' && Number.isFinite(bill.fiscalTaxDelta) && bill.fiscalTaxDelta !== 0
+          ) {
+            /* Revenue law: the ONLY non-admin path that changes taxRatePercent.
+               Applied once at enactment; Phase 13 then collects at the new rate. */
+            const [gs] = await db.select().from(governmentSettings).limit(1);
+            if (gs) {
+              const oldRate = gs.taxRatePercent;
+              const newRate = applyTaxDelta(oldRate, bill.fiscalTaxDelta, rc.taxRateMinPercent, rc.taxRateMaxPercent);
+              if (newRate !== oldRate) {
+                await db.update(governmentSettings)
+                  .set({ taxRatePercent: newRate, updatedAt: new Date() })
+                  .where(eq(governmentSettings.id, gs.id));
+
+                await db.insert(activityEvents).values({
+                  type: 'tax_rate_changed',
+                  agentId: null,
+                  title: 'Tax rate changed by law',
+                  description: `"${bill.title}" ${bill.fiscalTaxDelta > 0 ? 'raised' : 'lowered'} the tax rate from ${oldRate}% to ${newRate}%`,
+                  metadata: JSON.stringify({ lawId: enactedLaw.id, billId: bill.id, oldRate, newRate, delta: bill.fiscalTaxDelta }),
+                });
+
+                broadcast('treasury:tax_rate_changed', { lawId: enactedLaw.id, title: bill.title, oldRate, newRate });
+                console.warn(`[SIMULATION] Tax rate ${oldRate}% -> ${newRate}% via "${bill.title}"`);
+              } else {
+                console.warn(`[SIMULATION] Tax delta of "${bill.title}" saturated at bound ${oldRate}% — no change`);
+              }
+            }
+          } else if (bill.fiscalKind === 'spend_recurring') {
+            /* Recurring program: no debit at enactment — Phase 12 debits it
+               each tick alongside salaries while program_active stays true. */
+            console.warn(`[SIMULATION] Program "${bill.fiscalProgramName ?? bill.title}" enacted at M$${bill.fiscalAmount}/tick`);
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 9 fiscal effect error (law stands, effect skipped):', err);
+        }
+      }
 
       await db
         .update(bills)
@@ -3179,10 +3313,17 @@ agentTickQueue.process(async () => {
         ? `\n\nYou are part of an informal voting bloc with: ${agentBloc.members.filter(m => m !== agent.displayName).join(', ')}. Consider them as potential co-sponsors.`
         : '';
 
+      /* Phase 3: optional fiscal payload — extracted from structured JSON only
+         (never fullText), validated by parseFiscalField, no-op on any failure. */
+      const fiscalNote11 =
+        ` Optional fiscal provision: "spend_once" spends M$amount from the treasury once; ` +
+        `"spend_recurring" funds a named program at M$amount per tick until it lapses; ` +
+        `"tax_change" moves the tax rate by taxDelta whole points; use kind "none" for no fiscal effect.`;
+
       const contextMessage =
         `You are considering proposing new legislation. Based on your political alignment and values, propose a bill. ` +
-        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote} ` +
-        `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":""}}`;
+        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote}${fiscalNote11} ` +
+        `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":"","fiscal":{"kind":"none|spend_once|spend_recurring|tax_change","amount":0,"taxDelta":0,"programName":"","sunsetTicks":0}}}`;
 
       proposalCalls.push({ agent, contextMessage });
     }
@@ -3205,6 +3346,27 @@ agentTickQueue.process(async () => {
         ).then((decision) => ({ agent, decision })),
       ),
     );
+
+    /* Phase 3: fiscal clamp context, fetched ONCE before the processing loop.
+       activeRecurringSpend11 is a RUNNING total — every provision approved in
+       this loop adds to it, so multiple same-tick programs cannot jointly
+       bust the aggregate recurring cap. */
+    const sumActiveBalances11 = activeAgents.reduce(
+      (s, a) => s + (typeof a.balance === 'number' && Number.isFinite(a.balance) ? a.balance : 0),
+      0,
+    );
+    const expectedRevenue11 = expectedTickRevenue(govSettings11?.taxRatePercent ?? 0, sumActiveBalances11);
+    let activeRecurringSpend11 = 0;
+    try {
+      const [spendRow] = await db
+        .select({ total: sql<number>`COALESCE(SUM(${laws.fiscalAmount}), 0)` })
+        .from(laws)
+        .where(and(eq(laws.isActive, true), eq(laws.programActive, true), eq(laws.fiscalKind, 'spend_recurring')));
+      activeRecurringSpend11 = Number(spendRow?.total ?? 0);
+      if (!Number.isFinite(activeRecurringSpend11) || activeRecurringSpend11 < 0) activeRecurringSpend11 = 0;
+    } catch (err) {
+      console.warn('[SIMULATION] Phase 11: active recurring spend query failed — using 0:', err);
+    }
 
     /* Process results serially: validation, sanitization, inserts, broadcasts */
     for (const result of proposalResults) {
@@ -3239,6 +3401,45 @@ agentTickQueue.process(async () => {
       const fullText =
         `SECTION 1. SHORT TITLE.\nThis Act may be cited as the "${title}".\n\nSECTION 2. PURPOSE.\n${summary}`;
 
+      /* Phase 3: Rule-4 fiscal extraction — the ONLY point where LLM output
+         can create fiscal state. Null (any parse/clamp failure, kind "none",
+         cap bust) stores all-NULL fiscal columns: a guaranteed no-op. */
+      const fiscal = parseFiscalField(decision.data, {
+        treasury: govSettings11?.treasuryBalance ?? 0,
+        expectedTickRevenue: expectedRevenue11,
+        activeRecurringSpend: activeRecurringSpend11,
+        rc: {
+          fiscalMaxOneTimePctOfTreasury: rc.fiscalMaxOneTimePctOfTreasury,
+          fiscalMaxProgramPctOfRevenue: rc.fiscalMaxProgramPctOfRevenue,
+          fiscalRecurringCapPctOfRevenue: rc.fiscalRecurringCapPctOfRevenue,
+          fiscalMaxTaxDeltaPerLaw: rc.fiscalMaxTaxDeltaPerLaw,
+          maxSunsetTicks: rc.maxSunsetTicks,
+        },
+        fallbackProgramName: title,
+      });
+      if (fiscal?.kind === 'spend_recurring' && typeof fiscal.amount === 'number') {
+        /* Count this approval against the cap for later results in the same loop. */
+        activeRecurringSpend11 += fiscal.amount;
+      }
+
+      /* Observability: the model asked for a real fiscal effect but
+         validation/clamping dropped it (cap bust, bad amount, R=0, T<=0...).
+         The bill still proposes fine — provision-free. Read-only probe of the
+         untrusted payload; nothing from it is persisted beyond a label. */
+      let fiscalRequestRejected: string | null = null;
+      if (!fiscal && decision.data && typeof decision.data === 'object' && !Array.isArray(decision.data)) {
+        const rawFiscal = (decision.data as Record<string, unknown>)['fiscal'];
+        if (rawFiscal && typeof rawFiscal === 'object' && !Array.isArray(rawFiscal)) {
+          const rawKind = (rawFiscal as Record<string, unknown>)['kind'];
+          if (typeof rawKind === 'string') {
+            const k = rawKind.toLowerCase().trim();
+            if (k === 'spend_once' || k === 'spend_recurring' || k === 'tax_change') {
+              fiscalRequestRejected = k;
+            }
+          }
+        }
+      }
+
       const [newBill] = await db
         .insert(bills)
         .values({
@@ -3251,6 +3452,11 @@ agentTickQueue.process(async () => {
           status: 'proposed',
           billType: validLawId ? 'amendment' : 'original',
           amendsLawId: validLawId ?? undefined,
+          fiscalKind: fiscal?.kind,
+          fiscalAmount: fiscal?.amount ?? undefined,
+          fiscalTaxDelta: fiscal?.taxDelta ?? undefined,
+          fiscalProgramName: fiscal?.programName ?? undefined,
+          sunsetTicks: fiscal?.sunsetTicks ?? undefined,
         })
         .returning({ id: bills.id, title: bills.title });
 
@@ -3265,8 +3471,22 @@ agentTickQueue.process(async () => {
           billType: validLawId ? 'amendment' : 'original',
           amendsLawId: validLawId,
           reasoning: decision.reasoning,
+          fiscal: fiscal
+            ? { kind: fiscal.kind, amount: fiscal.amount, taxDelta: fiscal.taxDelta, sunsetTicks: fiscal.sunsetTicks }
+            : null,
         }),
       });
+
+      if (fiscalRequestRejected) {
+        console.warn(`[SIMULATION] Fiscal provision (${fiscalRequestRejected}) on "${title}" rejected by validation — bill proposed without it`);
+        await db.insert(activityEvents).values({
+          type: 'appropriation_rejected',
+          agentId: agent.id,
+          title: 'Fiscal provision rejected',
+          description: `The ${fiscalRequestRejected.replace('_', ' ')} provision on "${title}" failed validation or busted a spending cap — the bill advances without fiscal effect`,
+          metadata: JSON.stringify({ billId: newBill.id, requestedKind: fiscalRequestRejected }),
+        });
+      }
 
       broadcast('bill:proposed', {
         billId: newBill.id,
@@ -3537,6 +3757,7 @@ agentTickQueue.process(async () => {
           .where(eq(agents.id, pos.agentId));
 
         treasuryBalance -= salary;
+        tickSpendingThisTick += salary;
 
         await db.insert(transactions).values({
           fromAgentId: undefined,
@@ -3553,6 +3774,53 @@ agentTickQueue.process(async () => {
           description: `M$${salary} salary paid for ${pos.type} position`,
           metadata: JSON.stringify({ positionId: pos.id, positionType: pos.type, amount: salary }),
         });
+      }
+
+      /* ---- Phase 3: recurring program appropriations ------------------ */
+      /* Same in-memory treasuryBalance, same single final update — a second
+         phase touching the treasury row in the same tick would race it.
+         Unlike salaries (which skip when treasury < salary — deliberate
+         asymmetry, kept), program debits DO drive the treasury negative
+         (Engine 6 reacts) down to rc.treasuryHardFloor, below which debits
+         suspend with a treasury_crisis event. Amounts are fixed integers
+         set at validation time — never percentages, so no compounding. */
+      if (rc.fiscalEffectsEnabled) {
+        const activePrograms = await db
+          .select()
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.programActive, true), eq(laws.fiscalKind, 'spend_recurring')));
+
+        for (const program of activePrograms) {
+          const perTick = program.fiscalAmount;
+          if (typeof perTick !== 'number' || !Number.isFinite(perTick) || perTick <= 0) continue;
+
+          if (treasuryBalance <= rc.treasuryHardFloor) {
+            await db.insert(activityEvents).values({
+              type: 'treasury_crisis',
+              agentId: null,
+              title: 'Program funding suspended',
+              description: `Treasury at M$${treasuryBalance} — below the hard floor; "${program.fiscalProgramName ?? program.title}" (M$${perTick}/tick) goes unfunded this tick`,
+              metadata: JSON.stringify({ lawId: program.id, perTick, treasuryBalance, treasuryHardFloor: rc.treasuryHardFloor }),
+            });
+            continue;
+          }
+
+          treasuryBalance -= perTick;
+          tickSpendingThisTick += perTick;
+
+          await db.insert(transactions).values({
+            fromAgentId: undefined,
+            toAgentId: undefined,
+            amount: String(perTick),
+            type: 'appropriation',
+            description: `Recurring appropriation: ${program.fiscalProgramName ?? program.title}`,
+            relatedLawId: program.id,
+          });
+        }
+
+        if (activePrograms.length > 0) {
+          console.warn(`[SIMULATION] Phase 12: ${activePrograms.length} recurring program(s) processed. Treasury: M$${treasuryBalance}`);
+        }
       }
 
       /* Update treasury balance */
@@ -3624,6 +3892,18 @@ agentTickQueue.process(async () => {
           taxRatePercent: govSettings.taxRatePercent,
           newTreasuryBalance: treasuryBalance,
         }),
+      });
+
+      /* Phase 3: one fiscal summary row per tick — powers the budget
+         dashboard's treasury chart. Writes regardless of the kill switch
+         (revenue and treasury are real either way). Inside Phase 13's try:
+         a summary failure never kills the tick. */
+      await db.insert(fiscalTickSummaries).values({
+        tickId: currentTick?.id ?? undefined,
+        tickNumber,
+        revenue: totalTaxCollected,
+        spending: tickSpendingThisTick,
+        treasuryEnd: treasuryBalance,
       });
 
       console.warn(`[SIMULATION] Phase 13: Tax collection complete. Collected M$${totalTaxCollected}. Treasury: M$${treasuryBalance}`);

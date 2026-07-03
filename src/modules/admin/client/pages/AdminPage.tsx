@@ -142,6 +142,17 @@ interface RuntimeConfig {
   gazetteEnabled: boolean;
   dealParsingEnabled: boolean;
   maxDealsPerTick: number;
+  /* Fiscal Policy (Phase 3) */
+  fiscalEffectsEnabled: boolean;
+  budgetCycleTicks: number;
+  fiscalMaxOneTimePctOfTreasury: number;
+  fiscalMaxProgramPctOfRevenue: number;
+  fiscalRecurringCapPctOfRevenue: number;
+  fiscalMaxTaxDeltaPerLaw: number;
+  taxRateMinPercent: number;
+  taxRateMaxPercent: number;
+  maxSunsetTicks: number;
+  treasuryHardFloor: number;
 }
 
 interface EconomySettings {
@@ -2115,6 +2126,136 @@ export function AdminPage() {
                 </>
               )}
             </CollapsibleSection>
+
+            {/* Fiscal Policy (Phase 3) — money is real */}
+            {simConfig && (
+              <CollapsibleSection
+                id="fiscal_policy"
+                title="Fiscal Policy"
+                subtitle="Bill fiscal provisions: appropriations, spending programs, revenue laws. Clamps are % of treasury/revenue — they scale with the economy."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Fiscal Effects Enabled (kill switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.fiscalEffectsEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, fiscalEffectsEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ fiscalEffectsEnabled: simConfig.fiscalEffectsEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, bills still store validated provisions but nothing is applied — no debits, no tax changes, no sunsets, no lapses.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Budget Cycle &amp; Sunsets</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {([
+                      ['budgetCycleTicks', 'Budget Cycle (ticks)', 4, 200, 'Programs older than one cycle lapse unless renewed. 24 ≈ 36h at 90-min ticks.'],
+                      ['maxSunsetTicks', 'Max Sunset (ticks)', 10, 1000, 'Longest sunset clause a bill may carry.'],
+                    ] as [keyof RuntimeConfig, string, number, number, string][]).map(([key, label, min, max, desc]) => (
+                      <div key={key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">{label}</label>
+                          <span className="text-sm text-gold font-mono">{simConfig[key] as number}</span>
+                        </div>
+                        <input type="number" min={min} max={max} step={1}
+                          value={simConfig[key] as number}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseInt(e.target.value) || min } : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Spending Clamps</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {([
+                      ['fiscalMaxOneTimePctOfTreasury', 'One-Time Max (% of treasury)', 1, 20, 'Cap on a single one-time appropriation.'],
+                      ['fiscalMaxProgramPctOfRevenue', 'Program Max (% of tick revenue)', 1, 50, 'Cap on one program’s per-tick cost.'],
+                      ['fiscalRecurringCapPctOfRevenue', 'Aggregate Cap (% of tick revenue)', 10, 100, 'Total recurring spend may never exceed this share of expected revenue.'],
+                    ] as [keyof RuntimeConfig, string, number, number, string][]).map(([key, label, min, max, desc]) => (
+                      <div key={key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">{label}</label>
+                          <span className="text-sm text-gold font-mono">{simConfig[key] as number}%</span>
+                        </div>
+                        <input type="number" min={min} max={max} step={1}
+                          value={simConfig[key] as number}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseInt(e.target.value) || min } : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Tax Rate Bounds &amp; Treasury Floor</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Tax Rate Min (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.taxRateMinPercent}%</span>
+                      </div>
+                      <input type="number" min={0} max={10} step={1}
+                        value={simConfig.taxRateMinPercent}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, taxRateMinPercent: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ taxRateMinPercent: simConfig.taxRateMinPercent })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Tax Rate Max (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.taxRateMaxPercent}%</span>
+                      </div>
+                      <input type="number" min={5} max={50} step={1}
+                        value={simConfig.taxRateMaxPercent}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, taxRateMaxPercent: parseInt(e.target.value) || 5 } : c)}
+                        onBlur={() => void saveConfig({ taxRateMaxPercent: simConfig.taxRateMaxPercent })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      {simConfig.taxRateMaxPercent <= simConfig.taxRateMinPercent && (
+                        <p className="text-xs text-red-400">Max must be greater than min — the save will be rejected.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Max Tax Δ / Law (pts)</label>
+                        <span className="text-sm text-gold font-mono">±{simConfig.fiscalMaxTaxDeltaPerLaw}</span>
+                      </div>
+                      <input type="number" min={1} max={5} step={1}
+                        value={simConfig.fiscalMaxTaxDeltaPerLaw}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalMaxTaxDeltaPerLaw: parseInt(e.target.value) || 1 } : c)}
+                        onBlur={() => void saveConfig({ fiscalMaxTaxDeltaPerLaw: simConfig.fiscalMaxTaxDeltaPerLaw })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Whole points one revenue law can move the rate.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Treasury Hard Floor (M$)</label>
+                        <span className="text-sm text-gold font-mono">M${simConfig.treasuryHardFloor.toLocaleString()}</span>
+                      </div>
+                      <input type="number" min={-1000000} max={0} step={1000}
+                        value={simConfig.treasuryHardFloor}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, treasuryHardFloor: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ treasuryHardFloor: simConfig.treasuryHardFloor })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Treasury may go negative; program debits suspend below this.</p>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
 
             {/* Governance Probabilities */}
             {simConfig && (

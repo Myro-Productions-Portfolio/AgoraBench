@@ -130,6 +130,18 @@ export interface RuntimeConfig {
   /* ---- Vote-Pact Deals ---- */
   dealParsingEnabled: boolean;       // parse optional 'deal' field from Phase 1.5 lobbying output
   maxDealsPerTick: number;           // cap on agentDeals inserts per tick (1-10)
+
+  /* ---- Fiscal Policy (Phase 3) ---- */
+  fiscalEffectsEnabled: boolean;             // kill switch: provisions stored but never applied when false
+  budgetCycleTicks: number;                  // ticks per budget cycle (4-200); 24 = 36h at 90-min ticks
+  fiscalMaxOneTimePctOfTreasury: number;     // spend_once cap as % of current treasury (1-20)
+  fiscalMaxProgramPctOfRevenue: number;      // per-program per-tick cap as % of expected tick revenue (1-50)
+  fiscalRecurringCapPctOfRevenue: number;    // aggregate recurring-spend cap as % of expected tick revenue (10-100)
+  fiscalMaxTaxDeltaPerLaw: number;           // max whole percentage points a revenue law can move the tax rate (1-5)
+  taxRateMinPercent: number;                 // hard floor for the tax rate (0-10)
+  taxRateMaxPercent: number;                 // hard ceiling for the tax rate (5-50); must exceed taxRateMinPercent
+  maxSunsetTicks: number;                    // longest allowed sunset clause in ticks (10-1000)
+  treasuryHardFloor: number;                 // program debits suspend below this (may be negative; -1000000-0)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -251,6 +263,18 @@ const DEFAULTS: RuntimeConfig = {
   /* Vote-Pact Deals */
   dealParsingEnabled: true,
   maxDealsPerTick: 3,
+
+  /* Fiscal Policy (Phase 3) */
+  fiscalEffectsEnabled: true,
+  budgetCycleTicks: 24,
+  fiscalMaxOneTimePctOfTreasury: 5,
+  fiscalMaxProgramPctOfRevenue: 10,
+  fiscalRecurringCapPctOfRevenue: 50,
+  fiscalMaxTaxDeltaPerLaw: 2,
+  taxRateMinPercent: 1,
+  taxRateMaxPercent: 25,
+  maxSunsetTicks: 200,
+  treasuryHardFloor: -50_000,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

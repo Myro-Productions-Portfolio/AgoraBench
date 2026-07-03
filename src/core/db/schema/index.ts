@@ -5,7 +5,7 @@ export { agentPolicyPositions } from '@modules/agents/db/schema/agentPolicyPosit
 export { parties, partyMemberships } from '@modules/elections/db/schema/parties';
 export { elections, campaigns, votes } from '@modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from '@modules/legislation/db/schema/legislation';
-export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions } from '@modules/government/db/schema/government';
+export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions, fiscalTickSummaries } from '@modules/government/db/schema/government';
 export { apiProviders } from '@modules/admin/db/schema/providers';
 export { orchestratorInterventions } from '@modules/admin/db/schema/orchestratorInterventions';
 export { governmentEvents } from '@modules/government/db/schema/governmentEvents';

@@ -360,6 +360,41 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.maxDealsPerTick = Math.round(v);
     }
 
+    // Fiscal Policy (Phase 3) — Rule 1: every RuntimeConfig field gets a
+    // server handler branch with type check + range clamp, same commit.
+    if (body.fiscalEffectsEnabled !== undefined) {
+      update.fiscalEffectsEnabled = Boolean(body.fiscalEffectsEnabled);
+    }
+    const bct = posInt('budgetCycleTicks', 4, 200);
+    if (bct !== undefined) update.budgetCycleTicks = bct;
+    const fmot = num('fiscalMaxOneTimePctOfTreasury', 1, 20);
+    if (fmot !== undefined) update.fiscalMaxOneTimePctOfTreasury = fmot;
+    const fmpr = num('fiscalMaxProgramPctOfRevenue', 1, 50);
+    if (fmpr !== undefined) update.fiscalMaxProgramPctOfRevenue = fmpr;
+    const frcr = num('fiscalRecurringCapPctOfRevenue', 10, 100);
+    if (frcr !== undefined) update.fiscalRecurringCapPctOfRevenue = frcr;
+    const fmtd = posInt('fiscalMaxTaxDeltaPerLaw', 1, 5);
+    if (fmtd !== undefined) update.fiscalMaxTaxDeltaPerLaw = fmtd;
+    const trMin = posInt('taxRateMinPercent', 0, 10);
+    const trMax = posInt('taxRateMaxPercent', 5, 50);
+    {
+      /* Cross-field check on the EFFECTIVE pair (incoming value or current
+         config) — a save that would leave min >= max is rejected outright. */
+      const current = getRuntimeConfig();
+      const effMin = trMin ?? current.taxRateMinPercent;
+      const effMax = trMax ?? current.taxRateMaxPercent;
+      if ((trMin !== undefined || trMax !== undefined) && effMax <= effMin) {
+        res.status(400).json({ error: 'taxRateMaxPercent must be greater than taxRateMinPercent' });
+        return;
+      }
+    }
+    if (trMin !== undefined) update.taxRateMinPercent = trMin;
+    if (trMax !== undefined) update.taxRateMaxPercent = trMax;
+    const mst = posInt('maxSunsetTicks', 10, 1000);
+    if (mst !== undefined) update.maxSunsetTicks = mst;
+    const thf = num('treasuryHardFloor', -1_000_000, 0);
+    if (thf !== undefined) update.treasuryHardFloor = Math.round(thf);
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

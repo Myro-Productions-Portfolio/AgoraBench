@@ -23,6 +23,20 @@ export const bills = pgTable('bills', {
   introducedAt: timestamp('introduced_at', { withTimezone: true }).notNull().defaultNow(),
   lastActionAt: timestamp('last_action_at', { withTimezone: true }).notNull().defaultNow(),
   withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }),
+  /* ---- Phase 3 fiscal provisions — ALL nullable by design. -------------
+     Legacy rows (and any bill whose LLM fiscal payload fails validation)
+     read NULL = "no fiscal provision" — a structural no-op, no defensive
+     code needed. Values are written ONLY by the Phase 11 Rule-4 validator
+     (fiscalParsing.ts) — never raw LLM output.
+     fiscalKind: 'spend_once' | 'spend_recurring' | 'tax_change' | NULL
+     fiscalAmount: integer M$ — per-tick for recurring, total for one-time
+     fiscalTaxDelta: signed whole percentage points (tax_change only)
+     sunsetTicks: law auto-deactivates this many ticks after enactment    */
+  fiscalKind: varchar('fiscal_kind', { length: 20 }),
+  fiscalAmount: integer('fiscal_amount'),
+  fiscalTaxDelta: integer('fiscal_tax_delta'),
+  fiscalProgramName: varchar('fiscal_program_name', { length: 120 }),
+  sunsetTicks: integer('sunset_ticks'),
 });
 
 export const laws = pgTable('laws', {
@@ -36,6 +50,21 @@ export const laws = pgTable('laws', {
   enactedDate: timestamp('enacted_date', { withTimezone: true }).notNull().defaultNow(),
   isActive: boolean('is_active').notNull().default(true),
   amendmentHistory: text('amendment_history').notNull().default('[]'),
+  /* ---- Phase 3 fiscal provisions — copied from the enacting bill at ----
+     Phase 9. ALL nullable: the ~1,930 legacy laws read NULL everywhere =
+     no provision, no sunset, ever. programActive is true only for enacted
+     spend_recurring programs (a recurring appropriation IS the law row —
+     no separate programs table). enactedTick/lastRenewedTick are tick
+     NUMBERS (not timestamps) so sunset/lapse math survives tick-interval
+     changes; both derive from tick_log COUNT and are restart-robust.     */
+  fiscalKind: varchar('fiscal_kind', { length: 20 }),
+  fiscalAmount: integer('fiscal_amount'),
+  fiscalTaxDelta: integer('fiscal_tax_delta'),
+  fiscalProgramName: varchar('fiscal_program_name', { length: 120 }),
+  sunsetTicks: integer('sunset_ticks'),
+  programActive: boolean('program_active'),
+  enactedTick: integer('enacted_tick'),
+  lastRenewedTick: integer('last_renewed_tick'),
 });
 
 export const billVotes = pgTable('bill_votes', {

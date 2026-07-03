@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, timestamp, integer, index } from 'drizzle-orm/pg-core';
 import { agents } from '@modules/agents/db/schema/agents';
 import { laws } from '@modules/legislation/db/schema/legislation';
 
@@ -38,15 +38,25 @@ export const agentDecisions = pgTable('agent_decisions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const transactions = pgTable('transactions', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  fromAgentId: uuid('from_agent_id').references(() => agents.id),
-  toAgentId: uuid('to_agent_id').references(() => agents.id),
-  amount: varchar('amount', { length: 50 }).notNull(),
-  type: varchar('type', { length: 50 }).notNull(),
-  description: text('description').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const transactions = pgTable(
+  'transactions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fromAgentId: uuid('from_agent_id').references(() => agents.id),
+    toAgentId: uuid('to_agent_id').references(() => agents.id),
+    amount: varchar('amount', { length: 50 }).notNull(),
+    type: varchar('type', { length: 50 }).notNull(),
+    description: text('description').notNull(),
+    /* Phase 3: links appropriation rows to the spending law so per-law
+       cumulative impact is a single indexed SUM. Nullable — every legacy
+       row (salaries, taxes, fees) stays NULL and is simply not law-linked. */
+    relatedLawId: uuid('related_law_id').references(() => laws.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    relatedLawIdx: index('transactions_related_law_id_idx').on(t.relatedLawId),
+  }),
+);
 
 export const judicialReviews = pgTable('judicial_reviews', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -71,6 +81,9 @@ export const governmentSettings = pgTable('government_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
   treasuryBalance: integer('treasury_balance').notNull().default(50000),
   taxRatePercent: integer('tax_rate_percent').notNull().default(2),
+  /* Phase 3: tick number of the last budget session (Phase 9.7). NOT NULL
+     DEFAULT 0 so the first post-deploy budget check fires and re-baselines. */
+  lastBudgetSessionTick: integer('last_budget_session_tick').notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -79,6 +92,29 @@ export const tickLog = pgTable('tick_log', {
   firedAt: timestamp('fired_at', { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp('completed_at', { withTimezone: true }),
 });
+
+/**
+ * Phase 3: one row per tick, written at the end of Phase 13 tax collection.
+ * Powers the budget dashboard's treasury-over-time chart — the transactions
+ * ledger cannot (amounts are varchar(50), rows carry no balance-after, and
+ * tax collection inserts one row per agent per tick). O(ticks) and exact.
+ * All money integer M$ like every other money column.
+ */
+export const fiscalTickSummaries = pgTable(
+  'fiscal_tick_summaries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tickId: uuid('tick_id').references(() => tickLog.id),
+    tickNumber: integer('tick_number').notNull(),
+    revenue: integer('revenue').notNull(),
+    spending: integer('spending').notNull(),
+    treasuryEnd: integer('treasury_end').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    createdAtIdx: index('fiscal_tick_summaries_created_at_idx').on(t.createdAt),
+  }),
+);
 
 export const aggeInterventions = pgTable('agge_interventions', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -451,12 +451,12 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       {
         id: 'enactment',
         heading: 'From bill to law',
-        body: 'Bills that pass presidential review in Phase 6 are enacted as laws in Phase 9 and stored in the laws table. Each law carries economic effect fields: taxRateDelta, gdpMultiplier, approvalImpact, and treasuryDelta. These effects apply every tick for as long as the law remains active.',
+        body: 'Bills that pass presidential review in Phase 6 are enacted as laws in Phase 9 and stored in the laws table. A law can carry an optional fiscal provision copied from the enacting bill: fiscalKind (spend_once, spend_recurring, or tax_change), fiscalAmount in dollars, fiscalTaxDelta in whole percentage points, and sunsetTicks. Legacy laws carry NULL fiscal fields and have no economic effect.',
       },
       {
         id: 'stacking',
-        heading: 'Effect stacking',
-        body: 'Law effects stack multiplicatively for gdpMultiplier and additively for other fields. Two active laws each with gdpMultiplier 1.05 yield a combined 1.1025x GDP modifier. Multiple taxRateDelta values sum together. This compounding creates meaningful economic consequences as the legislative body passes more laws.',
+        heading: 'Recurring appropriations',
+        body: 'A spend_recurring law is itself the program row — there is no separate programs table. Every tick, Phase 12 debits each active program fiscalAmount from the treasury until the law sunsets (age since enactment reaches sunsetTicks) or lapses (unrenewed past a budget cycle). Aggregate recurring spend is capped against daily citizen revenue at validation time, so many programs cannot jointly bankrupt the treasury in a single tick.',
       },
       {
         id: 'judicial',
@@ -615,28 +615,33 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
   {
     id: 'economy-gdp',
     title: 'GDP & Budget',
-    subtitle: 'How the simulated economy tracks GDP, treasury, and tax revenue.',
+    subtitle: 'How the treasury earns, pays, and taxes at national scale.',
     eyebrow: 'Simulation / Economy',
     sections: [
       {
-        id: 'tracking',
-        heading: 'Economic state',
-        body: 'GDP and treasury balance are tracked in the government_settings table. Phase 12 recalculates both values each tick by applying active law effects: gdpMultiplier compounds across all active laws, and taxRateDelta values sum to determine the effective tax rate.',
+        id: 'scale',
+        heading: 'National scale',
+        body: 'Agora runs at full US scale: a population of ~330 million, ~$28 trillion in annual GDP, and a treasury around $1.5 trillion. All money is stored in dollars as bigint columns (agents.balance, government_settings.treasury_balance, bill/law fiscal_amount). One tick equals one simulated day.',
       },
       {
         id: 'revenue',
-        heading: 'Tax revenue and costs',
-        body: 'Each tick, the treasury receives tax revenue calculated as GDP multiplied by the effective tax rate. Government costs are subtracted from the treasury. The net change determines whether the government is running a surplus or deficit.',
+        heading: 'Citizen tax revenue',
+        body: 'Each tick the treasury collects daily citizen tax equal to floor(gdpAnnual × taxRatePercent / 100 / 365). At the defaults ($28T GDP, 18% rate) that is roughly $13.8 billion per day. This is the government primary income — it replaces the old per-agent wealth tax, which no longer exists.',
+      },
+      {
+        id: 'payroll',
+        heading: 'Bi-weekly payroll',
+        body: 'Officeholders are paid every payPeriodTicks days (default 14). A paycheck is the annual salary divided by 26, paid net of income-tax withholding: gross = floor(salary/26), withheld = floor(gross × rate/100), net = gross − withheld. Salaries use real 2026 figures — President $400,000/yr, Cabinet $253,100, Congress and committee chairs $174,000, Justices $306,600. The withheld amount returns to the treasury as revenue.',
       },
       {
         id: 'crisis',
-        heading: 'Treasury crisis',
-        body: 'When the treasury falls below rc.treasuryCrisisThreshold (default 0.20 of the seed balance), a crisis state is triggered. The Economy Feedback Engine (Engine 6) applies a 1.4x bill proposal multiplier for fiscally conservative agents, driving them to propose corrective legislation. Agents whose personal balance is depleted receive a 0.7x modifier.',
+        heading: 'Treasury crisis and deficit',
+        body: 'When the treasury falls below rc.treasuryCrisisThreshold (default 0.20 of the seed value, i.e. below ~$300B), a crisis state is triggered and the Economy Feedback Engine (Engine 6) applies a 1.4x bill-proposal multiplier for fiscally conservative agents. Recurring program appropriations can drive the treasury negative down to rc.treasuryHardFloor, below which program debits suspend.',
       },
       {
         id: 'prompts',
         heading: 'Economy in agent prompts',
-        body: 'Economy context is injected into all agent system prompts via buildEconomyContextBlock(). This includes treasury status (healthy, strained, or critical), current tax rate, and the agent personal balance. Agents use this information when deciding how to vote on fiscal legislation.',
+        body: 'Economy context is injected into agent system prompts via buildEconomyContextBlock(): treasury status (healthy, strained, surplus, or critical), the current tax rate, the agent personal balance, and a note that all fiscal amounts are in US dollars at national scale. Agents use this when deciding how to vote on fiscal legislation.',
       },
     ],
     prev: { id: 'elections-voting', title: 'Voting Logic' },
@@ -645,18 +650,18 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
   {
     id: 'economy-policy',
     title: 'Policy Effects',
-    subtitle: 'How laws and policy positions create feedback loops in the economy.',
+    subtitle: 'How bills spend, tax, and reshape the budget.',
     eyebrow: 'Simulation / Economy',
     sections: [
       {
-        id: 'approval',
-        heading: 'Approval impact',
-        body: 'Laws with an approvalImpact value apply that delta to the sponsoring agent approval rating each tick the law remains active. Positive-impact laws reward their sponsor with ongoing approval gains; negative-impact laws create a sustained drag.',
+        id: 'provisions',
+        heading: 'Fiscal provisions',
+        body: 'A bill can carry one optional fiscal provision, extracted from structured JSON and validated at Phase 11. spend_once debits a fixed amount from the treasury at enactment. spend_recurring funds a named program every tick until it sunsets or lapses. tax_change moves the tax rate by a signed whole number of percentage points. All amounts are dollars at national scale ($500M–$700B is a normal appropriation range).',
       },
       {
-        id: 'compounding',
-        heading: 'GDP compounding',
-        body: 'Laws with gdpMultiplier compound multiplicatively. Two active laws at 1.05x each yield 1.1025x GDP, not 1.10x. This means a legislative body that passes many small growth-oriented laws can create exponential GDP expansion, while contractionary laws can rapidly shrink the economy.',
+        id: 'clamps',
+        heading: 'Spending clamps',
+        body: 'Provisions are clamped as percentages of the treasury or of expected daily revenue, so they scale with the economy automatically. A one-time spend is capped at fiscalMaxOneTimePctOfTreasury of the current treasury; recurring programs are capped per-program and in aggregate against daily citizen revenue. Tax changes are capped at fiscalMaxTaxDeltaPerLaw points per law and clamped to [taxRateMinPercent, taxRateMaxPercent].',
       },
       {
         id: 'positions',
@@ -664,9 +669,9 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
         body: 'The agent_policy_positions table tracks per-agent per-committee-category support and oppose counts, updated each time an agent votes. These counts feed into the Whip Follow Rate Engine as policyCongruence and the Veto Composite Engine as policyDisagreementMod, creating feedback between voting history and future voting behavior.',
       },
       {
-        id: 'sensitivity',
-        heading: 'Economic sensitivity',
-        body: 'The economicSensitivity config value (default 0.4) scales how strongly GDP changes affect agent approval. Higher values make agents more reactive to economic conditions; lower values insulate approval from economic swings.',
+        id: 'fees',
+        heading: 'Fees and the ledger',
+        body: 'Declaring candidacy charges campaignFilingFee and founding a party charges partyCreationFee, both deducted from the agent balance with a ledger row. Court damages transfer courtDamagesAmount from loser to winner. Every money movement — paychecks, withholding, appropriations, fees, damages, and the one-time currency conversion — is recorded in the transactions ledger with the resulting balance, visible on each agent Finances tab.',
       },
     ],
     prev: { id: 'economy-gdp', title: 'GDP & Budget' },
@@ -766,7 +771,7 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       {
         id: 'judicial-economy',
         heading: 'Phases 10-12: Judicial review and economy',
-        body: 'Phase 10 runs judicial challenges against active laws using the Judicial Challenge Weight Engine. Phase 11 handles agent bill proposals gated by billProposalChance. Phase 11.5 (Public Statements, gated by publicStatementsEnabled) generates press statements. Phase 12 recalculates GDP, treasury, and tax revenue based on active law effects.',
+        body: 'Phase 10 runs judicial challenges against active laws using the Judicial Challenge Weight Engine. Phase 11 handles agent bill proposals gated by billProposalChance. Phase 11.5 (Public Statements, gated by publicStatementsEnabled) generates press statements. Phase 12 runs payroll (bi-weekly net paychecks plus recurring program appropriations) and Phase 13 accrues daily citizen tax revenue to the treasury.',
       },
       {
         id: 'election-forum',

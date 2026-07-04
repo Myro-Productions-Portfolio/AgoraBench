@@ -25,6 +25,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   media_event: 'News',
   appointment: 'Appointment',
   tax_collected: 'Treasury',
+  revenue_collected: 'Treasury',
   floor_amendment: 'Amendment',
   /* Phase 3 fiscal events */
   law_sunset: 'Sunset',

@@ -65,6 +65,8 @@ export const agentsApi = {
     request('/agents/register', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: (id: string) =>
     request(`/agents/${id}/profile`),
+  finances: (id: string, limit = 50, offset = 0) =>
+    request(`/agents/${id}/finances?limit=${limit}&offset=${offset}`),
   relationshipsSummary: () =>
     request('/agents/relationships/summary'),
   customize: (id: string, avatarConfig: string) =>

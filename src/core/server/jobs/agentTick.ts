@@ -41,7 +41,7 @@ import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
-import { expectedTickRevenue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
+import { dailyCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
 import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
@@ -75,6 +75,28 @@ export async function updateApproval(
   } catch (err) {
     console.warn('[APPROVAL] updateApproval error:', err);
   }
+}
+
+/* Compact dollar string for prompt text (e.g. 75000000000 -> "$75B"). Server-side
+   twin of the client formatMoney({compact}); LLM-facing, so no unicode minus. */
+function compactDollars(v: number): string {
+  if (!Number.isFinite(v)) return '$0';
+  const abs = Math.abs(v);
+  const units: Array<[number, string]> = [
+    [1_000_000_000_000, 'T'],
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  for (const [value, suffix] of units) {
+    if (abs >= value) {
+      const scaled = abs / value;
+      const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+      const text = scaled.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+      return `${v < 0 ? '-' : ''}$${text}${suffix}`;
+    }
+  }
+  return `${v < 0 ? '-' : ''}$${abs.toLocaleString('en-US')}`;
 }
 
 /* ── Per-Agent Whip Follow Rate ─────────────────────────────────────── */
@@ -147,10 +169,14 @@ agentTickQueue.process(async () => {
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
   /* Election results from Phase 14, read by Phase 11.5 */
   let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
-  /* Government spending this tick (salaries + one-time appropriations +
+  /* Government spending this tick (net paychecks + one-time appropriations +
      recurring program debits) — accumulated by Phases 9 and 12, written to
-     fiscal_tick_summaries by Phase 13. Integer M$. */
+     fiscal_tick_summaries by Phase 13. Integer dollars. */
   let tickSpendingThisTick = 0;
+
+  /* Income tax withheld from paychecks this tick (Phase 12) — counted as
+     revenue alongside citizen tax in Phase 13's fiscal summary. */
+  let payrollWithheldThisTick = 0;
 
   /* ------------------------------------------------------------------ */
   /* PHASE 0.5: Committee Assignment & Chair Succession                    */
@@ -2802,7 +2828,7 @@ agentTickQueue.process(async () => {
               await db.insert(transactions).values({
                 fromAgentId: undefined,
                 toAgentId: undefined,
-                amount: String(bill.fiscalAmount),
+                amount: bill.fiscalAmount ?? 0,
                 type: 'appropriation_onetime',
                 description: `One-time appropriation: "${bill.title}"`,
                 relatedLawId: enactedLaw.id,
@@ -2812,12 +2838,12 @@ agentTickQueue.process(async () => {
                 type: 'appropriation_onetime',
                 agentId: null,
                 title: 'One-time appropriation',
-                description: `M$${bill.fiscalAmount} appropriated from the treasury for "${bill.title}"`,
+                description: `$${bill.fiscalAmount} appropriated from the treasury for "${bill.title}"`,
                 metadata: JSON.stringify({ lawId: enactedLaw.id, billId: bill.id, amount: bill.fiscalAmount, treasuryAfter: newBalance }),
               });
 
               broadcast('treasury:appropriation', { lawId: enactedLaw.id, title: bill.title, amount: bill.fiscalAmount, treasuryAfter: newBalance });
-              console.warn(`[SIMULATION] One-time appropriation M$${bill.fiscalAmount} for "${bill.title}" — treasury now M$${newBalance}`);
+              console.warn(`[SIMULATION] One-time appropriation $${bill.fiscalAmount} for "${bill.title}" — treasury now $${newBalance}`);
             }
           } else if (
             bill.fiscalKind === 'tax_change' &&
@@ -2851,7 +2877,7 @@ agentTickQueue.process(async () => {
           } else if (bill.fiscalKind === 'spend_recurring') {
             /* Recurring program: no debit at enactment — Phase 12 debits it
                each tick alongside salaries while program_active stays true. */
-            console.warn(`[SIMULATION] Program "${bill.fiscalProgramName ?? bill.title}" enacted at M$${bill.fiscalAmount}/tick`);
+            console.warn(`[SIMULATION] Program "${bill.fiscalProgramName ?? bill.title}" enacted at $${bill.fiscalAmount}/day`);
           }
         } catch (err) {
           console.warn('[SIMULATION] Phase 9 fiscal effect error (law stands, effect skipped):', err);
@@ -3046,7 +3072,7 @@ agentTickQueue.process(async () => {
               type: 'program_lapsed',
               agentId: null,
               title: 'Spending program lapsed',
-              description: `"${programName}" (M$${program.fiscalAmount}/tick) was not renewed and lapsed at the budget session`,
+              description: `"${programName}" ($${program.fiscalAmount}/day) was not renewed and lapsed at the budget session`,
               metadata: JSON.stringify({
                 lawId: program.id,
                 programName,
@@ -3056,7 +3082,7 @@ agentTickQueue.process(async () => {
                 lapsedAtTick: tickNumber,
               }),
             });
-            console.warn(`[SIMULATION] Phase 9.7: Program "${programName}" lapsed (M$${program.fiscalAmount}/tick, last renewed tick ${program.lastRenewedTick ?? program.enactedTick})`);
+            console.warn(`[SIMULATION] Phase 9.7: Program "${programName}" lapsed ($${program.fiscalAmount}/day, last renewed tick ${program.lastRenewedTick ?? program.enactedTick})`);
           }
         }
 
@@ -3064,9 +3090,9 @@ agentTickQueue.process(async () => {
            budget_session; zero client changes needed. */
         const sessionDescription =
           `Budget session at tick ${tickNumber}: ` +
-          `${lapsingPrograms.length} program(s) lapsed (M$${lapsedPerTick}/tick freed), ` +
-          `${survivingPrograms.length} program(s) continue (M$${survivingPerTick}/tick). ` +
-          `Treasury M$${gs97.treasuryBalance}.`;
+          `${lapsingPrograms.length} program(s) lapsed ($${lapsedPerTick}/day freed), ` +
+          `${survivingPrograms.length} program(s) continue ($${survivingPerTick}/day). ` +
+          `Treasury $${gs97.treasuryBalance}.`;
 
         await db.insert(governmentEvents).values({
           type: 'budget_session',
@@ -3848,14 +3874,21 @@ agentTickQueue.process(async () => {
                 }
               } else if (!isChallenge && loserId && winnerId) {
                 if (damages > 0) {
+                  const [winnerBalanceRow] = await tx
+                    .select({ balance: agents.balance })
+                    .from(agents)
+                    .where(eq(agents.id, winnerId))
+                    .limit(1);
+                  const winnerBalanceAfter = (winnerBalanceRow?.balance ?? 0) + damages;
                   await tx.update(agents).set({ balance: sql`${agents.balance} - ${damages}` }).where(eq(agents.id, loserId));
                   await tx.update(agents).set({ balance: sql`${agents.balance} + ${damages}` }).where(eq(agents.id, winnerId));
                   await tx.insert(transactions).values({
                     fromAgentId: loserId,
                     toAgentId: winnerId,
-                    amount: String(damages),
+                    amount: damages,
                     type: 'court_damages',
                     description: `Damages awarded in ${c.caption} (${c.caseNumber})`,
+                    balanceAfter: winnerBalanceAfter,
                   });
                 }
                 /* Litigation sours relations — Phase 2b/2c upsert pattern. */
@@ -3920,7 +3953,7 @@ agentTickQueue.process(async () => {
                 type: 'ruling',
                 content: isChallenge
                   ? `Decided ${votesFor}-${votesAgainst}: the law is ${petitionerWins ? 'struck down' : 'upheld'}.`
-                  : `Decided ${votesFor}-${votesAgainst} for the ${petitionerWins ? 'petitioner' : 'respondent'}.${damages > 0 ? ` Damages of M$${damages} awarded.` : ''}`,
+                  : `Decided ${votesFor}-${votesAgainst} for the ${petitionerWins ? 'petitioner' : 'respondent'}.${damages > 0 ? ` Damages of $${damages} awarded.` : ''}`,
               });
             });
 
@@ -4317,9 +4350,21 @@ agentTickQueue.process(async () => {
       ? `${expiringNote} Renew one by proposing an amendment to its law with a spend_recurring fiscal provision.`
       : '';
 
-    const treasuryRatio = (govSettings11?.treasuryBalance ?? 50000) / 50000;
+    /* Crisis ratio is measured against the dollar-era treasury seed (1.5T),
+       matching TREASURY_SEED_VALUE in ai.ts — not the retired 50k MoltDollar seed. */
+    const TREASURY_SEED_11 = 1_500_000_000_000;
+    const treasuryRatio = (govSettings11?.treasuryBalance ?? TREASURY_SEED_11) / TREASURY_SEED_11;
     const crisisThreshold = rc.treasuryCrisisThreshold ?? 0.20;
     const crisisMultiplier = rc.economyProposalMultiplierCrisis ?? 1.4;
+
+    /* Advertised spend_once ceiling for the prompt: the live clamp is
+       fiscalMaxOneTimePctOfTreasury% of the current treasury (fiscalParsing.ts),
+       so quote that instead of a hardcoded range that the validator would reject. */
+    const treasury11 = govSettings11?.treasuryBalance ?? 0;
+    const maxOnce11 = treasury11 > 0
+      ? Math.max(1, Math.floor((treasury11 * rc.fiscalMaxOneTimePctOfTreasury) / 100))
+      : 0;
+    const maxOnceCompact = compactDollars(maxOnce11);
 
     /* Fetch latest coalition snapshot for bloc context in proposals */
     const [latestSnapshot] = await db.select()
@@ -4400,8 +4445,10 @@ agentTickQueue.process(async () => {
       /* Phase 3: optional fiscal payload — extracted from structured JSON only
          (never fullText), validated by parseFiscalField, no-op on any failure. */
       const fiscalNote11 =
-        ` Optional fiscal provision: "spend_once" spends M$amount from the treasury once; ` +
-        `"spend_recurring" funds a named program at M$amount per tick until it lapses; ` +
+        ` Optional fiscal provision (all amounts in US dollars at national scale): ` +
+        `"spend_once" spends amount from the treasury once — capped this tick at ${maxOnceCompact} ` +
+        `(${rc.fiscalMaxOneTimePctOfTreasury}% of the current treasury); ` +
+        `"spend_recurring" funds a named program at amount per tick until it lapses; ` +
         `"tax_change" moves the tax rate by taxDelta whole points; use kind "none" for no fiscal effect.`;
 
       const contextMessage =
@@ -4435,11 +4482,7 @@ agentTickQueue.process(async () => {
        activeRecurringSpend11 is a RUNNING total — every provision approved in
        this loop adds to it, so multiple same-tick programs cannot jointly
        bust the aggregate recurring cap. */
-    const sumActiveBalances11 = activeAgents.reduce(
-      (s, a) => s + (typeof a.balance === 'number' && Number.isFinite(a.balance) ? a.balance : 0),
-      0,
-    );
-    const expectedRevenue11 = expectedTickRevenue(govSettings11?.taxRatePercent ?? 0, sumActiveBalances11);
+    const expectedRevenue11 = dailyCitizenRevenue(rc.gdpAnnual, govSettings11?.taxRatePercent ?? 0);
     let activeRecurringSpend11 = 0;
     try {
       const [spendRow] = await db
@@ -4794,25 +4837,26 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 12: Salary Payment                                              */
-  /* Pay all active position holders from government treasury.            */
+  /* PHASE 12: Payroll                                                     */
+  /* Bi-weekly paychecks (annual/26, net of income-tax withholding) to     */
+  /* every active position holder, plus recurring program appropriations.  */
+  /* Paychecks fire only on a payday tick (tickNumber % payPeriodTicks);    */
+  /* recurring appropriations run every tick.                              */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 12: Salary Payment');
+    console.warn('[SIMULATION] Phase 12: Payroll');
 
     const [govSettings] = await db.select().from(governmentSettings).limit(1);
 
     if (!govSettings) {
-      console.warn('[SIMULATION] Phase 12: No government settings found — skipping salary payment.');
+      console.warn('[SIMULATION] Phase 12: No government settings found — skipping payroll.');
     } else {
       let treasuryBalance = govSettings.treasuryBalance;
+      const taxRatePct = govSettings.taxRatePercent;
+      const isPayday = paydayDue(tickNumber, rc.payPeriodTicks);
+      let withheldThisTick = 0;
 
-      const allActivePositions = await db
-        .select()
-        .from(positions)
-        .where(eq(positions.isActive, true));
-
-      const salaryMap: Record<string, number> = {
+      const annualSalaryMap: Record<string, number> = {
         president: rc.salaryPresident,
         cabinet_secretary: rc.salaryCabinet,
         congress_member: rc.salaryCongress,
@@ -4821,45 +4865,93 @@ agentTickQueue.process(async () => {
         committee_chair: rc.salaryCongress,
       };
 
-      for (const pos of allActivePositions) {
-        const salary = salaryMap[pos.type] ?? 0;
-        if (salary === 0) continue;
-        if (treasuryBalance < salary) {
-          console.warn(`[SIMULATION] Phase 12: Treasury too low to pay salary for ${pos.type}`);
-          await db.insert(activityEvents).values({
-            type: 'treasury_crisis',
-            agentId: pos.agentId,
-            title: `Treasury too low to pay ${pos.type} salary`,
-            description: `Treasury balance insufficient to cover $${salary} salary payment`,
-            metadata: JSON.stringify({ positionType: pos.type, salary, treasuryBalance }),
-          });
-          continue;
+      if (isPayday) {
+        const allActivePositions = await db
+          .select()
+          .from(positions)
+          .where(eq(positions.isActive, true));
+
+        /* Running per-agent balance so each ledger row's balance_after is
+           computed in memory (no re-select per row). Seeded from current DB. */
+        const balanceByAgent = new Map<string, number>();
+        for (const pos of allActivePositions) {
+          if (!balanceByAgent.has(pos.agentId)) {
+            const [a] = await db.select({ balance: agents.balance }).from(agents).where(eq(agents.id, pos.agentId));
+            balanceByAgent.set(pos.agentId, a?.balance ?? 0);
+          }
         }
 
-        await db
-          .update(agents)
-          .set({ balance: sql`${agents.balance} + ${salary}` })
-          .where(eq(agents.id, pos.agentId));
+        for (const pos of allActivePositions) {
+          const annual = annualSalaryMap[pos.type] ?? 0;
+          if (annual === 0) continue;
+          const { gross, withheld, net } = computePaycheck(annual, taxRatePct);
+          if (net <= 0) continue;
+          /* Treasury pays the FULL gross: net lands in the agent's balance and
+             the withheld portion is remitted back as revenue in Phase 13. The
+             solvency gate is therefore on gross, not net. */
+          if (treasuryBalance < gross) {
+            console.warn(`[SIMULATION] Phase 12: Treasury too low to pay ${pos.type} paycheck`);
+            await db.insert(activityEvents).values({
+              type: 'treasury_crisis',
+              agentId: pos.agentId,
+              title: `Treasury too low to pay ${pos.type} paycheck`,
+              description: `Treasury balance insufficient to cover $${gross} gross paycheck`,
+              metadata: JSON.stringify({ positionType: pos.type, gross, net, treasuryBalance }),
+            });
+            continue;
+          }
 
-        treasuryBalance -= salary;
-        tickSpendingThisTick += salary;
+          await db
+            .update(agents)
+            .set({ balance: sql`${agents.balance} + ${net}` })
+            .where(eq(agents.id, pos.agentId));
 
-        await db.insert(transactions).values({
-          fromAgentId: undefined,
-          toAgentId: pos.agentId,
-          amount: String(salary),
-          type: 'salary',
-          description: 'Government salary payment',
-        });
+          const newBalance = (balanceByAgent.get(pos.agentId) ?? 0) + net;
+          balanceByAgent.set(pos.agentId, newBalance);
 
-        await db.insert(activityEvents).values({
-          type: 'salary_payment',
-          agentId: pos.agentId,
-          title: 'Salary paid',
-          description: `M$${salary} salary paid for ${pos.type} position`,
-          metadata: JSON.stringify({ positionId: pos.id, positionType: pos.type, amount: salary }),
-        });
+          /* Treasury debits GROSS; Phase 13 re-credits withheld as revenue.
+             Net treasury effect per paycheck is therefore −net (gross − withheld),
+             spending reports gross, revenue reports the withholding. */
+          treasuryBalance -= gross;
+          tickSpendingThisTick += gross;
+          withheldThisTick += withheld;
+
+          /* Two ledger rows: gross salary in (balance_after reflects the net
+             credit — the agent never holds the withheld portion) and the tax
+             withholding out. */
+          await db.insert(transactions).values({
+            fromAgentId: undefined,
+            toAgentId: pos.agentId,
+            amount: gross,
+            type: 'salary',
+            description: `Salary (gross, ${pos.type})`,
+            balanceAfter: newBalance,
+          });
+          await db.insert(transactions).values({
+            fromAgentId: pos.agentId,
+            toAgentId: undefined,
+            amount: withheld,
+            type: 'tax',
+            description: 'Income tax withholding',
+            balanceAfter: newBalance,
+          });
+
+          await db.insert(activityEvents).values({
+            type: 'salary_payment',
+            agentId: pos.agentId,
+            title: 'Paycheck deposited',
+            description: `$${net} net paycheck ($${gross} gross − $${withheld} withheld) for ${pos.type}`,
+            metadata: JSON.stringify({ positionId: pos.id, positionType: pos.type, gross, withheld, net }),
+          });
+        }
+
+        console.warn(`[SIMULATION] Phase 12: Payday — paid ${allActivePositions.length} position(s), $${withheldThisTick} withheld.`);
+      } else {
+        console.warn(`[SIMULATION] Phase 12: Not a payday (tick ${tickNumber}, period ${rc.payPeriodTicks}) — skipping paychecks.`);
       }
+
+      /* Stash withholding for Phase 13 revenue accounting. */
+      payrollWithheldThisTick = withheldThisTick;
 
       /* ---- Phase 3: recurring program appropriations ------------------ */
       /* Same in-memory treasuryBalance, same single final update — a second
@@ -4884,7 +4976,7 @@ agentTickQueue.process(async () => {
               type: 'treasury_crisis',
               agentId: null,
               title: 'Program funding suspended',
-              description: `Treasury at M$${treasuryBalance} — below the hard floor; "${program.fiscalProgramName ?? program.title}" (M$${perTick}/tick) goes unfunded this tick`,
+              description: `Treasury at $${treasuryBalance} — below the hard floor; "${program.fiscalProgramName ?? program.title}" ($${perTick}/tick) goes unfunded this tick`,
               metadata: JSON.stringify({ lawId: program.id, perTick, treasuryBalance, treasuryHardFloor: rc.treasuryHardFloor }),
             });
             continue;
@@ -4896,7 +4988,7 @@ agentTickQueue.process(async () => {
           await db.insert(transactions).values({
             fromAgentId: undefined,
             toAgentId: undefined,
-            amount: String(perTick),
+            amount: perTick,
             type: 'appropriation',
             description: `Recurring appropriation: ${program.fiscalProgramName ?? program.title}`,
             relatedLawId: program.id,
@@ -4904,7 +4996,7 @@ agentTickQueue.process(async () => {
         }
 
         if (activePrograms.length > 0) {
-          console.warn(`[SIMULATION] Phase 12: ${activePrograms.length} recurring program(s) processed. Treasury: M$${treasuryBalance}`);
+          console.warn(`[SIMULATION] Phase 12: ${activePrograms.length} recurring program(s) processed. Treasury: $${treasuryBalance}`);
         }
       }
 
@@ -4914,51 +5006,29 @@ agentTickQueue.process(async () => {
         .set({ treasuryBalance, updatedAt: new Date() })
         .where(eq(governmentSettings.id, govSettings.id));
 
-      console.warn(`[SIMULATION] Phase 12: Salary payments complete. Treasury: M$${treasuryBalance}`);
+      console.warn(`[SIMULATION] Phase 12: Payroll complete. Treasury: $${treasuryBalance}`);
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 12 error:', err);
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 13: Tax Collection                                              */
-  /* Collect tax from all active agents into the treasury.                */
+  /* PHASE 13: Citizen Revenue                                            */
+  /* Accrue the daily citizen tax base to the treasury (GDP × rate / 365) */
+  /* and record the tick's fiscal summary. No per-agent wealth tax — the   */
+  /* only tax on agents is paycheck withholding (Phase 12).               */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 13: Tax Collection');
+    console.warn('[SIMULATION] Phase 13: Citizen Revenue');
 
     const [govSettings] = await db.select().from(governmentSettings).limit(1);
 
     if (!govSettings) {
-      console.warn('[SIMULATION] Phase 13: No government settings found — skipping tax collection.');
+      console.warn('[SIMULATION] Phase 13: No government settings found — skipping revenue accrual.');
     } else {
-      let treasuryBalance = govSettings.treasuryBalance;
-      const taxRate = govSettings.taxRatePercent / 100;
-      let totalTaxCollected = 0;
-
-      /* Re-fetch agents to get updated balances after salary payments */
-      const currentAgents = await db.select().from(agents).where(eq(agents.isActive, true));
-
-      for (const agent of currentAgents) {
-        const taxAmount = Math.floor(agent.balance * taxRate);
-        if (taxAmount <= 0) continue;
-
-        await db
-          .update(agents)
-          .set({ balance: sql`${agents.balance} - ${taxAmount}` })
-          .where(eq(agents.id, agent.id));
-
-        treasuryBalance += taxAmount;
-        totalTaxCollected += taxAmount;
-
-        await db.insert(transactions).values({
-          fromAgentId: agent.id,
-          toAgentId: undefined,
-          amount: String(taxAmount),
-          type: 'fee',
-          description: 'Income tax collection',
-        });
-      }
+      const citizenRevenue = dailyCitizenRevenue(rc.gdpAnnual, govSettings.taxRatePercent);
+      const totalRevenue = citizenRevenue + payrollWithheldThisTick;
+      const treasuryBalance = govSettings.treasuryBalance + totalRevenue;
 
       /* Update treasury balance */
       await db
@@ -4967,14 +5037,16 @@ agentTickQueue.process(async () => {
         .where(eq(governmentSettings.id, govSettings.id));
 
       await db.insert(activityEvents).values({
-        type: 'tax_collected',
+        type: 'revenue_collected',
         agentId: null,
-        title: 'Tax collected',
-        description: `M$${totalTaxCollected} collected in income tax from ${currentAgents.length} agents`,
+        title: 'Revenue collected',
+        description: `$${totalRevenue} collected ($${citizenRevenue} citizen tax + $${payrollWithheldThisTick} payroll withholding)`,
         metadata: JSON.stringify({
-          totalAmount: totalTaxCollected,
-          agentCount: currentAgents.length,
+          totalRevenue,
+          citizenRevenue,
+          payrollWithheld: payrollWithheldThisTick,
           taxRatePercent: govSettings.taxRatePercent,
+          gdpAnnual: rc.gdpAnnual,
           newTreasuryBalance: treasuryBalance,
         }),
       });
@@ -4986,12 +5058,12 @@ agentTickQueue.process(async () => {
       await db.insert(fiscalTickSummaries).values({
         tickId: currentTick?.id ?? undefined,
         tickNumber,
-        revenue: totalTaxCollected,
+        revenue: totalRevenue,
         spending: tickSpendingThisTick,
         treasuryEnd: treasuryBalance,
       });
 
-      console.warn(`[SIMULATION] Phase 13: Tax collection complete. Collected M$${totalTaxCollected}. Treasury: M$${treasuryBalance}`);
+      console.warn(`[SIMULATION] Phase 13: Revenue accrued $${totalRevenue}. Treasury: $${treasuryBalance}`);
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 13 error:', err);
@@ -5588,7 +5660,7 @@ agentTickQueue.process(async () => {
         .from(activityEvents)
         .where(and(
           inArray(activityEvents.type, [
-            'committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'floor_amendment',
+            'committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'revenue_collected', 'floor_amendment',
             /* Phase 3 fiscal events — pickup is this hard whitelist, NOT automatic:
                without these entries fiscal news never reaches the Gazette. */
             'law_sunset', 'budget_session', 'program_lapsed', 'tax_rate_changed', 'appropriation_onetime',

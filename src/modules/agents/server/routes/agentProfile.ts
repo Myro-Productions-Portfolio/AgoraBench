@@ -290,6 +290,107 @@ router.get('/agents/:id/profile', async (req, res, next) => {
   }
 });
 
+/* GET /api/agents/:id/finances -- Paginated transaction ledger + aggregates.
+   Rows where the agent is either party, newest first, with the counterparty
+   displayName joined and the related law title when the row is law-linked. */
+router.get('/agents/:id/finances', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [agent] = await db
+      .select({ id: agents.id, displayName: agents.displayName, balance: agents.balance })
+      .from(agents)
+      .where(eq(agents.id, id))
+      .limit(1);
+    if (!agent) {
+      throw new AppError(404, 'Agent not found');
+    }
+
+    /* Whitelist + clamp pagination (same pattern as the court records API). */
+    const rawLimit = parseInt(String(req.query['limit'] ?? '50'), 10);
+    const rawOffset = parseInt(String(req.query['offset'] ?? '0'), 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, rawLimit)) : 50;
+    const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+
+    const involvesAgent = or(eq(transactions.fromAgentId, id), eq(transactions.toAgentId, id));
+
+    /* Counterparty display name: the OTHER party on the row (null for
+       treasury-side rows where the agent is the only party). Correlated
+       subquery keeps this a single query. */
+    const counterpartyName = sql<string | null>`(
+      SELECT cp.display_name FROM agents cp
+      WHERE cp.id = CASE
+        WHEN ${transactions.fromAgentId} = ${id} THEN ${transactions.toAgentId}
+        ELSE ${transactions.fromAgentId}
+      END
+    )`;
+
+    const [rows, [countRow], aggregates] = await Promise.all([
+      db
+        .select({
+          id: transactions.id,
+          fromAgentId: transactions.fromAgentId,
+          toAgentId: transactions.toAgentId,
+          amount: transactions.amount,
+          type: transactions.type,
+          description: transactions.description,
+          balanceAfter: transactions.balanceAfter,
+          relatedLawId: transactions.relatedLawId,
+          relatedLawTitle: sql<string | null>`(SELECT l.title FROM laws l WHERE l.id = ${transactions.relatedLawId})`,
+          createdAt: transactions.createdAt,
+          counterpartyName,
+        })
+        .from(transactions)
+        .where(involvesAgent)
+        .orderBy(desc(transactions.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ total: sql<number>`COUNT(*)` })
+        .from(transactions)
+        .where(involvesAgent),
+      /* Lifetime aggregates. Salary counts credits TO the agent; tax counts
+         withholding + fees FROM the agent; damages nets both directions. */
+      db
+        .select({
+          totalSalary: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'salary' AND ${transactions.toAgentId} = ${id} THEN ${transactions.amount} ELSE 0 END), 0)`,
+          /* Tax paid: new type='tax' withholding rows PLUS legacy pre-conversion
+             rows that were stored as type='fee' with an "income tax" description. */
+          totalTaxPaid: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.fromAgentId} = ${id} AND (${transactions.type} = 'tax' OR (${transactions.type} = 'fee' AND ${transactions.description} ILIKE 'income tax%')) THEN ${transactions.amount} ELSE 0 END), 0)`,
+          /* Fees: fee rows that are NOT the legacy income-tax rows. */
+          totalFees: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'fee' AND ${transactions.description} NOT ILIKE 'income tax%' AND ${transactions.fromAgentId} = ${id} THEN ${transactions.amount} ELSE 0 END), 0)`,
+          totalDamages: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'court_damages' AND ${transactions.toAgentId} = ${id} THEN ${transactions.amount} WHEN ${transactions.type} = 'court_damages' AND ${transactions.fromAgentId} = ${id} THEN -${transactions.amount} ELSE 0 END), 0)`,
+        })
+        .from(transactions)
+        .where(involvesAgent),
+    ]);
+
+    const total = Number(countRow?.total ?? 0);
+    const agg = aggregates[0] ?? { totalSalary: 0, totalTaxPaid: 0, totalFees: 0, totalDamages: 0 };
+
+    res.json({
+      success: true,
+      data: {
+        agent: { id: agent.id, displayName: agent.displayName, balance: agent.balance },
+        transactions: rows.map((r) => ({
+          ...r,
+          direction: r.toAgentId === id ? 'credit' : 'debit',
+          createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+        })),
+        aggregates: {
+          totalSalary: Number(agg.totalSalary),
+          totalTaxPaid: Number(agg.totalTaxPaid),
+          totalFees: Number(agg.totalFees),
+          totalDamages: Number(agg.totalDamages),
+        },
+      },
+      meta: { total, limit, offset },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 /* PUT /api/agents/:id/customize -- Update avatar config */
 router.put('/agents/:id/customize', requireAuth, async (req, res, next) => {
   try {

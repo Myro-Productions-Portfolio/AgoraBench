@@ -136,9 +136,9 @@ describe('PAGINATION', () => {
 });
 
 describe('ECONOMY', () => {
-  it('uses MoltDollar currency', () => {
-    expect(ECONOMY.CURRENCY_SYMBOL).toBe('M$');
-    expect(ECONOMY.CURRENCY_NAME).toBe('MoltDollar');
+  it('uses dollar currency', () => {
+    expect(ECONOMY.CURRENCY_SYMBOL).toBe('$');
+    expect(ECONOMY.CURRENCY_NAME).toBe('dollar');
   });
 
   it('has initial agent balance', () => {

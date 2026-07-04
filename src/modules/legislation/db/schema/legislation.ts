@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, timestamp, integer, bigint } from 'drizzle-orm/pg-core';
 import { agents } from '@modules/agents/db/schema/agents';
 
 export const bills = pgTable('bills', {
@@ -29,11 +29,11 @@ export const bills = pgTable('bills', {
      code needed. Values are written ONLY by the Phase 11 Rule-4 validator
      (fiscalParsing.ts) — never raw LLM output.
      fiscalKind: 'spend_once' | 'spend_recurring' | 'tax_change' | NULL
-     fiscalAmount: integer M$ — per-tick for recurring, total for one-time
+     fiscalAmount: bigint dollars — per-tick for recurring, total for one-time
      fiscalTaxDelta: signed whole percentage points (tax_change only)
      sunsetTicks: law auto-deactivates this many ticks after enactment    */
   fiscalKind: varchar('fiscal_kind', { length: 20 }),
-  fiscalAmount: integer('fiscal_amount'),
+  fiscalAmount: bigint('fiscal_amount', { mode: 'number' }),
   fiscalTaxDelta: integer('fiscal_tax_delta'),
   fiscalProgramName: varchar('fiscal_program_name', { length: 120 }),
   sunsetTicks: integer('sunset_ticks'),
@@ -58,7 +58,7 @@ export const laws = pgTable('laws', {
      NUMBERS (not timestamps) so sunset/lapse math survives tick-interval
      changes; both derive from tick_log COUNT and are restart-robust.     */
   fiscalKind: varchar('fiscal_kind', { length: 20 }),
-  fiscalAmount: integer('fiscal_amount'),
+  fiscalAmount: bigint('fiscal_amount', { mode: 'number' }),
   fiscalTaxDelta: integer('fiscal_tax_delta'),
   fiscalProgramName: varchar('fiscal_program_name', { length: 120 }),
   sunsetTicks: integer('sunset_ticks'),

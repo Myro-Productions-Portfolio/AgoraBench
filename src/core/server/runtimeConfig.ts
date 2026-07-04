@@ -39,12 +39,15 @@ export interface RuntimeConfig {
 
   /* ---- Economy ---- */
   initialAgentBalance: number;
-  campaignFilingFee: number;
-  partyCreationFee: number;
-  salaryPresident: number;
-  salaryCabinet: number;
-  salaryCongress: number;
-  salaryJustice: number;
+  campaignFilingFee: number;             // charged at candidacy filing
+  partyCreationFee: number;              // charged at party creation
+  salaryPresident: number;               // annual $ (paid annual/26 every payPeriodTicks)
+  salaryCabinet: number;                 // annual $
+  salaryCongress: number;                // annual $
+  salaryJustice: number;                 // annual $
+  payPeriodTicks: number;                // ticks between paydays (7-28); 1 tick = 1 sim day
+  gdpAnnual: number;                     // annual GDP in $ — citizen tax base
+  agoraPopulation: number;               // citizen count (display/flavor + wiki)
 
   /* ---- Governance Probabilities ---- */
   vetoBaseRate: number;              // 0.0 – 1.0
@@ -138,10 +141,10 @@ export interface RuntimeConfig {
   fiscalMaxProgramPctOfRevenue: number;      // per-program per-tick cap as % of expected tick revenue (1-50)
   fiscalRecurringCapPctOfRevenue: number;    // aggregate recurring-spend cap as % of expected tick revenue (10-100)
   fiscalMaxTaxDeltaPerLaw: number;           // max whole percentage points a revenue law can move the tax rate (1-5)
-  taxRateMinPercent: number;                 // hard floor for the tax rate (0-10)
-  taxRateMaxPercent: number;                 // hard ceiling for the tax rate (5-50); must exceed taxRateMinPercent
+  taxRateMinPercent: number;                 // hard floor for the tax rate (0-40)
+  taxRateMaxPercent: number;                 // hard ceiling for the tax rate (5-60); must exceed taxRateMinPercent
   maxSunsetTicks: number;                    // longest allowed sunset clause in ticks (10-1000)
-  treasuryHardFloor: number;                 // program debits suspend below this (may be negative; -1000000-0)
+  treasuryHardFloor: number;                 // program debits suspend below this (may be negative; -10T-0)
 
   /* ---- Judicial (Phase 4) ---- */
   courtEnabled: boolean;                     // kill switch: Phase 10 freezes (no mutations) when false
@@ -150,7 +153,7 @@ export interface RuntimeConfig {
   courtHearingDelayTicks: number;            // ticks between docketing and oral argument (1-4)
   courtDisputeChancePerBrokenDeal: number;   // 0.0 - 1.0 roll per broken deal
   courtJusticeQuestionsPerHearing: number;   // LLM justice questions per hearing (0-4)
-  courtDamagesAmount: number;                // M$ transferred loser -> winner in disputes (0-500)
+  courtDamagesAmount: number;                // $ transferred loser -> winner in disputes (0-10M)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -180,13 +183,16 @@ const DEFAULTS: RuntimeConfig = {
   minReputationToVote: 10,
 
   /* Economy */
-  initialAgentBalance: 1000,
-  campaignFilingFee: 50,
-  partyCreationFee: 200,
-  salaryPresident: 100,
-  salaryCabinet: 75,
-  salaryCongress: 50,
-  salaryJustice: 60,
+  initialAgentBalance: 25_000,
+  campaignFilingFee: 2_500,
+  partyCreationFee: 10_000,
+  salaryPresident: 400_000,
+  salaryCabinet: 253_100,
+  salaryCongress: 174_000,
+  salaryJustice: 306_600,
+  payPeriodTicks: 14,
+  gdpAnnual: 28_000_000_000_000,
+  agoraPopulation: 330_000_000,
 
   /* Governance Probabilities */
   vetoBaseRate: 0.04,
@@ -280,10 +286,10 @@ const DEFAULTS: RuntimeConfig = {
   fiscalMaxProgramPctOfRevenue: 10,
   fiscalRecurringCapPctOfRevenue: 50,
   fiscalMaxTaxDeltaPerLaw: 2,
-  taxRateMinPercent: 1,
-  taxRateMaxPercent: 25,
+  taxRateMinPercent: 10,
+  taxRateMaxPercent: 40,
   maxSunsetTicks: 200,
-  treasuryHardFloor: -50_000,
+  treasuryHardFloor: -2_000_000_000_000,
 
   /* Judicial (Phase 4) */
   courtEnabled: true,
@@ -292,7 +298,7 @@ const DEFAULTS: RuntimeConfig = {
   courtHearingDelayTicks: 2,
   courtDisputeChancePerBrokenDeal: 0.25,
   courtJusticeQuestionsPerHearing: 2,
-  courtDamagesAmount: 50,
+  courtDamagesAmount: 25_000,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

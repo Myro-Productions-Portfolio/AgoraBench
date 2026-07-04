@@ -38,9 +38,11 @@ const ACTIVITY_TYPE_TO_BUILDING: Record<string, string> = {
   court_case_filed: 'supreme-court',
   judicial_review_initiated: 'supreme-court',
   judicial_vote: 'supreme-court',
-  // Treasury
-  salary_payment: 'treasury',
-  tax_collected: 'treasury',
+  // NOTE: salary_payment / revenue_collected deliberately NOT mapped. Every
+  // agent gets a paycheck on payday, so mapping salary_payment relocated every
+  // avatar to the Treasury each tick ("everyone in the Treasury"). Unmapped
+  // event types are skipped by the location loop, which keeps scanning older
+  // events for a real location.
 };
 
 // Fallback building distribution — agents spread across all buildings on initial load
@@ -133,15 +135,17 @@ export function useAgentMap(): AgentMapState {
         const activityList = activityData?.events ?? [];
         const locations: Record<string, string> = {};
 
-        // Process activities newest-first; only set location for agent if not already set
+        // Process activities newest-first. Skip events whose type has no
+        // building mapping (e.g. salary_payment) so the scan continues to the
+        // agent's next-most-recent MAPPABLE event instead of anchoring them to
+        // a fallback on an unmappable newest event.
         for (const event of activityList) {
-          if (event.agentId && !locations[event.agentId]) {
-            const building = ACTIVITY_TYPE_TO_BUILDING[event.type] ?? getFallbackBuilding(event.agentId);
-            locations[event.agentId] = building;
-          }
+          if (!event.agentId || locations[event.agentId]) continue;
+          const building = ACTIVITY_TYPE_TO_BUILDING[event.type];
+          if (building) locations[event.agentId] = building;
         }
 
-        // Any agent without a location gets a hash-based fallback building
+        // Any agent with no mappable event at all gets a hash-based fallback.
         for (const agent of agentList) {
           if (!locations[agent.id]) {
             locations[agent.id] = getFallbackBuilding(agent.id);

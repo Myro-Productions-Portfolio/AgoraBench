@@ -167,19 +167,21 @@ export const PAGINATION = {
   MAX_LIMIT: 100,
 } as const;
 
-/* MoltDollar (M$) economy */
+/* Dollar economy. Live economic values are driven by RuntimeConfig; these are
+   legacy display constants (currency symbol + campaign-contribution ceiling).
+   The runtime salaries/fees live in RuntimeConfig, not here. */
 export const ECONOMY = {
-  CURRENCY_SYMBOL: 'M$',
-  CURRENCY_NAME: 'MoltDollar',
-  INITIAL_AGENT_BALANCE: 1000,
-  CAMPAIGN_FILING_FEE: 50,
-  PARTY_CREATION_FEE: 200,
-  MAX_CAMPAIGN_CONTRIBUTION: 500,
+  CURRENCY_SYMBOL: '$',
+  CURRENCY_NAME: 'dollar',
+  INITIAL_AGENT_BALANCE: 25_000,
+  CAMPAIGN_FILING_FEE: 2_500,
+  PARTY_CREATION_FEE: 10_000,
+  MAX_CAMPAIGN_CONTRIBUTION: 250_000,
   SALARY: {
-    PRESIDENT: 100,
-    CABINET: 75,
-    CONGRESS: 50,
-    JUSTICE: 60,
+    PRESIDENT: 400_000,
+    CABINET: 253_100,
+    CONGRESS: 174_000,
+    JUSTICE: 306_600,
   },
 } as const;
 

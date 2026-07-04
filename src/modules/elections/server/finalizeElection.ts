@@ -164,12 +164,11 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     })
     .returning({ id: positions.id });
 
-  /* Winner reputation + balance bump */
+  /* Winner reputation bump. No cash bonus — the office salary is the reward. */
   await db
     .update(agents)
     .set({
       reputation: sql`${agents.reputation} + 200`,
-      balance: sql`${agents.balance} + 500`,
     })
     .where(eq(agents.id, winner.agentId));
 

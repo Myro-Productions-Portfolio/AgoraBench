@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '../lib/useWebSocket';
+import { formatMoney } from '../lib/formatMoney';
 import { BranchCard } from '@modules/elections/client/components/BranchCard';
 import { ElectionBanner } from '@modules/elections/client/components/ElectionBanner';
 import { useActiveElection } from '@modules/elections/client/hooks/useActiveElection';
@@ -100,6 +101,7 @@ export function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEvent[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [allAgents, setAllAgents] = useState<DashboardAgent[]>([]);
+  const [budget30d, setBudget30d] = useState<{ revenue30d: number; spending30d: number } | null>(null);
   const [termDay, setTermDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const { subscribe } = useWebSocket();
@@ -107,7 +109,7 @@ export function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [overviewRes, billsRes, campaignsRes, activityRes, calendarRes, agentsRes, courtStatsRes] = await Promise.allSettled([
+      const [overviewRes, billsRes, campaignsRes, activityRes, calendarRes, agentsRes, courtStatsRes, budgetRes] = await Promise.allSettled([
         governmentApi.overview(),
         legislationApi.list(),
         campaignsApi.active(),
@@ -115,10 +117,16 @@ export function DashboardPage() {
         calendarApi.upcoming(),
         agentsApi.list(1, 100),
         courtApi.stats(),
+        governmentApi.budget(),
       ]);
 
       if (overviewRes.status === 'fulfilled' && overviewRes.value.data) {
         setOverview(overviewRes.value.data as GovernmentOverview);
+      }
+
+      if (budgetRes.status === 'fulfilled' && budgetRes.value.data) {
+        const b = budgetRes.value.data as { revenue30d?: number; spending30d?: number };
+        setBudget30d({ revenue30d: b.revenue30d ?? 0, spending30d: b.spending30d ?? 0 });
       }
 
       if (billsRes.status === 'fulfilled' && billsRes.value.data && Array.isArray(billsRes.value.data)) {
@@ -386,9 +394,9 @@ export function DashboardPage() {
             <SidebarCard
               title="Government Treasury"
               items={[
-                { label: 'Balance', value: overview ? `M$${overview.stats.treasuryBalance.toLocaleString()}` : '--' },
-                { label: 'Revenue (30d)', value: '--' },
-                { label: 'Spending (30d)', value: '--' },
+                { label: 'Balance', value: overview ? formatMoney(overview.stats.treasuryBalance, { compact: true }) : '--' },
+                { label: 'Revenue (30d)', value: budget30d ? formatMoney(budget30d.revenue30d, { compact: true }) : '--' },
+                { label: 'Spending (30d)', value: budget30d ? formatMoney(budget30d.spending30d, { compact: true }) : '--' },
               ]}
             />
             <SidebarCard

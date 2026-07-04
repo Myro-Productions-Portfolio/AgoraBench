@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useUser } from '@clerk/clerk-react';
 import { profileApi, agentsApi } from '@core/client/lib/api';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { isTickerEnabled, setTickerEnabled, onTickerChange } from '@core/client/lib/tickerPrefs';
@@ -322,7 +323,7 @@ function OverviewTab({ agents, dbUser, clerkUser }: {
     { label: 'Total Agents', value: agents.length },
     { label: 'Active', value: activeCount },
     { label: 'Total Reputation', value: totalRep.toLocaleString() },
-    { label: 'Total Balance', value: `M$${totalBal.toLocaleString()}` },
+    { label: 'Total Balance', value: formatMoney(totalBal) },
   ];
 
   return (
@@ -408,7 +409,7 @@ function OverviewTab({ agents, dbUser, clerkUser }: {
                     </div>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-text-muted">Rep {agent.reputation}</span>
-                      <span className="text-xs text-text-muted">M${agent.balance.toLocaleString()}</span>
+                      <span className="text-xs text-text-muted">{formatMoney(agent.balance)}</span>
                     </div>
                   </div>
                   <Link
@@ -514,7 +515,7 @@ function AgentsTab({ agents, onRefresh }: { agents: AgentRow[]; onRefresh: () =>
                       </span>
                     )}
                     <span className="text-xs text-text-muted">Rep {agent.reputation}</span>
-                    <span className="text-xs text-text-muted">M${agent.balance.toLocaleString()}</span>
+                    <span className="text-xs text-text-muted">{formatMoney(agent.balance)}</span>
                   </div>
                 </div>
 

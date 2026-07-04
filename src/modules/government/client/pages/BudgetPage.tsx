@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { governmentApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { formatMoney } from '@core/client/lib/formatMoney';
 
 /* ── Types (mirror GET /api/government/budget) ─────────────────────────── */
 
@@ -37,6 +38,12 @@ interface BudgetData {
   fiscalEffectsEnabled: boolean;
   budgetCycleTicks: number;
   expectedTickRevenue: number;
+  gdpAnnual: number;
+  population: number;
+  payPeriodTicks: number;
+  nextPayday: { inTicks: number; estMs: number };
+  revenue30d: number;
+  spending30d: number;
   series: SeriesPoint[];
   activePrograms: ActiveProgram[];
   nextBudgetSession: { inTicks: number; estMs: number } | null;
@@ -46,9 +53,9 @@ interface BudgetData {
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-function fmtM(v: number): string {
-  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
-}
+// Compact by default — the dollar-era treasury and spending values span
+// billions and trillions.
+const fmtM = (v: number): string => formatMoney(v, { compact: true });
 
 function fmtDate(s: string): string {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -91,6 +98,10 @@ const CHART_H = 220;
 const PAD = { top: 12, right: 12, bottom: 24, left: 64 };
 
 function TreasuryChart({ series }: { series: SeriesPoint[] }) {
+  // The series spans the currency conversion: rows written before the dollar-era
+  // rebase are in old MoltDollar units and rows after are in dollars. The chart
+  // plots raw stored values with no massaging — the post-conversion jump is real
+  // history, not a rendering artifact.
   const points = series.map((p) => ({ x: p.tickNumber, y: p.treasuryEnd }));
   const innerW = CHART_W - PAD.left - PAD.right;
   const innerH = CHART_H - PAD.top - PAD.bottom;
@@ -149,7 +160,7 @@ function RevenueSpendingBars({ series }: { series: SeriesPoint[] }) {
 
   return (
     <div>
-      <div className="flex items-end gap-[3px] h-32" role="img" aria-label="Revenue versus spending per tick">
+      <div className="flex items-end gap-[3px] h-32" role="img" aria-label="Revenue versus spending per day">
         {recent.map((p) => (
           <div key={p.tickNumber} className="flex-1 flex items-end gap-px min-w-[6px]" title={`Tick ${p.tickNumber}: revenue ${fmtM(p.revenue)}, spending ${fmtM(p.spending)}`}>
             <div
@@ -229,7 +240,7 @@ export function BudgetPage() {
       <div>
         <h1 className="font-serif text-3xl font-semibold text-stone">The Budget</h1>
         <p className="text-sm text-text-muted mt-1">
-          Treasury, spending programs, and the budget cycle — where enacted laws meet real MoltDollars.
+          Treasury, spending programs, and the budget cycle — where enacted laws meet real dollars.
         </p>
       </div>
 
@@ -240,7 +251,7 @@ export function BudgetPage() {
       )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           label="Treasury"
           value={fmtM(data.treasuryBalance)}
@@ -248,15 +259,25 @@ export function BudgetPage() {
           sub={data.treasuryBalance < 0 ? 'In deficit — program debits continue to the hard floor' : undefined}
         />
         <StatCard
+          label="Daily Revenue"
+          value={`${fmtM(data.expectedTickRevenue)}/day`}
+          sub={`Citizen tax base: ${fmtM(data.gdpAnnual)} GDP at ${data.taxRatePercent}%`}
+        />
+        <StatCard
           label="Tax Rate"
           value={`${data.taxRatePercent}%`}
-          sub={`≈ ${fmtM(data.expectedTickRevenue)} expected revenue / tick`}
+          sub={`Population: ${data.population.toLocaleString()}`}
         />
         <StatCard
           label="Program Spend"
-          value={`${fmtM(data.totals.recurringPerTick)}/tick`}
+          value={`${fmtM(data.totals.recurringPerTick)}/day`}
           valueClass={netPerTick < 0 ? 'text-red-400' : 'text-gold'}
-          sub={`${capUsedPct}% of the ${fmtM(data.totals.capPerTick)}/tick cap`}
+          sub={`${capUsedPct}% of the ${fmtM(data.totals.capPerTick)}/day cap`}
+        />
+        <StatCard
+          label="Next Payday"
+          value={data.nextPayday.inTicks === 0 ? 'This tick' : `${data.nextPayday.inTicks} day${data.nextPayday.inTicks !== 1 ? 's' : ''}`}
+          sub={`Paychecks every ${data.payPeriodTicks} days${data.nextPayday.inTicks > 0 ? ` — ${fmtDuration(data.nextPayday.estMs)}` : ''}`}
         />
         <StatCard
           label="Next Budget Session"
@@ -277,7 +298,7 @@ export function BudgetPage() {
       </Section>
 
       {/* Revenue vs spending */}
-      <Section title="Revenue vs Spending" subtitle="Per-tick tax revenue against government spending (salaries + programs + one-time appropriations)">
+      <Section title="Revenue vs Spending" subtitle="Daily tax revenue against government spending (paychecks + programs + one-time appropriations)">
         {data.series.length > 0 ? (
           <RevenueSpendingBars series={data.series} />
         ) : (
@@ -293,7 +314,7 @@ export function BudgetPage() {
               <thead>
                 <tr className="border-b border-border bg-capitol-deep/60">
                   <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Program</th>
-                  <th className="text-right px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Cost / Tick</th>
+                  <th className="text-right px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Cost / Day</th>
                   <th className="text-right px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider hidden sm:table-cell">Enacted</th>
                   <th className="text-right px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Funding Due</th>
                 </tr>
@@ -331,7 +352,7 @@ export function BudgetPage() {
         )}
         {data.activePrograms.length > 0 && (
           <p className="text-xs text-text-muted">
-            Total: {fmtM(data.totals.recurringPerTick)}/tick of a {fmtM(data.totals.capPerTick)}/tick cap.
+            Total: {fmtM(data.totals.recurringPerTick)}/day of a {fmtM(data.totals.capPerTick)}/day cap.
             Programs older than one budget cycle ({data.budgetCycleTicks} ticks) lapse at the next session unless renewed by an amendment bill.
           </p>
         )}

@@ -207,13 +207,16 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const mrv = posInt('minReputationToVote', 0, 10000); if (mrv !== undefined) update.minReputationToVote = mrv;
 
     /* Economy */
-    const iab = posInt('initialAgentBalance', 0, 1_000_000); if (iab !== undefined) update.initialAgentBalance = iab;
-    const cff = posInt('campaignFilingFee', 0, 100_000);     if (cff !== undefined) update.campaignFilingFee = cff;
-    const pcf = posInt('partyCreationFee', 0, 100_000);      if (pcf !== undefined) update.partyCreationFee = pcf;
-    const sp = posInt('salaryPresident', 0, 100_000);         if (sp !== undefined) update.salaryPresident = sp;
-    const sc = posInt('salaryCabinet', 0, 100_000);           if (sc !== undefined) update.salaryCabinet = sc;
-    const scg = posInt('salaryCongress', 0, 100_000);         if (scg !== undefined) update.salaryCongress = scg;
-    const sj = posInt('salaryJustice', 0, 100_000);           if (sj !== undefined) update.salaryJustice = sj;
+    const iab = posInt('initialAgentBalance', 0, 10_000_000); if (iab !== undefined) update.initialAgentBalance = iab;
+    const cff = posInt('campaignFilingFee', 0, 1_000_000);    if (cff !== undefined) update.campaignFilingFee = cff;
+    const pcf = posInt('partyCreationFee', 0, 1_000_000);     if (pcf !== undefined) update.partyCreationFee = pcf;
+    const sp = posInt('salaryPresident', 0, 1_000_000);        if (sp !== undefined) update.salaryPresident = sp;
+    const sc = posInt('salaryCabinet', 0, 1_000_000);          if (sc !== undefined) update.salaryCabinet = sc;
+    const scg = posInt('salaryCongress', 0, 1_000_000);        if (scg !== undefined) update.salaryCongress = scg;
+    const sj = posInt('salaryJustice', 0, 1_000_000);          if (sj !== undefined) update.salaryJustice = sj;
+    const ppt = posInt('payPeriodTicks', 7, 28);               if (ppt !== undefined) update.payPeriodTicks = ppt;
+    const gdp = posInt('gdpAnnual', 1_000_000_000_000, 100_000_000_000_000); if (gdp !== undefined) update.gdpAnnual = gdp;
+    const pop = posInt('agoraPopulation', 1_000_000, 10_000_000_000);         if (pop !== undefined) update.agoraPopulation = pop;
 
     /* Governance Probabilities */
     const vbr = prob('vetoBaseRate');                     if (vbr !== undefined) update.vetoBaseRate = vbr;
@@ -375,8 +378,8 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (frcr !== undefined) update.fiscalRecurringCapPctOfRevenue = frcr;
     const fmtd = posInt('fiscalMaxTaxDeltaPerLaw', 1, 5);
     if (fmtd !== undefined) update.fiscalMaxTaxDeltaPerLaw = fmtd;
-    const trMin = posInt('taxRateMinPercent', 0, 10);
-    const trMax = posInt('taxRateMaxPercent', 5, 50);
+    const trMin = posInt('taxRateMinPercent', 0, 40);
+    const trMax = posInt('taxRateMaxPercent', 5, 60);
     {
       /* Cross-field check on the EFFECTIVE pair (incoming value or current
          config) — a save that would leave min >= max is rejected outright. */
@@ -392,7 +395,7 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (trMax !== undefined) update.taxRateMaxPercent = trMax;
     const mst = posInt('maxSunsetTicks', 10, 1000);
     if (mst !== undefined) update.maxSunsetTicks = mst;
-    const thf = num('treasuryHardFloor', -1_000_000, 0);
+    const thf = num('treasuryHardFloor', -10_000_000_000_000, 0);
     if (thf !== undefined) update.treasuryHardFloor = Math.round(thf);
 
     // Judicial (Phase 4) — Rule 1: every RuntimeConfig field gets a server
@@ -410,7 +413,7 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (cdc !== undefined) update.courtDisputeChancePerBrokenDeal = cdc;
     const cjq = posInt('courtJusticeQuestionsPerHearing', 0, 4);
     if (cjq !== undefined) update.courtJusticeQuestionsPerHearing = cjq;
-    const cda = posInt('courtDamagesAmount', 0, 500);
+    const cda = posInt('courtDamagesAmount', 0, 10_000_000);
     if (cda !== undefined) update.courtDamagesAmount = cda;
 
     const updated = await updateRuntimeConfig(update);

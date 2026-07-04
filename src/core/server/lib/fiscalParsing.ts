@@ -9,8 +9,8 @@
  * kind/amount/taxDelta/programName/sunsetTicks, and null (= all-NULL fiscal
  * columns on the bill, a total no-op) on ANY deviation. Never throws.
  *
- * Clamp scheme (all integer M$, proportional to the real economy — treasury
- * is ~M$8.4k live, so bounds are % of treasury / % of expected revenue,
+ * Clamp scheme (all integer dollars, proportional to the real economy — bounds
+ * are % of treasury / % of expected daily revenue, which scale with the economy,
  * never absolute magic numbers):
  *   spend_once      amount ∈ [1, floor(T × fiscalMaxOneTimePctOfTreasury/100)];
  *                   dropped when T <= 0 or amount < 1 after floor.
@@ -40,9 +40,10 @@ export interface FiscalClampConfig {
 }
 
 export interface FiscalClampContext {
-  /** Current treasuryBalance (integer M$; may be negative). */
+  /** Current treasuryBalance (integer dollars; may be negative). */
   treasury: number;
-  /** floor(taxRatePercent/100 × Σ active-agent balances) — see expectedTickRevenue(). */
+  /** Per-tick citizen tax revenue — see dailyCitizenRevenue(gdpAnnual, taxPct).
+      Used as the base for recurring-spend clamps. */
   expectedTickRevenue: number;
   /** Σ fiscal_amount over laws WHERE is_active AND program_active — PLUS any
       recurring amounts already approved earlier in the same tick's loop. */
@@ -54,7 +55,7 @@ export interface FiscalClampContext {
 
 export interface ParsedFiscalProvision {
   kind: FiscalKind;
-  /** Per-tick M$ for spend_recurring, total M$ for spend_once; null for tax_change. */
+  /** Per-tick $ for spend_recurring, total $ for spend_once; null for tax_change. */
   amount: number | null;
   /** Signed whole percentage points; null except for tax_change. */
   taxDelta: number | null;

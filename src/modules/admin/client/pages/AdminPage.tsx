@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi, governmentApi } from '@core/client/lib/api';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
@@ -83,6 +84,9 @@ interface RuntimeConfig {
   salaryCabinet: number;
   salaryCongress: number;
   salaryJustice: number;
+  payPeriodTicks: number;
+  gdpAnnual: number;
+  agoraPopulation: number;
   /* Governance Probabilities */
   vetoBaseRate: number;
   vetoRatePerTier: number;
@@ -2074,11 +2078,11 @@ export function AdminPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-text-secondary">Treasury Balance (M$)</label>
-                      <span className="text-sm text-gold font-mono">M${economySettings.treasuryBalance.toLocaleString()}</span>
+                      <label className="text-sm font-medium text-text-secondary">Treasury Balance ($)</label>
+                      <span className="text-sm text-gold font-mono">{formatMoney(economySettings.treasuryBalance, { compact: true })}</span>
                     </div>
                     <input
-                      type="number" min={0} step={1000}
+                      type="number" min={0} step={1_000_000_000}
                       value={economySettings.treasuryBalance}
                       onChange={(e) => setEconomySettings((s) => s ? { ...s, treasuryBalance: parseInt(e.target.value) || 0 } : s)}
                       onBlur={() => void saveEconomy({ treasuryBalance: economySettings.treasuryBalance })}
@@ -2092,7 +2096,7 @@ export function AdminPage() {
                       <label className="text-sm font-medium text-text-secondary">Tax Rate (%)</label>
                       <span className="text-sm text-gold font-mono">{economySettings.taxRatePercent}%</span>
                     </div>
-                    <input type="range" min={0} max={20} step={0.5}
+                    <input type="range" min={0} max={50} step={1}
                       value={economySettings.taxRatePercent}
                       onChange={(e) => setEconomySettings((s) => s ? { ...s, taxRatePercent: parseFloat(e.target.value) } : s)}
                       onMouseUp={() => void saveEconomy({ taxRatePercent: economySettings.taxRatePercent })}
@@ -2109,16 +2113,16 @@ export function AdminPage() {
                     <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Fees</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       {([
-                        ['initialAgentBalance', 'Starting Agent Balance', 'M$ each new agent starts with.'],
-                        ['campaignFilingFee', 'Campaign Filing Fee', 'M$ to declare candidacy.'],
-                        ['partyCreationFee', 'Party Creation Fee', 'M$ to found a new party.'],
+                        ['initialAgentBalance', 'Starting Agent Balance', 'Dollars each new agent starts with.'],
+                        ['campaignFilingFee', 'Campaign Filing Fee', 'Charged to declare candidacy.'],
+                        ['partyCreationFee', 'Party Creation Fee', 'Charged to found a new party.'],
                       ] as [keyof RuntimeConfig, string, string][]).map(([key, label, desc]) => (
                         <div key={key} className="space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="text-sm font-medium text-text-secondary">{label}</label>
-                            <span className="text-sm text-gold font-mono">M${(simConfig[key] as number).toLocaleString()}</span>
+                            <span className="text-sm text-gold font-mono">{formatMoney(simConfig[key] as number)}</span>
                           </div>
-                          <input type="number" min={0} step={10}
+                          <input type="number" min={0} step={500}
                             value={simConfig[key] as number}
                             onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseInt(e.target.value) || 0 } : c)}
                             onBlur={() => void saveConfig({ [key]: simConfig[key] })}
@@ -2131,7 +2135,8 @@ export function AdminPage() {
                   </div>
 
                   <div className="border-t border-border pt-4">
-                    <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Salaries (M$/tick)</p>
+                    <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Salaries ($/year)</p>
+                    <p className="text-xs text-text-muted mb-3">Paid every {simConfig.payPeriodTicks} days at annual ÷ 26, net of income-tax withholding.</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                       {([
                         ['salaryPresident', 'President'],
@@ -2142,8 +2147,8 @@ export function AdminPage() {
                         <div key={key} className="space-y-1.5">
                           <label className="text-xs font-medium text-text-secondary">{label}</label>
                           <div className="flex items-center gap-1">
-                            <span className="text-xs text-text-muted">M$</span>
-                            <input type="number" min={0} step={5}
+                            <span className="text-xs text-text-muted">$</span>
+                            <input type="number" min={0} step={1000}
                               value={simConfig[key] as number}
                               onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseInt(e.target.value) || 0 } : c)}
                               onBlur={() => void saveConfig({ [key]: simConfig[key] })}
@@ -2152,6 +2157,51 @@ export function AdminPage() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border pt-4">
+                    <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Payroll & Economy Scale</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Pay Period (days)</label>
+                          <span className="text-sm text-gold font-mono">{simConfig.payPeriodTicks}</span>
+                        </div>
+                        <input type="number" min={7} max={28} step={1}
+                          value={simConfig.payPeriodTicks}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, payPeriodTicks: parseInt(e.target.value) || 14 } : c)}
+                          onBlur={() => void saveConfig({ payPeriodTicks: simConfig.payPeriodTicks })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">Ticks between paychecks (1 tick = 1 sim day).</p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Annual GDP</label>
+                          <span className="text-sm text-gold font-mono">{formatMoney(simConfig.gdpAnnual, { compact: true })}</span>
+                        </div>
+                        <input type="number" min={1_000_000_000_000} step={1_000_000_000_000}
+                          value={simConfig.gdpAnnual}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, gdpAnnual: parseInt(e.target.value) || 0 } : c)}
+                          onBlur={() => void saveConfig({ gdpAnnual: simConfig.gdpAnnual })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">Citizen tax base. Daily revenue = GDP × rate ÷ 365.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Population</label>
+                          <span className="text-sm text-gold font-mono">{simConfig.agoraPopulation.toLocaleString()}</span>
+                        </div>
+                        <input type="number" min={1_000_000} step={1_000_000}
+                          value={simConfig.agoraPopulation}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, agoraPopulation: parseInt(e.target.value) || 0 } : c)}
+                          onBlur={() => void saveConfig({ agoraPopulation: simConfig.agoraPopulation })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">Citizen count — display and wiki flavor.</p>
+                      </div>
                     </div>
                   </div>
                 </>
@@ -2186,8 +2236,8 @@ export function AdminPage() {
                       <div className="rounded border border-border/60 bg-white/[0.02] px-4 py-3">
                         <p className="text-badge text-text-muted uppercase tracking-widest mb-1">Recurring Spend vs Cap</p>
                         <p className="text-sm font-mono text-gold">
-                          M${budgetStatus.totals.recurringPerTick.toLocaleString()}
-                          <span className="text-text-muted"> / M${budgetStatus.totals.capPerTick.toLocaleString()} per tick</span>
+                          {formatMoney(budgetStatus.totals.recurringPerTick, { compact: true })}
+                          <span className="text-text-muted"> / {formatMoney(budgetStatus.totals.capPerTick, { compact: true })} per tick</span>
                         </p>
                         <div className="h-1.5 mt-2 rounded-full bg-border/40 overflow-hidden">
                           <div
@@ -2218,7 +2268,7 @@ export function AdminPage() {
                       </div>
                     </div>
                     <p className="text-xs text-text-muted mt-3">
-                      Expected revenue M${budgetStatus.expectedTickRevenue.toLocaleString()}/tick at {budgetStatus.taxRatePercent}% tax.
+                      Expected revenue {formatMoney(budgetStatus.expectedTickRevenue, { compact: true })}/day at {budgetStatus.taxRatePercent}% tax.
                       Full dashboard: <a href="/budget" className="text-gold hover:underline">/budget</a>.
                     </p>
                   </div>
@@ -2318,10 +2368,10 @@ export function AdminPage() {
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-text-secondary">Treasury Hard Floor (M$)</label>
-                        <span className="text-sm text-gold font-mono">M${simConfig.treasuryHardFloor.toLocaleString()}</span>
+                        <label className="text-sm font-medium text-text-secondary">Treasury Hard Floor ($)</label>
+                        <span className="text-sm text-gold font-mono">{formatMoney(simConfig.treasuryHardFloor, { compact: true })}</span>
                       </div>
-                      <input type="number" min={-1000000} max={0} step={1000}
+                      <input type="number" min={-10_000_000_000_000} max={0} step={1_000_000_000}
                         value={simConfig.treasuryHardFloor}
                         onChange={(e) => setSimConfig((c) => c ? { ...c, treasuryHardFloor: parseInt(e.target.value) || 0 } : c)}
                         onBlur={() => void saveConfig({ treasuryHardFloor: simConfig.treasuryHardFloor })}
@@ -2618,10 +2668,10 @@ export function AdminPage() {
                     </div>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium text-text-secondary">Damages Amount (M$)</label>
-                        <span className="text-sm text-gold font-mono">M${simConfig.courtDamagesAmount}</span>
+                        <label className="text-sm font-medium text-text-secondary">Damages Amount ($)</label>
+                        <span className="text-sm text-gold font-mono">{formatMoney(simConfig.courtDamagesAmount)}</span>
                       </div>
-                      <input type="number" min={0} max={500} step={1}
+                      <input type="number" min={0} max={10_000_000} step={1000}
                         value={simConfig.courtDamagesAmount}
                         onChange={(e) => setSimConfig((c) => c ? { ...c, courtDamagesAmount: parseInt(e.target.value) || 0 } : c)}
                         onBlur={() => void saveConfig({ courtDamagesAmount: simConfig.courtDamagesAmount })}
@@ -2883,7 +2933,7 @@ export function AdminPage() {
                       )}
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-text-secondary mb-1">Starting Balance (M$)</label>
+                      <label className="block text-xs font-medium text-text-secondary mb-1">Starting Balance ($)</label>
                       <input type="number" min={0} step={100} value={agentForm.startingBalance}
                         onChange={(e) => setAgentForm((f) => ({ ...f, startingBalance: parseInt(e.target.value) || 0 }))}
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50" />
@@ -2937,7 +2987,7 @@ export function AdminPage() {
                           </span>
                         </td>
                         <td className="py-2 pr-4 text-text-secondary text-xs">{agent.reputation}</td>
-                        <td className="py-2 pr-4 text-text-secondary text-xs">M${agent.balance.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-text-secondary text-xs">{formatMoney(agent.balance)}</td>
                         <td className="py-2 pr-4">
                           <StatusBadge ok={agent.isActive} label={agent.isActive ? 'Active' : 'Inactive'} />
                         </td>

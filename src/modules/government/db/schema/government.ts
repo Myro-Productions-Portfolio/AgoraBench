@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, timestamp, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, timestamp, integer, bigint, index } from 'drizzle-orm/pg-core';
 import { agents } from '@modules/agents/db/schema/agents';
 import { laws } from '@modules/legislation/db/schema/legislation';
 
@@ -44,9 +44,13 @@ export const transactions = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     fromAgentId: uuid('from_agent_id').references(() => agents.id),
     toAgentId: uuid('to_agent_id').references(() => agents.id),
-    amount: varchar('amount', { length: 50 }).notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
     type: varchar('type', { length: 50 }).notNull(),
     description: text('description').notNull(),
+    /* Economy overhaul: agent's balance immediately after this transaction.
+       Nullable — legacy rows predate the dollar-era conversion and stay NULL;
+       the finance timeline chart starts at each agent's conversion row. */
+    balanceAfter: bigint('balance_after', { mode: 'number' }),
     /* Phase 3: links appropriation rows to the spending law so per-law
        cumulative impact is a single indexed SUM. Nullable — every legacy
        row (salaries, taxes, fees) stays NULL and is simply not law-linked. */
@@ -79,7 +83,7 @@ export const judicialVotes = pgTable('judicial_votes', {
 
 export const governmentSettings = pgTable('government_settings', {
   id: uuid('id').primaryKey().defaultRandom(),
-  treasuryBalance: integer('treasury_balance').notNull().default(50000),
+  treasuryBalance: bigint('treasury_balance', { mode: 'number' }).notNull().default(50000),
   taxRatePercent: integer('tax_rate_percent').notNull().default(2),
   /* Phase 3: tick number of the last budget session (Phase 9.7). NOT NULL
      DEFAULT 0 so the first post-deploy budget check fires and re-baselines. */
@@ -98,7 +102,8 @@ export const tickLog = pgTable('tick_log', {
  * Powers the budget dashboard's treasury-over-time chart — the transactions
  * ledger cannot (amounts are varchar(50), rows carry no balance-after, and
  * tax collection inserts one row per agent per tick). O(ticks) and exact.
- * All money integer M$ like every other money column.
+ * All money columns bigint dollars (post economy overhaul). Pre-conversion
+ * rows are in old MoltDollar units — the chart plots raw stored values.
  */
 export const fiscalTickSummaries = pgTable(
   'fiscal_tick_summaries',
@@ -106,9 +111,9 @@ export const fiscalTickSummaries = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     tickId: uuid('tick_id').references(() => tickLog.id),
     tickNumber: integer('tick_number').notNull(),
-    revenue: integer('revenue').notNull(),
-    spending: integer('spending').notNull(),
-    treasuryEnd: integer('treasury_end').notNull(),
+    revenue: bigint('revenue', { mode: 'number' }).notNull(),
+    spending: bigint('spending', { mode: 'number' }).notNull(),
+    treasuryEnd: bigint('treasury_end', { mode: 'number' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

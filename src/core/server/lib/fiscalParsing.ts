@@ -9,8 +9,8 @@
  * kind/amount/taxDelta/programName/sunsetTicks, and null (= all-NULL fiscal
  * columns on the bill, a total no-op) on ANY deviation. Never throws.
  *
- * Clamp scheme (all integer M$, proportional to the real economy — treasury
- * is ~M$8.4k live, so bounds are % of treasury / % of expected revenue,
+ * Clamp scheme (all integer dollars, proportional to the real economy — bounds
+ * are % of treasury / % of expected daily revenue, which scale with the economy,
  * never absolute magic numbers):
  *   spend_once      amount ∈ [1, floor(T × fiscalMaxOneTimePctOfTreasury/100)];
  *                   dropped when T <= 0 or amount < 1 after floor.

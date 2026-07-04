@@ -244,7 +244,7 @@ export interface FiscalNoteContext {
 
 export interface FiscalNote {
   kind: FiscalKind;
-  /** One-time treasury debit at enactment (spend_once only), M$ >= 0. */
+  /** One-time treasury debit at enactment (spend_once only), dollars >= 0. */
   oneTimeCost: number;
   /** Signed treasury delta per tick: negative for recurring spend, positive for a tax raise. */
   perTickDelta: number;

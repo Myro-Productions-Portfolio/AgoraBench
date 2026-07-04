@@ -2855,7 +2855,7 @@ agentTickQueue.process(async () => {
           } else if (bill.fiscalKind === 'spend_recurring') {
             /* Recurring program: no debit at enactment — Phase 12 debits it
                each tick alongside salaries while program_active stays true. */
-            console.warn(`[SIMULATION] Program "${bill.fiscalProgramName ?? bill.title}" enacted at M$${bill.fiscalAmount}/tick`);
+            console.warn(`[SIMULATION] Program "${bill.fiscalProgramName ?? bill.title}" enacted at $${bill.fiscalAmount}/day`);
           }
         } catch (err) {
           console.warn('[SIMULATION] Phase 9 fiscal effect error (law stands, effect skipped):', err);
@@ -3050,7 +3050,7 @@ agentTickQueue.process(async () => {
               type: 'program_lapsed',
               agentId: null,
               title: 'Spending program lapsed',
-              description: `"${programName}" (M$${program.fiscalAmount}/tick) was not renewed and lapsed at the budget session`,
+              description: `"${programName}" ($${program.fiscalAmount}/day) was not renewed and lapsed at the budget session`,
               metadata: JSON.stringify({
                 lawId: program.id,
                 programName,
@@ -3060,7 +3060,7 @@ agentTickQueue.process(async () => {
                 lapsedAtTick: tickNumber,
               }),
             });
-            console.warn(`[SIMULATION] Phase 9.7: Program "${programName}" lapsed (M$${program.fiscalAmount}/tick, last renewed tick ${program.lastRenewedTick ?? program.enactedTick})`);
+            console.warn(`[SIMULATION] Phase 9.7: Program "${programName}" lapsed ($${program.fiscalAmount}/day, last renewed tick ${program.lastRenewedTick ?? program.enactedTick})`);
           }
         }
 
@@ -3068,9 +3068,9 @@ agentTickQueue.process(async () => {
            budget_session; zero client changes needed. */
         const sessionDescription =
           `Budget session at tick ${tickNumber}: ` +
-          `${lapsingPrograms.length} program(s) lapsed (M$${lapsedPerTick}/tick freed), ` +
-          `${survivingPrograms.length} program(s) continue (M$${survivingPerTick}/tick). ` +
-          `Treasury M$${gs97.treasuryBalance}.`;
+          `${lapsingPrograms.length} program(s) lapsed ($${lapsedPerTick}/day freed), ` +
+          `${survivingPrograms.length} program(s) continue ($${survivingPerTick}/day). ` +
+          `Treasury $${gs97.treasuryBalance}.`;
 
         await db.insert(governmentEvents).values({
           type: 'budget_session',
@@ -3931,7 +3931,7 @@ agentTickQueue.process(async () => {
                 type: 'ruling',
                 content: isChallenge
                   ? `Decided ${votesFor}-${votesAgainst}: the law is ${petitionerWins ? 'struck down' : 'upheld'}.`
-                  : `Decided ${votesFor}-${votesAgainst} for the ${petitionerWins ? 'petitioner' : 'respondent'}.${damages > 0 ? ` Damages of M$${damages} awarded.` : ''}`,
+                  : `Decided ${votesFor}-${votesAgainst} for the ${petitionerWins ? 'petitioner' : 'respondent'}.${damages > 0 ? ` Damages of $${damages} awarded.` : ''}`,
               });
             });
 

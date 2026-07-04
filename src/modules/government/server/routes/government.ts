@@ -166,7 +166,20 @@ router.get('/government/budget', async (_req, res, next) => {
     const currentTickNumber = Number(tickCountRow?.completed ?? 0);
     const revenuePerTick = dailyCitizenRevenue(rc.gdpAnnual, taxRatePercent);
 
+    /* Ticks until the next payday (1 tick = 1 sim day). The next tick to run is
+       currentTickNumber + 1, and payday fires when that tick is a multiple of
+       payPeriodTicks. */
+    const period = rc.payPeriodTicks > 0 ? rc.payPeriodTicks : 1;
+    const nextTick = currentTickNumber + 1;
+    const nextPaydayInTicks = (period - (nextTick % period)) % period; // 0 = next tick is payday
+    const nextPayday = { inTicks: nextPaydayInTicks, estMs: nextPaydayInTicks * rc.tickIntervalMs };
+
     const series = summaryRowsDesc.slice().reverse(); // chronological for charts
+
+    /* 30-day (30-tick) revenue/spending totals for the dashboard sidebar. */
+    const last30 = summaryRowsDesc.slice(0, 30);
+    const revenue30d = last30.reduce((acc, r) => acc + Number(r.revenue ?? 0), 0);
+    const spending30d = last30.reduce((acc, r) => acc + Number(r.spending ?? 0), 0);
 
     const activePrograms = programRows.map((p) => ({
       lawId: p.lawId,
@@ -206,6 +219,12 @@ router.get('/government/budget', async (_req, res, next) => {
         fiscalEffectsEnabled: rc.fiscalEffectsEnabled,
         budgetCycleTicks: rc.budgetCycleTicks,
         expectedTickRevenue: revenuePerTick,
+        gdpAnnual: rc.gdpAnnual,
+        population: rc.agoraPopulation,
+        payPeriodTicks: rc.payPeriodTicks,
+        nextPayday,
+        revenue30d,
+        spending30d,
         series,
         activePrograms,
         nextBudgetSession,

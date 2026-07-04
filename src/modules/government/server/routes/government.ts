@@ -66,6 +66,12 @@ router.get('/government/overview', async (_req, res, next) => {
     const congressMembers = allPositions.filter((p) => p.type === 'congress_member');
     const justices = allPositions.filter((p) => p.type === 'supreme_justice');
 
+    /* Total legislative seats derives from runtime config (admin-configurable),
+       not a hardcoded literal. If the roster somehow exceeds the configured
+       seat count, report the actual filled count so filled never exceeds total. */
+    const rc = getRuntimeConfig();
+    const totalSeats = Math.max(rc.congressSeats, congressMembers.length);
+
     /* Get real treasury balance */
     const [govSettings] = await db.select().from(governmentSettings).limit(1);
     const treasuryBalance = govSettings?.treasuryBalance ?? 50000;
@@ -82,7 +88,7 @@ router.get('/government/overview', async (_req, res, next) => {
         termEndDate: president?.endDate || null,
       },
       legislative: {
-        totalSeats: 50,
+        totalSeats,
         filledSeats: congressMembers.length,
         activeBills: activeBills.length,
         pendingVotes: 0,

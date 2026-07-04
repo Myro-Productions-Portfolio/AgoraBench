@@ -83,16 +83,77 @@ export const ALIGNMENTS = [
   'technocrat',
 ] as const;
 
-/* WebSocket event names */
+/* WebSocket event names.
+   This object is the authoritative catalogue of the events the server actually
+   emits via broadcast() (src/core/server/websocket.ts). Keep it in sync with the
+   broadcast('...') call sites — clients subscribe by these string values. The
+   previous version listed several events that were never emitted (election:vote_cast,
+   legislation:new_bill, legislation:vote_result, government:official_elected,
+   debate:new_message) and omitted the entire bill / court / forum / treasury /
+   tick families that the tick pipeline emits. */
 export const WS_EVENTS = {
-  ELECTION_VOTE_CAST: 'election:vote_cast',
-  LEGISLATION_NEW_BILL: 'legislation:new_bill',
-  LEGISLATION_VOTE_RESULT: 'legislation:vote_result',
-  GOVERNMENT_OFFICIAL_ELECTED: 'government:official_elected',
-  DEBATE_NEW_MESSAGE: 'debate:new_message',
+  /* Connection lifecycle */
   CONNECTION_ESTABLISHED: 'connection:established',
   HEARTBEAT: 'heartbeat',
+
+  /* Agents */
+  AGENT_VOTE: 'agent:vote',
+  AGENT_STATEMENT: 'agent:statement',
+  AGENT_LOBBY: 'agent:lobby',
+  AGENT_DEAL_PROPOSED: 'agent:deal_proposed',
+  AGENT_DEAL_HONORED: 'agent:deal_honored',
+  AGENT_DEAL_BROKEN: 'agent:deal_broken',
   AGENT_AGGE_INTERVENTION: 'agent:agge_intervention',
+
+  /* Bills */
+  BILL_PROPOSED: 'bill:proposed',
+  BILL_ADVANCED: 'bill:advanced',
+  BILL_AMENDED: 'bill:amended',
+  BILL_COMMITTEE_AMENDED: 'bill:committee_amended',
+  BILL_FLOOR_AMENDMENT_PROPOSED: 'bill:floor_amendment_proposed',
+  BILL_PASSED: 'bill:passed',
+  BILL_TABLED: 'bill:tabled',
+  BILL_WITHDRAWN: 'bill:withdrawn',
+  BILL_PRESIDENTIAL_VETO: 'bill:presidential_veto',
+  BILL_VETO_OVERRIDDEN: 'bill:veto_overridden',
+  BILL_VETO_SUSTAINED: 'bill:veto_sustained',
+  BILL_RESOLVED: 'bill:resolved',
+
+  /* Laws */
+  LAW_AMENDED: 'law:amended',
+  LAW_STRUCK_DOWN: 'law:struck_down',
+  LAW_SUNSET: 'law:sunset',
+
+  /* Court */
+  COURT_CASE_FILED: 'court:case_filed',
+  COURT_HEARING: 'court:hearing',
+  COURT_RULING: 'court:ruling',
+
+  /* Elections & campaigns */
+  ELECTION_TRIGGERED: 'election:triggered',
+  ELECTION_VOTING_STARTED: 'election:voting_started',
+  ELECTION_COMPLETED: 'election:completed',
+  CAMPAIGN_SPEECH: 'campaign:speech',
+
+  /* Government / treasury / budget */
+  GOVERNMENT_CHAIR_APPOINTED: 'government:chair_appointed',
+  BUDGET_SESSION: 'budget:session',
+  TREASURY_APPROPRIATION: 'treasury:appropriation',
+  TREASURY_TAX_RATE_CHANGED: 'treasury:tax_rate_changed',
+
+  /* Forum */
+  FORUM_POST: 'forum:post',
+  FORUM_REPLY: 'forum:reply',
+
+  /* Press */
+  PRESS_GAZETTE: 'press:gazette',
+
+  /* Tick lifecycle */
+  TICK_START: 'tick:start',
+  TICK_PHASE: 'tick:phase',
+  TICK_COMPLETE: 'tick:complete',
+
+  /* System */
   LOG_ENTRY: 'log:entry',
 } as const;
 

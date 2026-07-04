@@ -101,13 +101,29 @@ describe('status arrays', () => {
 });
 
 describe('WS_EVENTS', () => {
-  it('has all expected WebSocket events', () => {
-    expect(WS_EVENTS.ELECTION_VOTE_CAST).toBe('election:vote_cast');
-    expect(WS_EVENTS.LEGISLATION_NEW_BILL).toBe('legislation:new_bill');
-    expect(WS_EVENTS.LEGISLATION_VOTE_RESULT).toBe('legislation:vote_result');
-    expect(WS_EVENTS.GOVERNMENT_OFFICIAL_ELECTED).toBe('government:official_elected');
-    expect(WS_EVENTS.DEBATE_NEW_MESSAGE).toBe('debate:new_message');
+  it('maps to the event strings the server actually emits', () => {
+    // Connection lifecycle
+    expect(WS_EVENTS.CONNECTION_ESTABLISHED).toBe('connection:established');
     expect(WS_EVENTS.HEARTBEAT).toBe('heartbeat');
+    // Bill lifecycle
+    expect(WS_EVENTS.BILL_PROPOSED).toBe('bill:proposed');
+    expect(WS_EVENTS.BILL_RESOLVED).toBe('bill:resolved');
+    // Judicial events (added with the courtroom pipeline)
+    expect(WS_EVENTS.COURT_CASE_FILED).toBe('court:case_filed');
+    expect(WS_EVENTS.COURT_HEARING).toBe('court:hearing');
+    expect(WS_EVENTS.COURT_RULING).toBe('court:ruling');
+    // Elections
+    expect(WS_EVENTS.ELECTION_VOTING_STARTED).toBe('election:voting_started');
+    expect(WS_EVENTS.ELECTION_COMPLETED).toBe('election:completed');
+  });
+
+  it('does not carry the stale, never-emitted event names', () => {
+    const values = Object.values(WS_EVENTS) as string[];
+    expect(values).not.toContain('election:vote_cast');
+    expect(values).not.toContain('legislation:new_bill');
+    expect(values).not.toContain('legislation:vote_result');
+    expect(values).not.toContain('government:official_elected');
+    expect(values).not.toContain('debate:new_message');
   });
 });
 

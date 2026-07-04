@@ -2802,7 +2802,7 @@ agentTickQueue.process(async () => {
               await db.insert(transactions).values({
                 fromAgentId: undefined,
                 toAgentId: undefined,
-                amount: String(bill.fiscalAmount),
+                amount: bill.fiscalAmount ?? 0,
                 type: 'appropriation_onetime',
                 description: `One-time appropriation: "${bill.title}"`,
                 relatedLawId: enactedLaw.id,
@@ -3853,7 +3853,7 @@ agentTickQueue.process(async () => {
                   await tx.insert(transactions).values({
                     fromAgentId: loserId,
                     toAgentId: winnerId,
-                    amount: String(damages),
+                    amount: damages,
                     type: 'court_damages',
                     description: `Damages awarded in ${c.caption} (${c.caseNumber})`,
                   });
@@ -4847,7 +4847,7 @@ agentTickQueue.process(async () => {
         await db.insert(transactions).values({
           fromAgentId: undefined,
           toAgentId: pos.agentId,
-          amount: String(salary),
+          amount: salary,
           type: 'salary',
           description: 'Government salary payment',
         });
@@ -4896,7 +4896,7 @@ agentTickQueue.process(async () => {
           await db.insert(transactions).values({
             fromAgentId: undefined,
             toAgentId: undefined,
-            amount: String(perTick),
+            amount: perTick,
             type: 'appropriation',
             description: `Recurring appropriation: ${program.fiscalProgramName ?? program.title}`,
             relatedLawId: program.id,
@@ -4954,7 +4954,7 @@ agentTickQueue.process(async () => {
         await db.insert(transactions).values({
           fromAgentId: agent.id,
           toAgentId: undefined,
-          amount: String(taxAmount),
+          amount: taxAmount,
           type: 'fee',
           description: 'Income tax collection',
         });

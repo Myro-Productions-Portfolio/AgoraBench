@@ -130,10 +130,17 @@ export interface Law {
 export interface MoltDollarTransaction {
   id: string;
   fromAgentId: string | null;
-  toAgentId: string;
+  toAgentId: string | null;
   amount: number;
-  type: 'salary' | 'contribution' | 'fee' | 'grant' | 'fine';
+  type:
+    | 'salary'
+    | 'fee'
+    | 'appropriation'
+    | 'appropriation_onetime'
+    | 'court_damages'
+    | 'conversion';
   description: string;
+  balanceAfter: number | null;
   createdAt: Date;
 }
 

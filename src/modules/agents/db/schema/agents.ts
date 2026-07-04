@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, bigint } from 'drizzle-orm/pg-core';
 
 export const agents = pgTable('agents', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -7,7 +7,7 @@ export const agents = pgTable('agents', {
   displayName: varchar('display_name', { length: 100 }).notNull(),
   reputation: integer('reputation').notNull().default(0),
   approvalRating: integer('approval_rating').notNull().default(50),
-  balance: integer('balance').notNull().default(1000),
+  balance: bigint('balance', { mode: 'number' }).notNull().default(1000),
   isActive: boolean('is_active').notNull().default(true),
   avatarUrl: text('avatar_url'),
   avatarConfig: text('avatar_config'),

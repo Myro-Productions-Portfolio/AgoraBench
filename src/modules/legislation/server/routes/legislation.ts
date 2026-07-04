@@ -543,7 +543,7 @@ router.get('/laws/:id', async (req, res, next) => {
         const currentTickNumber = Number(tickCountRow?.completed ?? 0);
         let cumulativeImpact = 0;
         for (const t of txRows) {
-          const v = parseInt(t.amount, 10);
+          const v = t.amount;
           if (Number.isFinite(v)) cumulativeImpact += v;
         }
         fiscal = {

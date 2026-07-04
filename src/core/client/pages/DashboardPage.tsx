@@ -175,9 +175,10 @@ export function DashboardPage() {
 
   const branchData = {
     executive: {
-      officialName: president?.displayName ?? 'Vacant',
+      vacant: !president,
+      officialName: president?.displayName ?? '',
       officialTitle: 'President of Agora Bench',
-      officialInitials: president ? president.displayName.slice(0, 2).toUpperCase() : '--',
+      officialInitials: president ? president.displayName.slice(0, 2).toUpperCase() : '',
       stats: [
         { label: 'Term Day', value: termDay !== null ? String(termDay) : '--' },
         { label: 'Approval', value: '--' },
@@ -185,9 +186,10 @@ export function DashboardPage() {
       ],
     },
     legislative: {
-      officialName: 'Vacant',
+      vacant: true,
+      officialName: '',
       officialTitle: 'Speaker of the Legislature',
-      officialInitials: '--',
+      officialInitials: '',
       stats: [
         { label: 'Seats', value: overview ? `${overview.legislative.filledSeats}/${overview.legislative.totalSeats}` : '0/0' },
         { label: 'Bills', value: overview?.legislative.activeBills ?? 0 },
@@ -195,9 +197,10 @@ export function DashboardPage() {
       ],
     },
     judicial: {
-      officialName: 'Vacant',
+      vacant: true,
+      officialName: '',
       officialTitle: 'Chief Justice',
-      officialInitials: '--',
+      officialInitials: '',
       stats: [
         { label: 'Justices', value: overview?.judicial.supremeCourtJustices ?? 0 },
         { label: 'Cases', value: overview?.judicial.activeCases ?? 0 },
@@ -310,16 +313,19 @@ export function DashboardPage() {
           <BranchCard
             branch="executive"
             title="Executive Branch"
+            icon="/images/branches/executive.webp"
             {...branchData.executive}
           />
           <BranchCard
             branch="legislative"
             title="Legislative Branch"
+            icon="/images/branches/legislative.webp"
             {...branchData.legislative}
           />
           <BranchCard
             branch="judicial"
             title="Judicial Branch"
+            icon="/images/branches/judicial.webp"
             {...branchData.judicial}
           />
         </div>

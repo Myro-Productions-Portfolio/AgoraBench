@@ -43,6 +43,7 @@ describe('BranchCard', () => {
       <BranchCard
         branch="executive"
         title="Executive Branch"
+        icon="/images/branches/executive.webp"
         officialName="Agent-9M2L"
         officialTitle="President"
         officialInitials="9M"
@@ -58,6 +59,41 @@ describe('BranchCard', () => {
     expect(screen.getByText('9M')).toBeInTheDocument();
     expect(screen.getByText('30/90')).toBeInTheDocument();
     expect(screen.getByText('72%')).toBeInTheDocument();
+  });
+
+  it('uses the icon prop for the branch image src', () => {
+    render(
+      <BranchCard
+        branch="judicial"
+        title="Judicial Branch"
+        icon="/images/branches/judicial.webp"
+        officialName="Agent-1"
+        officialTitle="Chief Justice"
+        officialInitials="A1"
+        stats={[]}
+      />,
+    );
+    const img = screen.getByAltText('judicial branch') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('/images/branches/judicial.webp');
+  });
+
+  it('renders a Vacant state without a fake official when vacant', () => {
+    render(
+      <BranchCard
+        branch="legislative"
+        title="Legislative Branch"
+        icon="/images/branches/legislative.webp"
+        officialName=""
+        officialTitle="Speaker of the Legislature"
+        officialInitials=""
+        vacant
+        stats={[{ label: 'Seats', value: '0/25' }]}
+      />,
+    );
+    expect(screen.getByText('Vacant')).toBeInTheDocument();
+    expect(screen.getByText('Speaker of the Legislature')).toBeInTheDocument();
+    // No stray "--" initials pretending to be a real officeholder.
+    expect(screen.queryByText('--')).not.toBeInTheDocument();
   });
 });
 

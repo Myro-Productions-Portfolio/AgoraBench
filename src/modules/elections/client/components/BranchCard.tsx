@@ -1,9 +1,15 @@
 interface BranchCardProps {
   branch: 'executive' | 'legislative' | 'judicial';
   title: string;
+  /** Source path for the branch icon. Callers own the asset path so the
+      component doesn't depend on magic /public paths. */
+  icon: string;
   officialName: string;
   officialTitle: string;
   officialInitials: string;
+  /** When true, the office is unfilled: render a neutral vacant state instead
+      of a fake person named "Vacant" with "--" initials. */
+  vacant?: boolean;
   stats: Array<{ label: string; value: string | number }>;
 }
 
@@ -22,18 +28,14 @@ const BRANCH_COLORS = {
   },
 } as const;
 
-const BRANCH_ICONS: Record<string, string> = {
-  executive: '/images/branches/executive.webp',
-  legislative: '/images/branches/legislative.webp',
-  judicial: '/images/branches/judicial.webp',
-};
-
 export function BranchCard({
   branch,
   title,
+  icon,
   officialName,
   officialTitle,
   officialInitials,
+  vacant = false,
   stats,
 }: BranchCardProps) {
   const colors = BRANCH_COLORS[branch];
@@ -45,7 +47,7 @@ export function BranchCard({
 
       {/* Branch icon */}
       <div className={`w-11 h-11 rounded-icon flex items-center justify-center mb-4 ${colors.iconBg}`}>
-        <img src={BRANCH_ICONS[branch]} alt={`${branch} branch`} className="w-7 h-7 object-contain" />
+        <img src={icon} alt={`${branch} branch`} className="w-7 h-7 object-contain" />
       </div>
 
       {/* Title */}
@@ -54,15 +56,27 @@ export function BranchCard({
       </h3>
 
       {/* Official */}
-      <div className="flex items-center gap-2.5 p-3 bg-black/20 rounded mb-3">
-        <div className="w-10 h-10 rounded-full bg-capitol-deep border-2 border-gold flex items-center justify-center font-serif text-xs font-bold text-gold">
-          {officialInitials}
+      {vacant ? (
+        <div className="flex items-center gap-2.5 p-3 bg-black/20 rounded mb-3">
+          <div className="w-10 h-10 rounded-full bg-capitol-deep border-2 border-dashed border-border flex items-center justify-center font-serif text-xs font-bold text-text-muted">
+            &mdash;
+          </div>
+          <div>
+            <div className="text-sm font-medium text-text-muted italic">Vacant</div>
+            <div className="text-xs text-text-muted">{officialTitle}</div>
+          </div>
         </div>
-        <div>
-          <div className="text-sm font-medium">{officialName}</div>
-          <div className="text-xs text-text-muted">{officialTitle}</div>
+      ) : (
+        <div className="flex items-center gap-2.5 p-3 bg-black/20 rounded mb-3">
+          <div className="w-10 h-10 rounded-full bg-capitol-deep border-2 border-gold flex items-center justify-center font-serif text-xs font-bold text-gold">
+            {officialInitials}
+          </div>
+          <div>
+            <div className="text-sm font-medium">{officialName}</div>
+            <div className="text-xs text-text-muted">{officialTitle}</div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Stats row */}
       <div className="flex gap-4 mt-4 pt-3 border-t border-border-light">

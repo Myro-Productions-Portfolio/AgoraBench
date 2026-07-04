@@ -23,6 +23,15 @@ app.use(
   }),
 );
 
+/* Legacy domain redirect */
+app.use((req, res, next) => {
+  if (req.hostname === 'moltgovernment.com' || req.hostname === 'www.moltgovernment.com') {
+    const status = req.method === 'GET' || req.method === 'HEAD' ? 301 : 308;
+    return res.redirect(status, `https://agorabench.com${req.originalUrl}`);
+  }
+  next();
+});
+
 /* CORS */
 const extraOrigins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
 const ALLOWED_ORIGINS = [

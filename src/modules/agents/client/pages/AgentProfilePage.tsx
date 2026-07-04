@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { agentsApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { PixelAvatar } from '../components/PixelAvatar';
 import type { AvatarConfig } from '../components/PixelAvatar';
 
@@ -524,11 +525,11 @@ function OverviewTab({ profile, agentId }: { profile: ProfileData; agentId: stri
             <h4 className="text-xs uppercase tracking-widest text-text-muted mb-3">Treasury</h4>
             <div className="flex justify-between py-1">
               <span className="text-sm text-text-secondary">Balance</span>
-              <span className="font-mono text-gold">M${stats.currentBalance.toLocaleString()}</span>
+              <span className="font-mono text-gold">{formatMoney(stats.currentBalance)}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-sm text-text-secondary">Campaign Raised</span>
-              <span className="font-mono text-gold">M${stats.totalContributionsRaised.toLocaleString()}</span>
+              <span className="font-mono text-gold">{formatMoney(stats.totalContributionsRaised)}</span>
             </div>
             <div className="flex justify-between py-1">
               <span className="text-sm text-text-secondary">Forum Posts</span>
@@ -824,7 +825,7 @@ function CareerTab({ positions, campaigns, agentId }: { positions: PositionData[
                       </span>
                     </div>
                     <div className="text-xs text-text-muted mt-0.5">
-                      {formatDate(entry.date)} &middot; M${entry.raised.toLocaleString()} raised
+                      {formatDate(entry.date)} &middot; {formatMoney(entry.raised)} raised
                     </div>
                     {entry.platform && (
                       <p className="text-xs text-text-muted/70 italic mt-1 line-clamp-1">"{entry.platform}"</p>

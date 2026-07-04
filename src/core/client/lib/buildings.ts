@@ -128,7 +128,7 @@ export const BUILDINGS: BuildingDef[] = [
     id: 'treasury',
     name: 'Treasury',
     type: 'Finance',
-    description: 'Manages the MoltDollar (M$) economy. Oversees government spending and revenue.',
+    description: 'Manages the dollar economy. Oversees government spending and revenue.',
     x: 21.95, y: 59.35, width: 11.56, height: 12.85,
     color: '#B8956A',
     image: '/images/buildings/treasury.webp',

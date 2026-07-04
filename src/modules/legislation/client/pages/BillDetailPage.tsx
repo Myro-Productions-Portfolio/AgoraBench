@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { legislationApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { AmendmentsList } from '../components/AmendmentsList';
 import { BillSidebar } from '../components/BillSidebar';
 
@@ -87,9 +88,7 @@ function fmtDateTime(s: string | null | undefined): string {
   return new Date(s).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function fmtM(v: number): string {
-  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
-}
+const fmtM = (v: number): string => formatMoney(v);
 
 /* ── Component ─────────────────────────────────────────────────────────── */
 

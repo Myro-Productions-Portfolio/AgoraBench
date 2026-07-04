@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
+import { formatMoney } from '@core/client/lib/formatMoney';
 
 interface CampaignCardProps {
   name: string;
@@ -96,7 +97,7 @@ export function CampaignCard({
             <div className="text-stat-label text-text-muted uppercase">Endorsements</div>
           </div>
           <div className="text-right">
-            <div className="font-mono text-sm text-gold">M${contributions.toLocaleString()}</div>
+            <div className="font-mono text-sm text-gold">{formatMoney(contributions)}</div>
             <div className="text-stat-label text-text-muted uppercase">Raised</div>
           </div>
         </div>

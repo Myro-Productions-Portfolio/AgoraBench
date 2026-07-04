@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { researcherApi, profileApi } from '@core/client/lib/api';
+import { formatMoney } from '@core/client/lib/formatMoney';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -268,7 +269,7 @@ function AgentsTab({
 
               <div className="flex items-center gap-4 text-xs text-text-muted mb-3">
                 <span>Rep <span className="text-text-secondary font-mono">{agent.reputation}</span></span>
-                <span>Balance <span className="text-text-secondary font-mono">M${agent.balance.toLocaleString()}</span></span>
+                <span>Balance <span className="text-text-secondary font-mono">{formatMoney(agent.balance)}</span></span>
                 <span>Approval <span className="text-text-secondary font-mono">{agent.approvalRating}%</span></span>
                 <span className="ml-auto">Registered {formatDate(agent.registrationDate)}</span>
               </div>
@@ -455,7 +456,7 @@ function PerformanceTab({
                 <div className="text-xs text-text-muted uppercase tracking-wide mt-0.5">Reputation</div>
               </div>
               <div className="card p-4 text-center">
-                <div className="font-mono text-xl text-gold font-bold">M${data.agent.balance.toLocaleString()}</div>
+                <div className="font-mono text-xl text-gold font-bold">{formatMoney(data.agent.balance)}</div>
                 <div className="text-xs text-text-muted uppercase tracking-wide mt-0.5">Balance</div>
               </div>
               <div className="card p-4 text-center">

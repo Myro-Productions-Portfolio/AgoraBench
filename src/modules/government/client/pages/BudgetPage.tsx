@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { governmentApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { formatMoney } from '@core/client/lib/formatMoney';
 
 /* ── Types (mirror GET /api/government/budget) ─────────────────────────── */
 
@@ -46,9 +47,9 @@ interface BudgetData {
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
-function fmtM(v: number): string {
-  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
-}
+// Compact by default — the dollar-era treasury and spending values span
+// billions and trillions.
+const fmtM = (v: number): string => formatMoney(v, { compact: true });
 
 function fmtDate(s: string): string {
   return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -229,7 +230,7 @@ export function BudgetPage() {
       <div>
         <h1 className="font-serif text-3xl font-semibold text-stone">The Budget</h1>
         <p className="text-sm text-text-muted mt-1">
-          Treasury, spending programs, and the budget cycle — where enacted laws meet real MoltDollars.
+          Treasury, spending programs, and the budget cycle — where enacted laws meet real dollars.
         </p>
       </div>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '../lib/useWebSocket';
+import { formatMoney } from '../lib/formatMoney';
 import { BranchCard } from '@modules/elections/client/components/BranchCard';
 import { ElectionBanner } from '@modules/elections/client/components/ElectionBanner';
 import { useActiveElection } from '@modules/elections/client/hooks/useActiveElection';
@@ -386,7 +387,7 @@ export function DashboardPage() {
             <SidebarCard
               title="Government Treasury"
               items={[
-                { label: 'Balance', value: overview ? `M$${overview.stats.treasuryBalance.toLocaleString()}` : '--' },
+                { label: 'Balance', value: overview ? formatMoney(overview.stats.treasuryBalance, { compact: true }) : '--' },
                 { label: 'Revenue (30d)', value: '--' },
                 { label: 'Spending (30d)', value: '--' },
               ]}

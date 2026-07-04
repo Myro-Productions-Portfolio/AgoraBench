@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { legislationApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 
@@ -83,9 +84,7 @@ function fmtDate(s: string | null | undefined): string {
   return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function fmtM(v: number): string {
-  return v < 0 ? `−M$${Math.abs(v).toLocaleString()}` : `M$${v.toLocaleString()}`;
-}
+const fmtM = (v: number): string => formatMoney(v);
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { adminApi, agentsApi, providersApi, healthApi, activityApi, legislationApi, governmentApi } from '@core/client/lib/api';
+import { formatMoney } from '@core/client/lib/formatMoney';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
@@ -2075,7 +2076,7 @@ export function AdminPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-text-secondary">Treasury Balance (M$)</label>
-                      <span className="text-sm text-gold font-mono">M${economySettings.treasuryBalance.toLocaleString()}</span>
+                      <span className="text-sm text-gold font-mono">{formatMoney(economySettings.treasuryBalance, { compact: true })}</span>
                     </div>
                     <input
                       type="number" min={0} step={1000}
@@ -2116,7 +2117,7 @@ export function AdminPage() {
                         <div key={key} className="space-y-2">
                           <div className="flex items-center justify-between">
                             <label className="text-sm font-medium text-text-secondary">{label}</label>
-                            <span className="text-sm text-gold font-mono">M${(simConfig[key] as number).toLocaleString()}</span>
+                            <span className="text-sm text-gold font-mono">{formatMoney(simConfig[key] as number)}</span>
                           </div>
                           <input type="number" min={0} step={10}
                             value={simConfig[key] as number}
@@ -2186,8 +2187,8 @@ export function AdminPage() {
                       <div className="rounded border border-border/60 bg-white/[0.02] px-4 py-3">
                         <p className="text-badge text-text-muted uppercase tracking-widest mb-1">Recurring Spend vs Cap</p>
                         <p className="text-sm font-mono text-gold">
-                          M${budgetStatus.totals.recurringPerTick.toLocaleString()}
-                          <span className="text-text-muted"> / M${budgetStatus.totals.capPerTick.toLocaleString()} per tick</span>
+                          {formatMoney(budgetStatus.totals.recurringPerTick, { compact: true })}
+                          <span className="text-text-muted"> / {formatMoney(budgetStatus.totals.capPerTick, { compact: true })} per tick</span>
                         </p>
                         <div className="h-1.5 mt-2 rounded-full bg-border/40 overflow-hidden">
                           <div
@@ -2218,7 +2219,7 @@ export function AdminPage() {
                       </div>
                     </div>
                     <p className="text-xs text-text-muted mt-3">
-                      Expected revenue M${budgetStatus.expectedTickRevenue.toLocaleString()}/tick at {budgetStatus.taxRatePercent}% tax.
+                      Expected revenue {formatMoney(budgetStatus.expectedTickRevenue, { compact: true })}/day at {budgetStatus.taxRatePercent}% tax.
                       Full dashboard: <a href="/budget" className="text-gold hover:underline">/budget</a>.
                     </p>
                   </div>
@@ -2319,7 +2320,7 @@ export function AdminPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-sm font-medium text-text-secondary">Treasury Hard Floor (M$)</label>
-                        <span className="text-sm text-gold font-mono">M${simConfig.treasuryHardFloor.toLocaleString()}</span>
+                        <span className="text-sm text-gold font-mono">{formatMoney(simConfig.treasuryHardFloor, { compact: true })}</span>
                       </div>
                       <input type="number" min={-1000000} max={0} step={1000}
                         value={simConfig.treasuryHardFloor}
@@ -2619,7 +2620,7 @@ export function AdminPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <label className="text-sm font-medium text-text-secondary">Damages Amount (M$)</label>
-                        <span className="text-sm text-gold font-mono">M${simConfig.courtDamagesAmount}</span>
+                        <span className="text-sm text-gold font-mono">{formatMoney(simConfig.courtDamagesAmount)}</span>
                       </div>
                       <input type="number" min={0} max={500} step={1}
                         value={simConfig.courtDamagesAmount}
@@ -2937,7 +2938,7 @@ export function AdminPage() {
                           </span>
                         </td>
                         <td className="py-2 pr-4 text-text-secondary text-xs">{agent.reputation}</td>
-                        <td className="py-2 pr-4 text-text-secondary text-xs">M${agent.balance.toLocaleString()}</td>
+                        <td className="py-2 pr-4 text-text-secondary text-xs">{formatMoney(agent.balance)}</td>
                         <td className="py-2 pr-4">
                           <StatusBadge ok={agent.isActive} label={agent.isActive ? 'Active' : 'Inactive'} />
                         </td>

@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Agent } from '@shared/types';
+import { formatMoney } from '@core/client/lib/formatMoney';
 
 interface AgentDrawerProps {
   agent: Agent | null;
@@ -80,7 +81,7 @@ className="absolute right-0 top-0 bottom-0 z-30 w-72 bg-capitol-card border-l bo
                 </div>
                 <div className="flex justify-between items-center py-1.5 border-b border-border-lighter">
                   <span className="text-sm text-text-secondary">Balance</span>
-                  <span className="font-mono text-base text-gold">M${agent.balance.toLocaleString()}</span>
+                  <span className="font-mono text-base text-gold">{formatMoney(agent.balance)}</span>
                 </div>
                 {agent.alignment && (
                   <div className="flex justify-between items-center py-1.5 border-b border-border-lighter">

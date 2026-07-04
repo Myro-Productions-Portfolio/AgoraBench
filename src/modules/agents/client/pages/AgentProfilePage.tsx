@@ -350,7 +350,7 @@ interface ProfileData {
   stats: Stats;
 }
 
-type Tab = 'overview' | 'voting' | 'legislation' | 'career' | 'forum' | 'memory';
+type Tab = 'overview' | 'voting' | 'legislation' | 'career' | 'finances' | 'forum' | 'memory';
 
 /* ── Config maps ─────────────────────────────────────────────────────────── */
 
@@ -899,6 +899,178 @@ function ForumTab({ posts }: { posts: ForumPostData[] }) {
   );
 }
 
+/* ── Tab: Finances ───────────────────────────────────────────────────────── */
+
+interface FinanceTxn {
+  id: string;
+  amount: number;
+  type: string;
+  description: string;
+  balanceAfter: number | null;
+  relatedLawId: string | null;
+  relatedLawTitle: string | null;
+  counterpartyName: string | null;
+  direction: 'credit' | 'debit';
+  createdAt: string;
+}
+
+interface FinanceData {
+  transactions: FinanceTxn[];
+  aggregates: { totalSalary: number; totalTaxPaid: number; totalFees: number; totalDamages: number };
+  total: number;
+}
+
+const TXN_TYPE_LABEL: Record<string, string> = {
+  salary: 'Salary',
+  fee: 'Fee',
+  appropriation: 'Appropriation',
+  appropriation_onetime: 'Appropriation',
+  court_damages: 'Damages',
+  conversion: 'Conversion',
+};
+
+/* Balance-over-time line from balance_after (oldest→newest). Mirrors the
+   TreasuryChart pattern in BudgetPage: pure SVG, no chart library. */
+function BalanceChart({ points }: { points: number[] }) {
+  const W = 640;
+  const H = 140;
+  const PAD = 8;
+  if (points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = (W - PAD * 2) / (points.length - 1);
+  const path = points
+    .map((v, i) => {
+      const x = PAD + i * step;
+      const y = PAD + (H - PAD * 2) * (1 - (v - min) / range);
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-32" role="img" aria-label="Balance over time">
+      <path d={path} fill="none" stroke="#B8956A" strokeWidth={1.5} />
+    </svg>
+  );
+}
+
+function FinancesTab({ agentId, currentBalance }: { agentId: string; currentBalance: number }) {
+  const [data, setData] = useState<FinanceData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    agentsApi
+      .finances(agentId, 100, 0)
+      .then((res) => {
+        if (cancelled) return;
+        const d = res.data as { transactions: FinanceTxn[]; aggregates: FinanceData['aggregates'] } | undefined;
+        const meta = (res as { meta?: { total?: number } }).meta;
+        if (d) {
+          setData({ transactions: d.transactions, aggregates: d.aggregates, total: meta?.total ?? d.transactions.length });
+        }
+      })
+      .catch(() => { if (!cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [agentId]);
+
+  if (loading) {
+    return <div className="card p-8 text-center text-text-muted italic">Loading finances…</div>;
+  }
+  if (error || !data) {
+    return <div className="card p-8 text-center text-text-muted italic">Could not load finances.</div>;
+  }
+
+  /* Balance-over-time series: oldest→newest balance_after values (rows come
+     newest-first, so reverse and drop nulls from pre-conversion rows). */
+  const balanceSeries = data.transactions
+    .slice()
+    .reverse()
+    .map((t) => t.balanceAfter)
+    .filter((v): v is number => typeof v === 'number');
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="card p-4">
+          <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Current Balance</p>
+          <p className="font-mono text-xl text-gold">{formatMoney(currentBalance)}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Lifetime Earnings</p>
+          <p className="font-mono text-xl text-green-400">{formatMoney(data.aggregates.totalSalary)}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Lifetime Taxes</p>
+          <p className="font-mono text-xl text-red-400">{formatMoney(data.aggregates.totalTaxPaid)}</p>
+        </div>
+      </div>
+
+      {balanceSeries.length >= 2 && (
+        <div className="card p-5">
+          <h4 className="text-xs uppercase tracking-widest text-text-muted mb-3">Balance Over Time</h4>
+          <BalanceChart points={balanceSeries} />
+        </div>
+      )}
+
+      <div className="card p-5">
+        <h4 className="text-xs uppercase tracking-widest text-text-muted mb-4">Ledger</h4>
+        {data.transactions.length === 0 ? (
+          <p className="text-sm text-text-muted italic py-4 text-center">No transactions yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-badge text-text-muted uppercase tracking-wider">
+                  <th className="text-left py-2 pr-4 font-medium">When</th>
+                  <th className="text-left py-2 pr-4 font-medium">Type</th>
+                  <th className="text-left py-2 pr-4 font-medium">Detail</th>
+                  <th className="text-right py-2 font-medium">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.transactions.map((t) => (
+                  <tr key={t.id} className="border-t border-border/40">
+                    <td className="py-2 pr-4 text-text-muted whitespace-nowrap text-xs">{relativeTime(t.createdAt)}</td>
+                    <td className="py-2 pr-4">
+                      <span className="text-[10px] uppercase tracking-wide font-medium text-text-secondary">
+                        {TXN_TYPE_LABEL[t.type] ?? t.type}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 text-text-secondary">
+                      <span>{t.description}</span>
+                      {t.relatedLawId && (
+                        <Link to={`/laws/${t.relatedLawId}`} className="ml-1 text-gold hover:underline">
+                          {t.relatedLawTitle ?? 'law'}
+                        </Link>
+                      )}
+                      {t.counterpartyName && (
+                        <span className="text-text-muted"> · {t.counterpartyName}</span>
+                      )}
+                    </td>
+                    <td className={`py-2 text-right font-mono whitespace-nowrap ${t.direction === 'credit' ? 'text-green-400' : 'text-red-400'}`}>
+                      {t.direction === 'credit' ? '+' : '−'}{formatMoney(t.amount).replace('−', '')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {data.total > data.transactions.length && (
+              <p className="text-xs text-text-muted mt-3 text-center">
+                Showing the {data.transactions.length} most recent of {data.total.toLocaleString()} transactions.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Tab: Memory & Relationships ─────────────────────────────────────────── */
 
 function MemoryTab({
@@ -1071,6 +1243,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'voting', label: 'Voting Record' },
   { id: 'legislation', label: 'Legislation' },
   { id: 'career', label: 'Career' },
+  { id: 'finances', label: 'Finances' },
   { id: 'forum', label: 'Forum' },
   { id: 'memory', label: 'Memory & Relations' },
 ];
@@ -1265,6 +1438,7 @@ export function AgentProfilePage() {
       {activeTab === 'voting' && <VotingTab billVotes={billVotes} stats={stats} />}
       {activeTab === 'legislation' && <LegislationTab bills={sponsoredBills} stats={stats} />}
       {activeTab === 'career' && <CareerTab positions={positions} campaigns={campaigns} agentId={agentId ?? ''} />}
+      {activeTab === 'finances' && <FinancesTab agentId={agentId ?? ''} currentBalance={stats.currentBalance} />}
       {activeTab === 'forum' && <ForumTab posts={recentForumPosts} />}
       {activeTab === 'memory' && (
         <MemoryTab

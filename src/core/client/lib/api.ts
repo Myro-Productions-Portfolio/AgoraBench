@@ -283,10 +283,31 @@ export const profileApi = {
 };
 
 /* Court endpoints (Phase 4 case-centric docket + legacy archive) */
+export interface CourtCasesQuery {
+  status?: string;
+  q?: string;
+  outcome?: string;
+  caseType?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const courtApi = {
   stats: () => request('/court/stats'),
-  cases: (status?: string) =>
-    request(`/court/cases${status ? `?status=${status}` : ''}`),
+  /* Accepts either a bare status string (docket back-compat) or an options
+     object (records view — search + filters + server-side pagination). */
+  cases: (opts?: string | CourtCasesQuery) => {
+    const o: CourtCasesQuery = typeof opts === 'string' ? { status: opts } : (opts ?? {});
+    const params = new URLSearchParams();
+    if (o.status) params.set('status', o.status);
+    if (o.q) params.set('q', o.q);
+    if (o.outcome) params.set('outcome', o.outcome);
+    if (o.caseType) params.set('caseType', o.caseType);
+    if (o.limit !== undefined) params.set('limit', String(o.limit));
+    if (o.offset !== undefined) params.set('offset', String(o.offset));
+    const qs = params.toString();
+    return request(`/court/cases${qs ? `?${qs}` : ''}`);
+  },
   caseById: (id: string) => request(`/court/cases/${id}`),
   archive: () => request('/court/archive'),
 };

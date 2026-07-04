@@ -68,6 +68,18 @@ interface BenchJustice {
   isChief: boolean;
 }
 
+interface ReferencedCase {
+  id: string;
+  caseNumber: string;
+  caption: string;
+  status: string;
+  outcome: string | null;
+}
+
+interface RelatedCase extends ReferencedCase {
+  filedTick: number;
+}
+
 interface CaseDetail {
   id: string;
   caseNumber: string;
@@ -102,6 +114,8 @@ interface CaseDetail {
   events: CaseEvent[];
   votes: VoteDetail[];
   bench: BenchJustice[];
+  referencedCases: ReferencedCase[];
+  relatedCases: RelatedCase[];
 }
 
 /* ── Labels ────────────────────────────────────────────────────────────── */
@@ -204,6 +218,70 @@ function parseCitations(raw: string | null): number[] {
 
 function plural(n: number): string {
   return `${n} day${n === 1 ? '' : 's'}`;
+}
+
+const OUTCOME_LABELS: Record<string, string> = {
+  struck_down: 'Struck Down',
+  upheld:      'Upheld',
+  petitioner:  'For Petitioner',
+  respondent:  'For Respondent',
+  dismissed:   'Dismissed',
+};
+
+/* Compact "Status" or "Status · Outcome" tail for a cross-linked case row. */
+function caseStateLabel(status: string, outcome: string | null): string {
+  const s = STATUS_LABELS[status] ?? status;
+  if (outcome && status !== 'dismissed') {
+    return `${s} · ${OUTCOME_LABELS[outcome] ?? outcome}`;
+  }
+  return s;
+}
+
+/* Case-number matcher for inline opinion linkification (mirrors the server's
+   extractCaseNumbers regex). Global so split() keeps the delimiters. */
+const CASE_NUMBER_SPLIT = /(\bAB-\d+-\d+\b)/g;
+
+/* Split opinion text on AB-N-N tokens; wrap the ones we can resolve (present
+   in referencedCases) in Links, leave unknown tokens as plain text. */
+function LinkifiedOpinion({
+  text,
+  known,
+}: {
+  text: string;
+  known: Map<string, string>;
+}) {
+  const parts = text.split(CASE_NUMBER_SPLIT);
+  return (
+    <>
+      {parts.map((part, i) => {
+        const id = known.get(part);
+        if (id) {
+          return (
+            <Link key={i} to={`/court/cases/${id}`} className="text-gold hover:underline">
+              {part}
+            </Link>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+/* Compact cross-reference row — no avatars, just case no. — caption — state. */
+function CaseRefRow({ c }: { c: ReferencedCase }) {
+  return (
+    <Link
+      to={`/court/cases/${c.id}`}
+      className="flex items-baseline gap-2 rounded border border-border/60 bg-capitol-card px-3 py-2 hover:border-gold/40 transition-colors"
+    >
+      <span className="font-mono text-badge text-gold shrink-0">{c.caseNumber}</span>
+      <span className="text-xs text-text-secondary truncate flex-1 min-w-0">{c.caption}</span>
+      <span className="text-badge text-text-muted uppercase tracking-widest shrink-0 hidden sm:inline">
+        {caseStateLabel(c.status, c.outcome)}
+      </span>
+    </Link>
+  );
 }
 
 /* Relative-day line — Day N (tick number) is the authoritative clock,
@@ -522,6 +600,12 @@ export function CasePage() {
     else eventsByDay.push({ tick: event.tick, events: [event] });
   }
 
+  /* caseNumber -> id for inline opinion linkification (only referenced cases
+     resolve; unknown AB-numbers stay plain text). */
+  const referencedById = new Map(
+    (caseData.referencedCases ?? []).map((c) => [c.caseNumber, c.id]),
+  );
+
   /* Opinion reader grouping */
   const majoritySideVote = caseData.outcome ? WINNING_VOTE[caseData.outcome] : undefined;
   const majorityVotes = majoritySideVote
@@ -827,7 +911,7 @@ export function CasePage() {
                 )}
               </div>
               <p className="font-serif text-sm text-text-primary leading-relaxed whitespace-pre-line">
-                {caseData.majorityOpinion}
+                <LinkifiedOpinion text={caseData.majorityOpinion} known={referencedById} />
               </p>
               <ArticleChips raw={caseData.majorityCitations} onOpen={setOpenArticle} />
             </div>
@@ -852,7 +936,7 @@ export function CasePage() {
                 )}
               </div>
               <p className="font-serif text-sm text-text-primary leading-relaxed whitespace-pre-line">
-                {caseData.dissentOpinion}
+                <LinkifiedOpinion text={caseData.dissentOpinion} known={referencedById} />
               </p>
               <ArticleChips raw={caseData.dissentCitations} onOpen={setOpenArticle} />
             </div>
@@ -895,6 +979,30 @@ export function CasePage() {
         <div className="rounded-lg border border-border bg-capitol-card p-6 space-y-2">
           <p className="text-badge text-text-muted uppercase tracking-widest">Petition as Filed</p>
           <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-line">{caseData.filingText}</p>
+        </div>
+      )}
+
+      {/* Cross-case references — cases cited in this case's record/opinions */}
+      {caseData.referencedCases && caseData.referencedCases.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-serif text-lg font-semibold text-stone">Referenced Cases</h2>
+          <div className="space-y-2">
+            {caseData.referencedCases.map((c) => (
+              <CaseRefRow key={c.id} c={c} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Related cases — other cases challenging the same law */}
+      {caseData.relatedCases && caseData.relatedCases.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="font-serif text-lg font-semibold text-stone">Related Cases (same law)</h2>
+          <div className="space-y-2">
+            {caseData.relatedCases.map((c) => (
+              <CaseRefRow key={c.id} c={c} />
+            ))}
+          </div>
         </div>
       )}
 

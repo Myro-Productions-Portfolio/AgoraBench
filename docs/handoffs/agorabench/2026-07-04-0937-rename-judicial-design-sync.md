@@ -1,5 +1,7 @@
 # Handoff — Rename completion, judicial Phase 4 ship, and Claude Design sync
 
+> **SUPERSEDED same-day.** Every action item and open question below was completed, resolved, or explicitly declined by the owner later on 2026-07-04. Do not work from this list — current state lives in `docs/TODO.md`.
+
 **Date**: 2026-07-04 09:37
 **Project**: AgoraBench
 **Branch**: main (0 modified, 0 untracked)

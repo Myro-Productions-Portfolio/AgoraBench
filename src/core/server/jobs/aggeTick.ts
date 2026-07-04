@@ -246,7 +246,7 @@ async function runAggeTick(count: number): Promise<void> {
         : '';
 
       const agentBalance = agent.balance ?? 1000;
-      const balanceNote = agentBalance < 200
+      const balanceNote = agentBalance < 5000
         ? `\nPersonal balance: $${agentBalance} (financially stressed).`
         : '';
 

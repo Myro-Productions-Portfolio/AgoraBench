@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   clampInt,
-  expectedTickRevenue,
+  dailyCitizenRevenue,
+  paydayDue,
+  computePaycheck,
   applyTaxDelta,
   sunsetDue,
   lapseDue,
@@ -30,19 +32,59 @@ describe('clampInt', () => {
   });
 });
 
-describe('expectedTickRevenue', () => {
-  it('matches Phase 13 flooring: floor(sum * rate / 100)', () => {
-    expect(expectedTickRevenue(2, 20_000)).toBe(400);
-    expect(expectedTickRevenue(3, 999)).toBe(29); // 29.97 → 29
+describe('dailyCitizenRevenue', () => {
+  it('is floor(gdp * rate / 100 / 365)', () => {
+    // $28T * 18% / 365 = $13.808...B per day
+    expect(dailyCitizenRevenue(28_000_000_000_000, 18)).toBe(13_808_219_178);
+    expect(dailyCitizenRevenue(36_500, 10)).toBe(10); // 3650/365 = 10 exactly
   });
 
   it('returns 0 for zero/negative/non-finite inputs', () => {
-    expect(expectedTickRevenue(0, 20_000)).toBe(0);
-    expect(expectedTickRevenue(2, 0)).toBe(0);
-    expect(expectedTickRevenue(-2, 20_000)).toBe(0);
-    expect(expectedTickRevenue(2, -100)).toBe(0);
-    expect(expectedTickRevenue(NaN, 20_000)).toBe(0);
-    expect(expectedTickRevenue(2, Infinity)).toBe(0);
+    expect(dailyCitizenRevenue(0, 18)).toBe(0);
+    expect(dailyCitizenRevenue(28_000_000_000_000, 0)).toBe(0);
+    expect(dailyCitizenRevenue(-1, 18)).toBe(0);
+    expect(dailyCitizenRevenue(28_000_000_000_000, -2)).toBe(0);
+    expect(dailyCitizenRevenue(NaN, 18)).toBe(0);
+    expect(dailyCitizenRevenue(Infinity, 18)).toBe(0);
+  });
+});
+
+describe('paydayDue', () => {
+  it('fires only on positive multiples of the pay period', () => {
+    expect(paydayDue(14, 14)).toBe(true);
+    expect(paydayDue(28, 14)).toBe(true);
+    expect(paydayDue(13, 14)).toBe(false);
+    expect(paydayDue(15, 14)).toBe(false);
+  });
+
+  it('tick 0 and non-finite/non-positive inputs are never due', () => {
+    expect(paydayDue(0, 14)).toBe(false);
+    expect(paydayDue(14, 0)).toBe(false);
+    expect(paydayDue(NaN, 14)).toBe(false);
+    expect(paydayDue(14, NaN)).toBe(false);
+    expect(paydayDue(-14, 14)).toBe(false);
+  });
+});
+
+describe('computePaycheck', () => {
+  it('splits annual/26 into gross, withholding, net', () => {
+    // President $400k/yr, 18% withholding: gross 15384, withheld 2769, net 12615
+    expect(computePaycheck(400_000, 18)).toEqual({ gross: 15_384, withheld: 2_769, net: 12_615 });
+  });
+
+  it('zero tax yields net == gross', () => {
+    const p = computePaycheck(174_000, 0);
+    expect(p.gross).toBe(6_692);
+    expect(p.withheld).toBe(0);
+    expect(p.net).toBe(6_692);
+  });
+
+  it('non-finite/non-positive annual is all zero; tax is clamped to [0,100]', () => {
+    expect(computePaycheck(0, 18)).toEqual({ gross: 0, withheld: 0, net: 0 });
+    expect(computePaycheck(NaN, 18)).toEqual({ gross: 0, withheld: 0, net: 0 });
+    const over = computePaycheck(26_000, 500); // clamped to 100% → net 0
+    expect(over.withheld).toBe(over.gross);
+    expect(over.net).toBe(0);
   });
 });
 
@@ -158,7 +200,7 @@ describe('composeExpiringProgramsNote — bounded renewal-pressure prompt fragme
 
   it('lists name and per-tick cost', () => {
     expect(composeExpiringProgramsNote([{ name: 'Rural Broadband Fund', perTick: 40 }])).toBe(
-      ' Programs expiring at the next budget session: Rural Broadband Fund (M$40/tick).',
+      ' Programs expiring at the next budget session: Rural Broadband Fund ($40/tick).',
     );
   });
 
@@ -169,9 +211,9 @@ describe('composeExpiringProgramsNote — bounded renewal-pressure prompt fragme
       { name: 'C', perTick: 3 },
       { name: 'D', perTick: 4 },
     ]);
-    expect(note).toContain('A (M$1/tick)');
-    expect(note).toContain('C (M$3/tick)');
-    expect(note).not.toContain('D (M$4/tick)');
+    expect(note).toContain('A ($1/tick)');
+    expect(note).toContain('C ($3/tick)');
+    expect(note).not.toContain('D ($4/tick)');
   });
 
   it('never exceeds 220 chars (prompt budget safety)', () => {
@@ -186,14 +228,14 @@ describe('composeExpiringProgramsNote — bounded renewal-pressure prompt fragme
       { name: `  Spaced\n\nOut   Name  `, perTick: 40.9 },
       { name: '', perTick: NaN },
     ]);
-    expect(note).toContain('Spaced Out Name (M$40/tick)');
-    expect(note).toContain('Unnamed Program (M$0/tick)');
+    expect(note).toContain('Spaced Out Name ($40/tick)');
+    expect(note).toContain('Unnamed Program ($0/tick)');
     expect(note).not.toContain('\n');
   });
 });
 
 describe('projectFiscalNote', () => {
-  const noteCtx = { treasuryBalance: 8391, sumActiveBalances: 20_000, budgetCycleTicks: 24 };
+  const noteCtx = { treasuryBalance: 8391, gdpAnnual: 3_650_000, budgetCycleTicks: 24 };
 
   it('spend_once: one-time cost, no per-tick delta', () => {
     const n = projectFiscalNote({ kind: 'spend_once', amount: 400, taxDelta: null, sunsetTicks: null }, noteCtx);
@@ -220,12 +262,13 @@ describe('projectFiscalNote', () => {
     expect(n?.projected10TickDelta).toBe(-320); // 8 ticks, not 10
   });
 
-  it('tax_change: revenue delta per tick = floor(sum * delta / 100)', () => {
+  it('tax_change: revenue delta per tick = floor(gdp * delta / 100 / 365)', () => {
+    // gdp 3_650_000, delta 1 → floor(3650000/100/365) = 100
     const up = projectFiscalNote({ kind: 'tax_change', amount: null, taxDelta: 1, sunsetTicks: null }, noteCtx);
-    expect(up?.perTickDelta).toBe(200);
-    expect(up?.projected10TickDelta).toBe(2000);
+    expect(up?.perTickDelta).toBe(100);
+    expect(up?.projected10TickDelta).toBe(1000);
     const down = projectFiscalNote({ kind: 'tax_change', amount: null, taxDelta: -2, sunsetTicks: null }, noteCtx);
-    expect(down?.perTickDelta).toBe(-400);
+    expect(down?.perTickDelta).toBe(-200);
   });
 
   it('returns null for unusable provisions', () => {

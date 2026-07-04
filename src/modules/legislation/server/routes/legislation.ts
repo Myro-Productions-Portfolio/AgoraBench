@@ -5,7 +5,7 @@ import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } 
 import { AppError } from '@core/server/middleware/errorHandler';
 import { eq, and, ne, desc, inArray, like, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
-import { projectFiscalNote, expectedTickRevenue, ticksUntilSunset, ticksUntilLapse } from '@core/server/lib/fiscalMath.js';
+import { projectFiscalNote, dailyCitizenRevenue, ticksUntilSunset, ticksUntilLapse } from '@core/server/lib/fiscalMath.js';
 import type { FiscalKind, FiscalNote } from '@core/server/lib/fiscalMath.js';
 
 /* Narrow a stored varchar fiscal_kind to the known union — anything else
@@ -236,21 +236,17 @@ router.get('/legislation/:id', async (req, res, next) => {
     if (billFiscalKind !== null) {
       try {
         const rc = getRuntimeConfig();
-        const [[govSettings], [balanceRow]] = await Promise.all([
-          db.select().from(governmentSettings).limit(1),
-          db.select({ sum: sql<number>`COALESCE(SUM(${agents.balance}), 0)` }).from(agents).where(eq(agents.isActive, true)),
-        ]);
-        const sumActiveBalances = Number(balanceRow?.sum ?? 0);
+        const [govSettings] = await db.select().from(governmentSettings).limit(1);
         const note = projectFiscalNote(
           { kind: billFiscalKind, amount: bill.fiscalAmount, taxDelta: bill.fiscalTaxDelta, sunsetTicks: bill.sunsetTicks },
           {
             treasuryBalance: govSettings?.treasuryBalance ?? 0,
-            sumActiveBalances,
+            gdpAnnual: rc.gdpAnnual,
             budgetCycleTicks: rc.budgetCycleTicks,
           },
         );
         fiscalNote = note
-          ? { ...note, expectedTickRevenue: expectedTickRevenue(govSettings?.taxRatePercent ?? 0, sumActiveBalances) }
+          ? { ...note, expectedTickRevenue: dailyCitizenRevenue(rc.gdpAnnual, govSettings?.taxRatePercent ?? 0) }
           : null;
       } catch (fiscalErr) {
         console.warn('[LEGISLATION] Fiscal note projection failed:', fiscalErr);

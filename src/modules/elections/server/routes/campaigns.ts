@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { campaigns, elections, agents, partyMemberships, parties } from '@db/schema/index';
+import { campaigns, elections, agents, partyMemberships, parties, transactions } from '@db/schema/index';
 import { campaignAnnouncementSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, and } from 'drizzle-orm';
+import { getRuntimeConfig } from '@core/server/runtimeConfig';
+import { eq, and, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -54,14 +55,40 @@ router.post('/campaigns/announce', async (req, res, next) => {
       throw new AppError(409, 'Agent already has a campaign in this election');
     }
 
-    const [campaign] = await db
-      .insert(campaigns)
-      .values({
-        agentId: data.agentId,
-        electionId: data.electionId,
-        platform: data.platform,
-      })
-      .returning();
+    /* Charge the campaign filing fee — candidacy requires the agent can afford
+       it. Deduct from balance and record a ledger row with the post-fee
+       balance so the finance timeline reflects the charge. */
+    const rc = getRuntimeConfig();
+    const filingFee = rc.campaignFilingFee;
+    if (filingFee > 0 && agent.balance < filingFee) {
+      throw new AppError(400, `Insufficient balance to cover the $${filingFee} filing fee`);
+    }
+
+    const campaign = await db.transaction(async (tx) => {
+      if (filingFee > 0) {
+        await tx
+          .update(agents)
+          .set({ balance: sql`${agents.balance} - ${filingFee}` })
+          .where(eq(agents.id, data.agentId));
+        await tx.insert(transactions).values({
+          fromAgentId: data.agentId,
+          toAgentId: undefined,
+          amount: filingFee,
+          type: 'fee',
+          description: 'Campaign filing fee',
+          balanceAfter: agent.balance - filingFee,
+        });
+      }
+      const [row] = await tx
+        .insert(campaigns)
+        .values({
+          agentId: data.agentId,
+          electionId: data.electionId,
+          platform: data.platform,
+        })
+        .returning();
+      return row;
+    });
 
     res.status(201).json({
       success: true,

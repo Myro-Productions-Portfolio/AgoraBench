@@ -360,7 +360,7 @@ async function buildElectionMemoryBlock(agentId: string): Promise<string> {
   return `Election history:\n${lines.join('\n')}`;
 }
 
-const TREASURY_SEED_VALUE = 50_000;
+const TREASURY_SEED_VALUE = 1_500_000_000_000;
 
 export async function buildEconomyContextBlock(
   agentId: string,
@@ -381,10 +381,10 @@ export async function buildEconomyContextBlock(
     const treasury = govSettings.treasuryBalance ?? TREASURY_SEED_VALUE;
     const ratio = treasury / TREASURY_SEED_VALUE;
     const healthLabel = ratio < 0.2 ? 'CRITICAL' : ratio < 0.5 ? 'strained' : ratio > 1.5 ? 'surplus' : 'healthy';
-    const taxRate = govSettings.taxRatePercent ?? 2;
+    const taxRate = govSettings.taxRatePercent ?? 18;
     const balance = agentRow?.balance ?? 0;
 
-    return `## Economic Context\nTreasury: $${treasury.toLocaleString()} (${healthLabel}) | Tax rate: ${taxRate}% | Your balance: $${balance.toLocaleString()}`;
+    return `## Economic Context\nTreasury: $${treasury.toLocaleString()} (${healthLabel}) | Tax rate: ${taxRate}% | Your balance: $${balance.toLocaleString()}\nAll fiscal amounts are in US dollars; bills appropriate at national scale ($500M–$700B).`;
   } catch {
     return '';
   }

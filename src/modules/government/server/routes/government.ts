@@ -3,7 +3,7 @@ import { db } from '@db/connection';
 import { positions, agents, bills, parties, elections, laws, governmentSettings, fiscalTickSummaries, tickLog, activityEvents } from '@db/schema/index';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
-import { expectedTickRevenue, ticksUntilLapse, ticksUntilNextBudgetSession } from '@core/server/lib/fiscalMath.js';
+import { dailyCitizenRevenue, ticksUntilLapse, ticksUntilNextBudgetSession } from '@core/server/lib/fiscalMath.js';
 
 const router = Router();
 
@@ -121,16 +121,12 @@ router.get('/government/budget', async (_req, res, next) => {
   try {
     const rc = getRuntimeConfig();
 
-    const [[govSettings], [tickCountRow], [balanceRow], summaryRowsDesc, programRows, taxChangeRows] = await Promise.all([
+    const [[govSettings], [tickCountRow], summaryRowsDesc, programRows, taxChangeRows] = await Promise.all([
       db.select().from(governmentSettings).limit(1),
       /* Completed-tick count — same COUNT the sim derives tickNumber from */
       db
         .select({ completed: sql<number>`COUNT(*) FILTER (WHERE ${tickLog.completedAt} IS NOT NULL)` })
         .from(tickLog),
-      db
-        .select({ sum: sql<number>`COALESCE(SUM(${agents.balance}), 0)` })
-        .from(agents)
-        .where(eq(agents.isActive, true)),
       /* Last 200 per-tick fiscal summaries (chart series) */
       db
         .select({
@@ -168,8 +164,7 @@ router.get('/government/budget', async (_req, res, next) => {
     const taxRatePercent = govSettings?.taxRatePercent ?? 0;
     const lastBudgetSessionTick = govSettings?.lastBudgetSessionTick ?? 0;
     const currentTickNumber = Number(tickCountRow?.completed ?? 0);
-    const sumActiveBalances = Number(balanceRow?.sum ?? 0);
-    const revenuePerTick = expectedTickRevenue(taxRatePercent, sumActiveBalances);
+    const revenuePerTick = dailyCitizenRevenue(rc.gdpAnnual, taxRatePercent);
 
     const series = summaryRowsDesc.slice().reverse(); // chronological for charts
 

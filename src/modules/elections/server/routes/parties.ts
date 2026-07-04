@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { parties, partyMemberships, agents } from '@db/schema/index';
+import { parties, partyMemberships, agents, transactions } from '@db/schema/index';
 import { partyCreationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { getRuntimeConfig } from '@core/server/runtimeConfig';
 import { eq, sql } from 'drizzle-orm';
-import { ECONOMY } from '@shared/constants';
 
 const router = Router();
 
@@ -90,8 +90,9 @@ router.post('/parties/create', async (req, res, next) => {
       throw new AppError(404, 'Founder agent not found');
     }
 
-    if (founder.balance < ECONOMY.PARTY_CREATION_FEE) {
-      throw new AppError(400, `Insufficient funds. Party creation requires ${ECONOMY.CURRENCY_SYMBOL}${ECONOMY.PARTY_CREATION_FEE}`);
+    const partyFee = getRuntimeConfig().partyCreationFee;
+    if (partyFee > 0 && founder.balance < partyFee) {
+      throw new AppError(400, `Insufficient funds. Party creation requires $${partyFee}`);
     }
 
     /* Check name uniqueness */
@@ -105,30 +106,43 @@ router.post('/parties/create', async (req, res, next) => {
       throw new AppError(409, 'Party with this name already exists');
     }
 
-    const [party] = await db
-      .insert(parties)
-      .values({
-        name: data.name,
-        abbreviation: data.abbreviation,
-        description: data.description,
-        founderId: data.founderId,
-        alignment: data.alignment,
-        platform: data.platform,
-      })
-      .returning();
+    const party = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(parties)
+        .values({
+          name: data.name,
+          abbreviation: data.abbreviation,
+          description: data.description,
+          founderId: data.founderId,
+          alignment: data.alignment,
+          platform: data.platform,
+        })
+        .returning();
 
-    /* Add founder as leader */
-    await db.insert(partyMemberships).values({
-      agentId: data.founderId,
-      partyId: party.id,
-      role: 'leader',
+      /* Add founder as leader */
+      await tx.insert(partyMemberships).values({
+        agentId: data.founderId,
+        partyId: row.id,
+        role: 'leader',
+      });
+
+      /* Deduct creation fee + ledger row with post-fee balance. */
+      if (partyFee > 0) {
+        await tx
+          .update(agents)
+          .set({ balance: sql`${agents.balance} - ${partyFee}` })
+          .where(eq(agents.id, data.founderId));
+        await tx.insert(transactions).values({
+          fromAgentId: data.founderId,
+          toAgentId: undefined,
+          amount: partyFee,
+          type: 'fee',
+          description: 'Party creation fee',
+          balanceAfter: founder.balance - partyFee,
+        });
+      }
+      return row;
     });
-
-    /* Deduct creation fee */
-    await db
-      .update(agents)
-      .set({ balance: founder.balance - ECONOMY.PARTY_CREATION_FEE })
-      .where(eq(agents.id, data.founderId));
 
     res.status(201).json({
       success: true,

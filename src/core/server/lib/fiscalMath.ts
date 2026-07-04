@@ -2,8 +2,9 @@
  * Phase 3 fiscal math — pure, deterministic, integer-only.
  *
  * Every function here takes integers and returns integers (all money in this
- * economy is integer M$: agents.balance, governmentSettings.treasuryBalance,
- * taxRatePercent are integer columns and Phase 13 uses Math.floor). Every
+ * economy is integer dollars: agents.balance, governmentSettings.treasuryBalance
+ * are bigint columns, taxRatePercent is integer, and payroll uses Math.floor).
+ * Every
  * input is guarded with Number.isFinite so hostile or corrupt values can
  * never produce NaN/Infinity that would poison the treasury.
  *
@@ -25,14 +26,40 @@ export function clampInt(v: number, min: number, max: number): number {
 }
 
 /**
- * Expected per-tick tax revenue: floor(sumBalances * taxRatePercent / 100).
- * Mirrors Phase 13's Math.floor(balance * rate) semantics in aggregate.
- * Non-finite or negative inputs resolve to 0 (clamp-context anomaly = no-op).
+ * Daily citizen tax revenue: floor(gdpAnnual * taxRatePercent / 100 / 365).
+ * One tick = one sim day, so this is the per-tick treasury inflow from the
+ * citizen tax base (the wiki's long-claimed GDP×rate model). Replaces the old
+ * balance-wealth-tax model. Non-finite or non-positive inputs resolve to 0.
  */
-export function expectedTickRevenue(taxRatePercent: number, sumBalances: number): number {
-  if (!Number.isFinite(taxRatePercent) || !Number.isFinite(sumBalances)) return 0;
-  if (taxRatePercent <= 0 || sumBalances <= 0) return 0;
-  return Math.floor((sumBalances * taxRatePercent) / 100);
+export function dailyCitizenRevenue(gdpAnnual: number, taxRatePercent: number): number {
+  if (!Number.isFinite(gdpAnnual) || !Number.isFinite(taxRatePercent)) return 0;
+  if (gdpAnnual <= 0 || taxRatePercent <= 0) return 0;
+  return Math.floor((gdpAnnual * taxRatePercent) / 100 / 365);
+}
+
+/** True when a payday is due this tick: tickNumber is a positive multiple of
+ *  payPeriodTicks. Non-finite / non-positive inputs are never due. */
+export function paydayDue(tickNumber: number, payPeriodTicks: number): boolean {
+  if (!Number.isFinite(tickNumber) || !Number.isFinite(payPeriodTicks)) return false;
+  if (tickNumber <= 0 || payPeriodTicks <= 0) return false;
+  return Math.floor(tickNumber) % Math.floor(payPeriodTicks) === 0;
+}
+
+/**
+ * One pay-period paycheck from an annual salary, net of income-tax withholding.
+ * gross = floor(annual / 26) (bi-weekly, 26 periods/yr), withheld = floor(gross
+ * × taxPct/100), net = gross − withheld. Non-finite / non-positive annual → all
+ * zero; taxPct is clamped to [0, 100] defensively.
+ */
+export function computePaycheck(
+  annualSalary: number,
+  taxRatePercent: number,
+): { gross: number; withheld: number; net: number } {
+  if (!Number.isFinite(annualSalary) || annualSalary <= 0) return { gross: 0, withheld: 0, net: 0 };
+  const pct = Number.isFinite(taxRatePercent) ? Math.min(100, Math.max(0, taxRatePercent)) : 0;
+  const gross = Math.floor(annualSalary / 26);
+  const withheld = Math.floor((gross * pct) / 100);
+  return { gross, withheld, net: gross - withheld };
 }
 
 /**
@@ -194,7 +221,7 @@ export function composeExpiringProgramsNote(
     .map((p) => {
       const name = p.name.replace(/\s+/g, ' ').trim().slice(0, EXPIRING_NOTE_NAME_MAX_CHARS) || 'Unnamed Program';
       const perTick = Number.isFinite(p.perTick) ? Math.floor(p.perTick) : 0;
-      return `${name} (M$${perTick}/tick)`;
+      return `${name} ($${perTick}/tick)`;
     });
   const note = ` Programs expiring at the next budget session: ${items.join(', ')}.`;
   return note.length > EXPIRING_NOTE_MAX_CHARS ? note.slice(0, EXPIRING_NOTE_MAX_CHARS) : note;
@@ -204,14 +231,14 @@ export function composeExpiringProgramsNote(
 
 export interface FiscalProvisionLike {
   kind: FiscalKind;
-  amount: number | null;       // per-tick M$ for recurring, total M$ for one-time
+  amount: number | null;       // per-tick $ for recurring, total $ for one-time
   taxDelta: number | null;     // signed whole percentage points
   sunsetTicks: number | null;
 }
 
 export interface FiscalNoteContext {
   treasuryBalance: number;
-  sumActiveBalances: number;   // Σ balance over active agents
+  gdpAnnual: number;           // annual GDP — the citizen tax base
   budgetCycleTicks: number;
 }
 
@@ -260,9 +287,9 @@ export function projectFiscalNote(
       : cycle;
   } else if (provision.kind === 'tax_change') {
     if (provision.taxDelta === null || !Number.isFinite(provision.taxDelta) || provision.taxDelta === 0) return null;
-    const sum = Number.isFinite(ctx.sumActiveBalances) && ctx.sumActiveBalances > 0 ? ctx.sumActiveBalances : 0;
-    /* Δrevenue/tick = floor(Σ balances × delta / 100) — matches Phase 13 flooring. */
-    perTickDelta = Math.floor((sum * Math.trunc(provision.taxDelta)) / 100);
+    const gdp = Number.isFinite(ctx.gdpAnnual) && ctx.gdpAnnual > 0 ? ctx.gdpAnnual : 0;
+    /* Δrevenue/tick = floor(GDP × delta / 100 / 365) — matches dailyCitizenRevenue(). */
+    perTickDelta = Math.floor((gdp * Math.trunc(provision.taxDelta)) / 100 / 365);
     horizonTicks = cycle;
   } else {
     return null;

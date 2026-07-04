@@ -41,7 +41,7 @@ import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
-import { expectedTickRevenue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
+import { dailyCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
 import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
@@ -147,10 +147,14 @@ agentTickQueue.process(async () => {
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
   /* Election results from Phase 14, read by Phase 11.5 */
   let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
-  /* Government spending this tick (salaries + one-time appropriations +
+  /* Government spending this tick (net paychecks + one-time appropriations +
      recurring program debits) — accumulated by Phases 9 and 12, written to
-     fiscal_tick_summaries by Phase 13. Integer M$. */
+     fiscal_tick_summaries by Phase 13. Integer dollars. */
   let tickSpendingThisTick = 0;
+
+  /* Income tax withheld from paychecks this tick (Phase 12) — counted as
+     revenue alongside citizen tax in Phase 13's fiscal summary. */
+  let payrollWithheldThisTick = 0;
 
   /* ------------------------------------------------------------------ */
   /* PHASE 0.5: Committee Assignment & Chair Succession                    */
@@ -2812,12 +2816,12 @@ agentTickQueue.process(async () => {
                 type: 'appropriation_onetime',
                 agentId: null,
                 title: 'One-time appropriation',
-                description: `M$${bill.fiscalAmount} appropriated from the treasury for "${bill.title}"`,
+                description: `$${bill.fiscalAmount} appropriated from the treasury for "${bill.title}"`,
                 metadata: JSON.stringify({ lawId: enactedLaw.id, billId: bill.id, amount: bill.fiscalAmount, treasuryAfter: newBalance }),
               });
 
               broadcast('treasury:appropriation', { lawId: enactedLaw.id, title: bill.title, amount: bill.fiscalAmount, treasuryAfter: newBalance });
-              console.warn(`[SIMULATION] One-time appropriation M$${bill.fiscalAmount} for "${bill.title}" — treasury now M$${newBalance}`);
+              console.warn(`[SIMULATION] One-time appropriation $${bill.fiscalAmount} for "${bill.title}" — treasury now $${newBalance}`);
             }
           } else if (
             bill.fiscalKind === 'tax_change' &&
@@ -3848,6 +3852,12 @@ agentTickQueue.process(async () => {
                 }
               } else if (!isChallenge && loserId && winnerId) {
                 if (damages > 0) {
+                  const [winnerBalanceRow] = await tx
+                    .select({ balance: agents.balance })
+                    .from(agents)
+                    .where(eq(agents.id, winnerId))
+                    .limit(1);
+                  const winnerBalanceAfter = (winnerBalanceRow?.balance ?? 0) + damages;
                   await tx.update(agents).set({ balance: sql`${agents.balance} - ${damages}` }).where(eq(agents.id, loserId));
                   await tx.update(agents).set({ balance: sql`${agents.balance} + ${damages}` }).where(eq(agents.id, winnerId));
                   await tx.insert(transactions).values({
@@ -3856,6 +3866,7 @@ agentTickQueue.process(async () => {
                     amount: damages,
                     type: 'court_damages',
                     description: `Damages awarded in ${c.caption} (${c.caseNumber})`,
+                    balanceAfter: winnerBalanceAfter,
                   });
                 }
                 /* Litigation sours relations — Phase 2b/2c upsert pattern. */
@@ -4400,8 +4411,9 @@ agentTickQueue.process(async () => {
       /* Phase 3: optional fiscal payload — extracted from structured JSON only
          (never fullText), validated by parseFiscalField, no-op on any failure. */
       const fiscalNote11 =
-        ` Optional fiscal provision: "spend_once" spends M$amount from the treasury once; ` +
-        `"spend_recurring" funds a named program at M$amount per tick until it lapses; ` +
+        ` Optional fiscal provision (all amounts in US dollars at national scale, ` +
+        `e.g. 500000000 to 700000000000): "spend_once" spends amount from the treasury once; ` +
+        `"spend_recurring" funds a named program at amount per tick until it lapses; ` +
         `"tax_change" moves the tax rate by taxDelta whole points; use kind "none" for no fiscal effect.`;
 
       const contextMessage =
@@ -4435,11 +4447,7 @@ agentTickQueue.process(async () => {
        activeRecurringSpend11 is a RUNNING total — every provision approved in
        this loop adds to it, so multiple same-tick programs cannot jointly
        bust the aggregate recurring cap. */
-    const sumActiveBalances11 = activeAgents.reduce(
-      (s, a) => s + (typeof a.balance === 'number' && Number.isFinite(a.balance) ? a.balance : 0),
-      0,
-    );
-    const expectedRevenue11 = expectedTickRevenue(govSettings11?.taxRatePercent ?? 0, sumActiveBalances11);
+    const expectedRevenue11 = dailyCitizenRevenue(rc.gdpAnnual, govSettings11?.taxRatePercent ?? 0);
     let activeRecurringSpend11 = 0;
     try {
       const [spendRow] = await db
@@ -4794,25 +4802,26 @@ agentTickQueue.process(async () => {
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 12: Salary Payment                                              */
-  /* Pay all active position holders from government treasury.            */
+  /* PHASE 12: Payroll                                                     */
+  /* Bi-weekly paychecks (annual/26, net of income-tax withholding) to     */
+  /* every active position holder, plus recurring program appropriations.  */
+  /* Paychecks fire only on a payday tick (tickNumber % payPeriodTicks);    */
+  /* recurring appropriations run every tick.                              */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 12: Salary Payment');
+    console.warn('[SIMULATION] Phase 12: Payroll');
 
     const [govSettings] = await db.select().from(governmentSettings).limit(1);
 
     if (!govSettings) {
-      console.warn('[SIMULATION] Phase 12: No government settings found — skipping salary payment.');
+      console.warn('[SIMULATION] Phase 12: No government settings found — skipping payroll.');
     } else {
       let treasuryBalance = govSettings.treasuryBalance;
+      const taxRatePct = govSettings.taxRatePercent;
+      const isPayday = paydayDue(tickNumber, rc.payPeriodTicks);
+      let withheldThisTick = 0;
 
-      const allActivePositions = await db
-        .select()
-        .from(positions)
-        .where(eq(positions.isActive, true));
-
-      const salaryMap: Record<string, number> = {
+      const annualSalaryMap: Record<string, number> = {
         president: rc.salaryPresident,
         cabinet_secretary: rc.salaryCabinet,
         congress_member: rc.salaryCongress,
@@ -4821,45 +4830,87 @@ agentTickQueue.process(async () => {
         committee_chair: rc.salaryCongress,
       };
 
-      for (const pos of allActivePositions) {
-        const salary = salaryMap[pos.type] ?? 0;
-        if (salary === 0) continue;
-        if (treasuryBalance < salary) {
-          console.warn(`[SIMULATION] Phase 12: Treasury too low to pay salary for ${pos.type}`);
-          await db.insert(activityEvents).values({
-            type: 'treasury_crisis',
-            agentId: pos.agentId,
-            title: `Treasury too low to pay ${pos.type} salary`,
-            description: `Treasury balance insufficient to cover $${salary} salary payment`,
-            metadata: JSON.stringify({ positionType: pos.type, salary, treasuryBalance }),
-          });
-          continue;
+      if (isPayday) {
+        const allActivePositions = await db
+          .select()
+          .from(positions)
+          .where(eq(positions.isActive, true));
+
+        /* Running per-agent balance so each ledger row's balance_after is
+           computed in memory (no re-select per row). Seeded from current DB. */
+        const balanceByAgent = new Map<string, number>();
+        for (const pos of allActivePositions) {
+          if (!balanceByAgent.has(pos.agentId)) {
+            const [a] = await db.select({ balance: agents.balance }).from(agents).where(eq(agents.id, pos.agentId));
+            balanceByAgent.set(pos.agentId, a?.balance ?? 0);
+          }
         }
 
-        await db
-          .update(agents)
-          .set({ balance: sql`${agents.balance} + ${salary}` })
-          .where(eq(agents.id, pos.agentId));
+        for (const pos of allActivePositions) {
+          const annual = annualSalaryMap[pos.type] ?? 0;
+          if (annual === 0) continue;
+          const { gross, withheld, net } = computePaycheck(annual, taxRatePct);
+          if (net <= 0) continue;
+          if (treasuryBalance < net) {
+            console.warn(`[SIMULATION] Phase 12: Treasury too low to pay ${pos.type} paycheck`);
+            await db.insert(activityEvents).values({
+              type: 'treasury_crisis',
+              agentId: pos.agentId,
+              title: `Treasury too low to pay ${pos.type} paycheck`,
+              description: `Treasury balance insufficient to cover $${net} net paycheck`,
+              metadata: JSON.stringify({ positionType: pos.type, gross, net, treasuryBalance }),
+            });
+            continue;
+          }
 
-        treasuryBalance -= salary;
-        tickSpendingThisTick += salary;
+          await db
+            .update(agents)
+            .set({ balance: sql`${agents.balance} + ${net}` })
+            .where(eq(agents.id, pos.agentId));
 
-        await db.insert(transactions).values({
-          fromAgentId: undefined,
-          toAgentId: pos.agentId,
-          amount: salary,
-          type: 'salary',
-          description: 'Government salary payment',
-        });
+          const newBalance = (balanceByAgent.get(pos.agentId) ?? 0) + net;
+          balanceByAgent.set(pos.agentId, newBalance);
 
-        await db.insert(activityEvents).values({
-          type: 'salary_payment',
-          agentId: pos.agentId,
-          title: 'Salary paid',
-          description: `M$${salary} salary paid for ${pos.type} position`,
-          metadata: JSON.stringify({ positionId: pos.id, positionType: pos.type, amount: salary }),
-        });
+          treasuryBalance -= net;
+          tickSpendingThisTick += net;
+          withheldThisTick += withheld;
+
+          /* Two ledger rows: gross salary in (balance_after reflects the net
+             credit — the agent never holds the withheld portion) and the tax
+             withholding out. */
+          await db.insert(transactions).values({
+            fromAgentId: undefined,
+            toAgentId: pos.agentId,
+            amount: gross,
+            type: 'salary',
+            description: `Salary (gross, ${pos.type})`,
+            balanceAfter: newBalance,
+          });
+          await db.insert(transactions).values({
+            fromAgentId: pos.agentId,
+            toAgentId: undefined,
+            amount: withheld,
+            type: 'fee',
+            description: 'Income tax withholding',
+            balanceAfter: newBalance,
+          });
+
+          await db.insert(activityEvents).values({
+            type: 'salary_payment',
+            agentId: pos.agentId,
+            title: 'Paycheck deposited',
+            description: `$${net} net paycheck ($${gross} gross − $${withheld} withheld) for ${pos.type}`,
+            metadata: JSON.stringify({ positionId: pos.id, positionType: pos.type, gross, withheld, net }),
+          });
+        }
+
+        console.warn(`[SIMULATION] Phase 12: Payday — paid ${allActivePositions.length} position(s), $${withheldThisTick} withheld.`);
+      } else {
+        console.warn(`[SIMULATION] Phase 12: Not a payday (tick ${tickNumber}, period ${rc.payPeriodTicks}) — skipping paychecks.`);
       }
+
+      /* Stash withholding for Phase 13 revenue accounting. */
+      payrollWithheldThisTick = withheldThisTick;
 
       /* ---- Phase 3: recurring program appropriations ------------------ */
       /* Same in-memory treasuryBalance, same single final update — a second
@@ -4884,7 +4935,7 @@ agentTickQueue.process(async () => {
               type: 'treasury_crisis',
               agentId: null,
               title: 'Program funding suspended',
-              description: `Treasury at M$${treasuryBalance} — below the hard floor; "${program.fiscalProgramName ?? program.title}" (M$${perTick}/tick) goes unfunded this tick`,
+              description: `Treasury at $${treasuryBalance} — below the hard floor; "${program.fiscalProgramName ?? program.title}" ($${perTick}/tick) goes unfunded this tick`,
               metadata: JSON.stringify({ lawId: program.id, perTick, treasuryBalance, treasuryHardFloor: rc.treasuryHardFloor }),
             });
             continue;
@@ -4904,7 +4955,7 @@ agentTickQueue.process(async () => {
         }
 
         if (activePrograms.length > 0) {
-          console.warn(`[SIMULATION] Phase 12: ${activePrograms.length} recurring program(s) processed. Treasury: M$${treasuryBalance}`);
+          console.warn(`[SIMULATION] Phase 12: ${activePrograms.length} recurring program(s) processed. Treasury: $${treasuryBalance}`);
         }
       }
 
@@ -4914,51 +4965,29 @@ agentTickQueue.process(async () => {
         .set({ treasuryBalance, updatedAt: new Date() })
         .where(eq(governmentSettings.id, govSettings.id));
 
-      console.warn(`[SIMULATION] Phase 12: Salary payments complete. Treasury: M$${treasuryBalance}`);
+      console.warn(`[SIMULATION] Phase 12: Payroll complete. Treasury: $${treasuryBalance}`);
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 12 error:', err);
   }
 
   /* ------------------------------------------------------------------ */
-  /* PHASE 13: Tax Collection                                              */
-  /* Collect tax from all active agents into the treasury.                */
+  /* PHASE 13: Citizen Revenue                                            */
+  /* Accrue the daily citizen tax base to the treasury (GDP × rate / 365) */
+  /* and record the tick's fiscal summary. No per-agent wealth tax — the   */
+  /* only tax on agents is paycheck withholding (Phase 12).               */
   /* ------------------------------------------------------------------ */
   try {
-    console.warn('[SIMULATION] Phase 13: Tax Collection');
+    console.warn('[SIMULATION] Phase 13: Citizen Revenue');
 
     const [govSettings] = await db.select().from(governmentSettings).limit(1);
 
     if (!govSettings) {
-      console.warn('[SIMULATION] Phase 13: No government settings found — skipping tax collection.');
+      console.warn('[SIMULATION] Phase 13: No government settings found — skipping revenue accrual.');
     } else {
-      let treasuryBalance = govSettings.treasuryBalance;
-      const taxRate = govSettings.taxRatePercent / 100;
-      let totalTaxCollected = 0;
-
-      /* Re-fetch agents to get updated balances after salary payments */
-      const currentAgents = await db.select().from(agents).where(eq(agents.isActive, true));
-
-      for (const agent of currentAgents) {
-        const taxAmount = Math.floor(agent.balance * taxRate);
-        if (taxAmount <= 0) continue;
-
-        await db
-          .update(agents)
-          .set({ balance: sql`${agents.balance} - ${taxAmount}` })
-          .where(eq(agents.id, agent.id));
-
-        treasuryBalance += taxAmount;
-        totalTaxCollected += taxAmount;
-
-        await db.insert(transactions).values({
-          fromAgentId: agent.id,
-          toAgentId: undefined,
-          amount: taxAmount,
-          type: 'fee',
-          description: 'Income tax collection',
-        });
-      }
+      const citizenRevenue = dailyCitizenRevenue(rc.gdpAnnual, govSettings.taxRatePercent);
+      const totalRevenue = citizenRevenue + payrollWithheldThisTick;
+      const treasuryBalance = govSettings.treasuryBalance + totalRevenue;
 
       /* Update treasury balance */
       await db
@@ -4967,14 +4996,16 @@ agentTickQueue.process(async () => {
         .where(eq(governmentSettings.id, govSettings.id));
 
       await db.insert(activityEvents).values({
-        type: 'tax_collected',
+        type: 'revenue_collected',
         agentId: null,
-        title: 'Tax collected',
-        description: `M$${totalTaxCollected} collected in income tax from ${currentAgents.length} agents`,
+        title: 'Revenue collected',
+        description: `$${totalRevenue} collected ($${citizenRevenue} citizen tax + $${payrollWithheldThisTick} payroll withholding)`,
         metadata: JSON.stringify({
-          totalAmount: totalTaxCollected,
-          agentCount: currentAgents.length,
+          totalRevenue,
+          citizenRevenue,
+          payrollWithheld: payrollWithheldThisTick,
           taxRatePercent: govSettings.taxRatePercent,
+          gdpAnnual: rc.gdpAnnual,
           newTreasuryBalance: treasuryBalance,
         }),
       });
@@ -4986,12 +5017,12 @@ agentTickQueue.process(async () => {
       await db.insert(fiscalTickSummaries).values({
         tickId: currentTick?.id ?? undefined,
         tickNumber,
-        revenue: totalTaxCollected,
+        revenue: totalRevenue,
         spending: tickSpendingThisTick,
         treasuryEnd: treasuryBalance,
       });
 
-      console.warn(`[SIMULATION] Phase 13: Tax collection complete. Collected M$${totalTaxCollected}. Treasury: M$${treasuryBalance}`);
+      console.warn(`[SIMULATION] Phase 13: Revenue accrued $${totalRevenue}. Treasury: $${treasuryBalance}`);
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 13 error:', err);

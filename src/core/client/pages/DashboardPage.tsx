@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useWebSocket } from '../lib/useWebSocket';
 import { BranchCard } from '@modules/elections/client/components/BranchCard';
 import { ElectionBanner } from '@modules/elections/client/components/ElectionBanner';
+import { useActiveElection } from '@modules/elections/client/hooks/useActiveElection';
 import { LegislationCarousel } from '@modules/legislation/client/components/LegislationCarousel';
 import { CampaignCard } from '@modules/elections/client/components/CampaignCard';
 import { ActivityFeed } from '@modules/agents/client/components/ActivityFeed';
@@ -102,6 +103,7 @@ export function DashboardPage() {
   const [termDay, setTermDay] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const { subscribe } = useWebSocket();
+  const { bannerTargetDate, bannerTitle, bannerDescription } = useActiveElection();
 
   const fetchData = useCallback(async () => {
     try {
@@ -331,14 +333,16 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {/* Election Banner — only renders when there is an active election */}
-      <section className="px-8 xl:px-16">
-        <ElectionBanner
-          title="Election Approaching"
-          description={`${campaigns.length} candidate${campaigns.length !== 1 ? 's' : ''} declared.`}
-          targetDate={null}
-        />
-      </section>
+      {/* Election Banner — only renders when there is a real active election */}
+      {bannerTargetDate && (
+        <section className="px-8 xl:px-16">
+          <ElectionBanner
+            title={bannerTitle}
+            description={bannerDescription(campaigns.length)}
+            targetDate={bannerTargetDate}
+          />
+        </section>
+      )}
 
       {/* Recent Activity + Sidebar */}
       <section className="px-8 xl:px-16 py-section">

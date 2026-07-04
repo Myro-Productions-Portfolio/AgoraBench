@@ -4,6 +4,7 @@ import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { SectionHeader } from '@core/client/components/SectionHeader';
 import { CampaignCard } from '../components/CampaignCard';
 import { ElectionBanner } from '../components/ElectionBanner';
+import { useActiveElection } from '../hooks/useActiveElection';
 import { campaignsApi, electionsApi } from '@core/client/lib/api';
 
 interface EnrichedCampaign {
@@ -18,16 +19,6 @@ interface EnrichedCampaign {
   status: string;
   agent: { id: string; displayName: string; avatarUrl: string | null } | null;
   party: { name: string } | null;
-}
-
-interface ActiveElection {
-  id: string;
-  title: string;
-  type: string;
-  status: string;
-  votingStartsAt: string | null;
-  votingEndsAt: string | null;
-  scheduledDate: string;
 }
 
 interface PastElection {
@@ -57,9 +48,9 @@ const CAMPAIGN_ACCENT_COLORS = ['#B8956A', '#6B7A8D', '#8B3A3A'];
 
 export function ElectionsPage() {
   const [campaigns, setCampaigns] = useState<EnrichedCampaign[]>([]);
-  const [activeElection, setActiveElection] = useState<ActiveElection | null>(null);
   const [pastElections, setPastElections] = useState<PastElection[]>([]);
   const { subscribe } = useWebSocket();
+  const { bannerTargetDate, bannerTitle, bannerDescription } = useActiveElection();
 
   const fetchCampaigns = useCallback(async () => {
     try {
@@ -72,17 +63,9 @@ export function ElectionsPage() {
     }
   }, []);
 
-  const fetchElections = useCallback(async () => {
+  const fetchPastElections = useCallback(async () => {
     try {
-      const [activeRes, pastRes] = await Promise.all([
-        electionsApi.active(),
-        electionsApi.past(),
-      ]);
-      if (activeRes.data && Array.isArray(activeRes.data) && activeRes.data.length > 0) {
-        setActiveElection(activeRes.data[0] as ActiveElection);
-      } else {
-        setActiveElection(null);
-      }
+      const pastRes = await electionsApi.past();
       if (pastRes.data && Array.isArray(pastRes.data)) {
         setPastElections(pastRes.data as PastElection[]);
       }
@@ -93,11 +76,11 @@ export function ElectionsPage() {
 
   useEffect(() => {
     void fetchCampaigns();
-    void fetchElections();
+    void fetchPastElections();
 
     const refetch = () => {
       void fetchCampaigns();
-      void fetchElections();
+      void fetchPastElections();
     };
     const unsubs = [
       subscribe('campaign:speech', refetch),
@@ -105,7 +88,7 @@ export function ElectionsPage() {
       subscribe('election:completed', refetch),
     ];
     return () => unsubs.forEach((fn) => fn());
-  }, [fetchCampaigns, fetchElections, subscribe]);
+  }, [fetchCampaigns, fetchPastElections, subscribe]);
 
   const totalContributions = campaigns.reduce((sum, c) => sum + c.contributions, 0);
 
@@ -136,26 +119,13 @@ export function ElectionsPage() {
     };
   });
 
-  /* Determine the countdown target: votingEndsAt if voting is active, votingStartsAt if not yet started */
-  const bannerTargetDate = (() => {
-    if (!activeElection) return null;
-    if (activeElection.votingEndsAt) return new Date(activeElection.votingEndsAt);
-    if (activeElection.votingStartsAt) return new Date(activeElection.votingStartsAt);
-    return new Date(activeElection.scheduledDate);
-  })();
-
-  const bannerTitle = activeElection?.title ?? 'Election';
-  const bannerDescription = activeElection
-    ? `${mappedCampaigns.length} candidate${mappedCampaigns.length !== 1 ? 's' : ''} declared. Status: ${activeElection.status}.`
-    : `${mappedCampaigns.length} candidate${mappedCampaigns.length !== 1 ? 's' : ''} declared.`;
-
   return (
     <div className="max-w-content mx-auto px-8 py-section">
       <SectionHeader title="Elections" badge="Active" />
 
       <ElectionBanner
         title={bannerTitle}
-        description={bannerDescription}
+        description={bannerDescription(mappedCampaigns.length)}
         targetDate={bannerTargetDate}
       />
 

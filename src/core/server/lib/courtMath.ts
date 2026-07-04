@@ -97,3 +97,17 @@ export function isStalled(c: CourtCaseTiming, tickNumber: number): boolean {
   if (expected === null) return false;
   return tickNumber - expected > STALL_GRACE_TICKS;
 }
+
+/**
+ * Case-number reference extractor. caseNumber format is AB-{filedTick}-{seq}
+ * (e.g. AB-42-1), globally unique. Scans free text (filings, opinions, event
+ * content, vote reasoning) for inline references to other cases and returns
+ * the distinct set, preserving first-seen order. Pure and defensive: a
+ * non-string input yields an empty list rather than throwing.
+ */
+export function extractCaseNumbers(text: string): string[] {
+  if (typeof text !== 'string' || text.length === 0) return [];
+  const matches = text.match(/\bAB-\d+-\d+\b/g);
+  if (!matches) return [];
+  return [...new Set(matches)];
+}

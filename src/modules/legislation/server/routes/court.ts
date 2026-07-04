@@ -12,9 +12,9 @@ import {
   tickLog,
 } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, desc, asc, and, sql } from 'drizzle-orm';
+import { eq, desc, asc, and, or, sql, ilike, inArray, ne } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath';
+import { ACTIVE_CASE_STATUSES, extractCaseNumbers } from '@core/server/lib/courtMath';
 
 /* Phase 4 judicial arc — case-centric court API over court_cases.
    judicial_reviews stopped receiving writes when the Phase 10 state
@@ -24,6 +24,23 @@ import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath';
 const router = Router();
 
 const CASE_STATUSES = ['filed', 'docketed', 'argued', 'deliberating', 'decided', 'dismissed'] as const;
+const CASE_OUTCOMES = ['struck_down', 'upheld', 'petitioner', 'respondent', 'dismissed'] as const;
+const CASE_TYPES = ['constitutional_challenge', 'agent_dispute'] as const;
+
+/* Docket/records list pagination + search bounds */
+const CASES_LIMIT_DEFAULT = 25;
+const CASES_LIMIT_MAX = 100;
+const CASES_QUERY_MAX_LEN = 100;
+/* Cap on same-law related cases returned by the detail endpoint */
+const RELATED_CASES_CAP = 20;
+
+/** Parse an int query param, clamped to [min, max]; falls back to def on garbage. */
+function parseIntParam(raw: unknown, def: number, min: number, max: number): number {
+  if (typeof raw !== 'string') return def;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
+}
 
 /* Petitioner/respondent both live in agents — alias to join twice */
 const petitionerAgents = alias(agents, 'petitioner');
@@ -55,27 +72,70 @@ const caseListSelection = {
   lawTitle: laws.title,
 };
 
-/* GET /api/court/cases -- Docket, newest first, joined party names (no N+1) */
+/* GET /api/court/cases -- Docket / records list, newest first, joined party
+   names (no N+1). Whitelisted+validated query params only; anything else is
+   ignored. Paginated with a matching COUNT(*) so the records view can page
+   through 1000+ cases without loading them all. */
 router.get('/court/cases', async (req, res, next) => {
   try {
-    const { status } = req.query as { status?: string };
+    const q = req.query as Record<string, unknown>;
+    const status = typeof q.status === 'string' ? q.status : undefined;
+    const outcome = typeof q.outcome === 'string' ? q.outcome : undefined;
+    const caseType = typeof q.caseType === 'string' ? q.caseType : undefined;
+    const search = typeof q.q === 'string' ? q.q.trim().slice(0, CASES_QUERY_MAX_LEN) : '';
 
     if (status && !(CASE_STATUSES as readonly string[]).includes(status)) {
       throw new AppError(400, `Invalid status. Must be one of: ${CASE_STATUSES.join(', ')}`);
     }
+    if (outcome && !(CASE_OUTCOMES as readonly string[]).includes(outcome)) {
+      throw new AppError(400, `Invalid outcome. Must be one of: ${CASE_OUTCOMES.join(', ')}`);
+    }
+    if (caseType && !(CASE_TYPES as readonly string[]).includes(caseType)) {
+      throw new AppError(400, `Invalid caseType. Must be one of: ${CASE_TYPES.join(', ')}`);
+    }
 
-    const joined = db
-      .select(caseListSelection)
-      .from(courtCases)
-      .leftJoin(petitionerAgents, eq(courtCases.petitionerId, petitionerAgents.id))
-      .leftJoin(respondentAgents, eq(courtCases.respondentId, respondentAgents.id))
-      .leftJoin(laws, eq(courtCases.lawId, laws.id));
+    const limit = parseIntParam(q.limit, CASES_LIMIT_DEFAULT, 1, CASES_LIMIT_MAX);
+    const offset = parseIntParam(q.offset, 0, 0, Number.MAX_SAFE_INTEGER);
 
-    const rows = status
-      ? await joined.where(eq(courtCases.status, status)).orderBy(desc(courtCases.createdAt)).limit(100)
-      : await joined.orderBy(desc(courtCases.createdAt)).limit(100);
+    /* Build the filter set once so the page query and the COUNT(*) agree. */
+    const conditions = [];
+    if (status) conditions.push(eq(courtCases.status, status));
+    if (outcome) conditions.push(eq(courtCases.outcome, outcome));
+    if (caseType) conditions.push(eq(courtCases.caseType, caseType));
+    if (search) {
+      const pattern = `%${search}%`;
+      conditions.push(
+        or(
+          ilike(courtCases.caseNumber, pattern),
+          ilike(courtCases.caption, pattern),
+          ilike(courtCases.questionPresented, pattern),
+        ),
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    res.json({ success: true, data: rows });
+    const [rows, [countRow]] = await Promise.all([
+      db
+        .select(caseListSelection)
+        .from(courtCases)
+        .leftJoin(petitionerAgents, eq(courtCases.petitionerId, petitionerAgents.id))
+        .leftJoin(respondentAgents, eq(courtCases.respondentId, respondentAgents.id))
+        .leftJoin(laws, eq(courtCases.lawId, laws.id))
+        .where(whereClause)
+        .orderBy(desc(courtCases.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ total: sql<number>`COUNT(*)` })
+        .from(courtCases)
+        .where(whereClause),
+    ]);
+
+    res.json({
+      success: true,
+      data: rows,
+      meta: { total: Number(countRow?.total ?? 0), limit, offset },
+    });
   } catch (err) {
     next(err);
   }
@@ -283,6 +343,51 @@ router.get('/court/cases/:id', async (req, res, next) => {
       isChief: idx === 0,
     }));
 
+    /* Cross-case references — scan every free-text surface for AB-N-N case
+       numbers, drop this case's own number, and resolve the rest in ONE query.
+       inArray (never raw ANY() with a JS array — project rule 2). */
+    const referenceSources = [
+      caseRow.filingText ?? '',
+      caseRow.questionPresented ?? '',
+      caseRow.majorityOpinion ?? '',
+      caseRow.dissentOpinion ?? '',
+      ...events.map((e) => e.content ?? ''),
+      ...votes.map((v) => v.reasoning ?? ''),
+    ];
+    const referencedNumbers = [
+      ...new Set(referenceSources.flatMap((text) => extractCaseNumbers(text))),
+    ].filter((num) => num !== caseRow.caseNumber);
+
+    const referencedCases = referencedNumbers.length
+      ? await db
+          .select({
+            id: courtCases.id,
+            caseNumber: courtCases.caseNumber,
+            caption: courtCases.caption,
+            status: courtCases.status,
+            outcome: courtCases.outcome,
+          })
+          .from(courtCases)
+          .where(inArray(courtCases.caseNumber, referencedNumbers))
+      : [];
+
+    /* Related cases — other cases challenging the same law, oldest first. */
+    const relatedCases = caseRow.lawId
+      ? await db
+          .select({
+            id: courtCases.id,
+            caseNumber: courtCases.caseNumber,
+            caption: courtCases.caption,
+            status: courtCases.status,
+            outcome: courtCases.outcome,
+            filedTick: courtCases.filedTick,
+          })
+          .from(courtCases)
+          .where(and(eq(courtCases.lawId, caseRow.lawId), ne(courtCases.id, caseRow.id)))
+          .orderBy(asc(courtCases.filedTick))
+          .limit(RELATED_CASES_CAP)
+      : [];
+
     res.json({
       success: true,
       data: {
@@ -291,6 +396,8 @@ router.get('/court/cases/:id', async (req, res, next) => {
         events,
         votes,
         bench,
+        referencedCases,
+        relatedCases,
       },
     });
   } catch (err) {

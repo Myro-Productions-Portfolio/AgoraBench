@@ -8,6 +8,7 @@ import {
   decisionDue,
   expectedStageTick,
   isStalled,
+  extractCaseNumbers,
   type CourtCaseTiming,
 } from '@core/server/lib/courtMath';
 
@@ -235,5 +236,57 @@ describe('isStalled', () => {
     expect(isStalled(timing({ status: 'argued', hearingTick: 110 }), 113)).toBe(false); // overdue by 2, within grace
     expect(isStalled(timing({ status: 'deliberating', hearingTick: 110 }), 115)).toBe(true); // expected 112, overdue by 3
     expect(isStalled(timing({ status: 'deliberating', hearingTick: 110 }), 114)).toBe(false); // overdue by 2, within grace
+  });
+});
+
+describe('extractCaseNumbers — cross-case reference scanner', () => {
+  it('extracts a single case number from prose', () => {
+    expect(extractCaseNumbers('See AB-42-1 for the controlling precedent.')).toEqual(['AB-42-1']);
+  });
+
+  it('extracts multiple distinct case numbers in first-seen order', () => {
+    expect(
+      extractCaseNumbers('AB-10-2 distinguished AB-3-1, which followed AB-100-7.'),
+    ).toEqual(['AB-10-2', 'AB-3-1', 'AB-100-7']);
+  });
+
+  it('dedups repeated references, preserving first-seen order', () => {
+    expect(
+      extractCaseNumbers('AB-5-1 and again AB-5-1, then AB-7-2, then AB-5-1.'),
+    ).toEqual(['AB-5-1', 'AB-7-2']);
+  });
+
+  it('handles multi-digit filed ticks and sequence numbers', () => {
+    expect(extractCaseNumbers('AB-1234-56')).toEqual(['AB-1234-56']);
+  });
+
+  it('respects word boundaries — no partial or glued matches', () => {
+    // Leading word char blocks the match; the AB- token must start on a boundary.
+    expect(extractCaseNumbers('XAB-1-2')).toEqual([]);
+    // Trailing extra digit segment is not part of the AB-N-N shape, so the run
+    // "AB-1-2-3" still yields the AB-1-2 token via the \b before the 3rd dash.
+    expect(extractCaseNumbers('ref AB-1-2 done')).toEqual(['AB-1-2']);
+  });
+
+  it('does not match malformed or lowercase tokens', () => {
+    expect(extractCaseNumbers('ab-1-2')).toEqual([]);
+    expect(extractCaseNumbers('AB-1')).toEqual([]);
+    expect(extractCaseNumbers('AB--1-2')).toEqual([]);
+    expect(extractCaseNumbers('AB-x-2')).toEqual([]);
+  });
+
+  it('returns empty for garbage, empty, and non-string input', () => {
+    expect(extractCaseNumbers('')).toEqual([]);
+    expect(extractCaseNumbers('no case numbers here at all')).toEqual([]);
+    // Defensive: non-string inputs (corrupt DB text columns) never throw.
+    expect(extractCaseNumbers(null as unknown as string)).toEqual([]);
+    expect(extractCaseNumbers(undefined as unknown as string)).toEqual([]);
+    expect(extractCaseNumbers(42 as unknown as string)).toEqual([]);
+  });
+
+  it('finds case numbers embedded mid-sentence and across newlines', () => {
+    expect(
+      extractCaseNumbers('The Court in\nAB-9-9\nheld otherwise; cf. AB-8-1.'),
+    ).toEqual(['AB-9-9', 'AB-8-1']);
   });
 });

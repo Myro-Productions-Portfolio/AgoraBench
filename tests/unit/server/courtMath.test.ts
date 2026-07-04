@@ -9,7 +9,12 @@ import {
   expectedStageTick,
   isStalled,
   extractCaseNumbers,
+  distillHolding,
+  buildPrecedentBlock,
+  buildPrecedentInjection,
+  HOLDING_MAX_LEN,
   type CourtCaseTiming,
+  type PrecedentSummary,
 } from '@core/server/lib/courtMath';
 
 /*
@@ -288,5 +293,148 @@ describe('extractCaseNumbers — cross-case reference scanner', () => {
     expect(
       extractCaseNumbers('The Court in\nAB-9-9\nheld otherwise; cf. AB-8-1.'),
     ).toEqual(['AB-9-9', 'AB-8-1']);
+  });
+});
+
+describe('distillHolding — first-sentence precedent summary', () => {
+  it('returns the first sentence of a multi-sentence opinion', () => {
+    expect(
+      distillHolding('The law is struck down. It violates Article 2. Reversed.'),
+    ).toBe('The law is struck down.');
+  });
+
+  it('handles ! and ? sentence terminators', () => {
+    expect(distillHolding('We reverse! The rest is dicta.')).toBe('We reverse!');
+    expect(distillHolding('Is the law valid? We think not.')).toBe('Is the law valid?');
+  });
+
+  it('uses the whole text when there is no sentence boundary', () => {
+    expect(distillHolding('A single clause with no terminator')).toBe(
+      'A single clause with no terminator',
+    );
+  });
+
+  it('normalizes internal whitespace and trims', () => {
+    expect(distillHolding('  The   Court\n\tholds  otherwise.  More text.')).toBe(
+      'The Court holds otherwise.',
+    );
+  });
+
+  it('is empty-safe for null, empty, and whitespace-only input', () => {
+    expect(distillHolding(null)).toBe('');
+    expect(distillHolding('')).toBe('');
+    expect(distillHolding('   \n\t  ')).toBe('');
+  });
+
+  it('is defensive against non-string input', () => {
+    expect(distillHolding(42 as unknown as string)).toBe('');
+    expect(distillHolding(undefined as unknown as string)).toBe('');
+  });
+
+  it('hard-caps a long first sentence with an ellipsis at the default max', () => {
+    const long = `${'a'.repeat(500)}.`;
+    const out = distillHolding(long);
+    expect(out.length).toBe(HOLDING_MAX_LEN);
+    expect(out.endsWith('...')).toBe(true);
+  });
+
+  it('does not ellipsize a first sentence exactly at the boundary', () => {
+    // 199 chars of body + terminator '.' = 200 chars == maxLen, no truncation.
+    const exact = `${'b'.repeat(199)}.`;
+    expect(exact.length).toBe(HOLDING_MAX_LEN);
+    const out = distillHolding(exact);
+    expect(out).toBe(exact);
+    expect(out.endsWith('...')).toBe(false);
+  });
+
+  it('respects a custom maxLen (ellipsized, never exceeding the cap)', () => {
+    // trimEnd() before the ellipsis avoids a dangling space, so length may be
+    // slightly under the cap — the contract is "<= maxLen and ellipsized".
+    const out = distillHolding('This is a fairly long single sentence with no early stop', 20);
+    expect(out.length).toBeLessThanOrEqual(20);
+    expect(out.endsWith('...')).toBe(true);
+  });
+});
+
+describe('buildPrecedentBlock — compact numbered precedent lines', () => {
+  function summary(overrides: Partial<PrecedentSummary> = {}): PrecedentSummary {
+    return {
+      caseNumber: 'AB-12-1',
+      caption: 'Doe v. Agora',
+      outcome: 'struck_down',
+      votesFor: 3,
+      votesAgainst: 2,
+      holding: 'The law is unconstitutional.',
+      ...overrides,
+    };
+  }
+
+  it('formats one precedent as a numbered line', () => {
+    expect(buildPrecedentBlock([summary()])).toBe(
+      '1. AB-12-1 "Doe v. Agora" — struck_down (3-2): The law is unconstitutional.',
+    );
+  });
+
+  it('numbers multiple precedents in order, one per line', () => {
+    const block = buildPrecedentBlock([
+      summary({ caseNumber: 'AB-1-1' }),
+      summary({ caseNumber: 'AB-2-1', outcome: 'upheld', votesFor: 1, votesAgainst: 4 }),
+    ]);
+    const lines = block.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0].startsWith('1. AB-1-1')).toBe(true);
+    expect(lines[1]).toBe('2. AB-2-1 "Doe v. Agora" — upheld (1-4): The law is unconstitutional.');
+  });
+
+  it('omits the trailing holding segment when the holding is empty', () => {
+    expect(buildPrecedentBlock([summary({ holding: '' })])).toBe(
+      '1. AB-12-1 "Doe v. Agora" — struck_down (3-2)',
+    );
+  });
+
+  it('falls back to "decided" when outcome is null', () => {
+    expect(buildPrecedentBlock([summary({ outcome: null })])).toBe(
+      '1. AB-12-1 "Doe v. Agora" — decided (3-2): The law is unconstitutional.',
+    );
+  });
+
+  it('returns empty string for an empty or non-array input', () => {
+    expect(buildPrecedentBlock([])).toBe('');
+    expect(buildPrecedentBlock(null as unknown as PrecedentSummary[])).toBe('');
+  });
+});
+
+describe('buildPrecedentInjection — full prompt block or nothing', () => {
+  const one: PrecedentSummary = {
+    caseNumber: 'AB-12-1',
+    caption: 'Doe v. Agora',
+    outcome: 'struck_down',
+    votesFor: 3,
+    votesAgainst: 2,
+    holding: 'The law is unconstitutional.',
+  };
+
+  it('appends NOTHING when there is no precedent (zero prompt cost)', () => {
+    expect(buildPrecedentInjection([])).toBe('');
+  });
+
+  it('wraps the block in the citation instruction when precedent exists', () => {
+    const out = buildPrecedentInjection([one]);
+    expect(out.startsWith('Relevant precedent of this Court:\n')).toBe(true);
+    expect(out).toContain('1. AB-12-1 "Doe v. Agora" — struck_down (3-2)');
+    expect(out).toContain('cite it by case number');
+    expect(out).toContain('If you depart from precedent, acknowledge it.');
+  });
+
+  it('keeps a full 5-precedent block within a low-hundreds-token budget', () => {
+    const five = Array.from({ length: 5 }, (_, i) => ({
+      ...one,
+      caseNumber: `AB-${i + 1}-1`,
+      holding: 'a'.repeat(HOLDING_MAX_LEN),
+    }));
+    const out = buildPrecedentInjection(five);
+    // ~4 chars/token heuristic — a 5-precedent block must stay well under
+    // ~400 tokens so it never crowds the constitution block on a 12-17s call.
+    expect(out.length / 4).toBeLessThan(400);
   });
 });

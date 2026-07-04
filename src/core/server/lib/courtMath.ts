@@ -111,3 +111,83 @@ export function extractCaseNumbers(text: string): string[] {
   if (!matches) return [];
   return [...new Set(matches)];
 }
+
+/**
+ * Minimal shape needed to render a prior ruling as one line of precedent for
+ * a Phase 10 prompt. Distinct from the wire/DB row so the formatter stays pure
+ * and testable without a court_cases select.
+ */
+export interface PrecedentSummary {
+  caseNumber: string;
+  caption: string;
+  outcome: string | null;
+  votesFor: number;
+  votesAgainst: number;
+  holding: string;
+}
+
+/** Max length of a distilled holding before it is ellipsized. */
+export const HOLDING_MAX_LEN = 200;
+
+/**
+ * The first sentence of a majority opinion, whitespace-normalized and hard-
+ * capped so a precedent line stays a low-token summary rather than a full
+ * opinion. Empty-safe: a null/blank opinion yields ''. Sentence boundary is
+ * the first '. ', '! ', or '? ' (or terminal punctuation); if none is found
+ * the whole (capped) text is used.
+ */
+export function distillHolding(majorityOpinion: string | null, maxLen: number = HOLDING_MAX_LEN): string {
+  if (typeof majorityOpinion !== 'string') return '';
+  const normalized = majorityOpinion.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) return '';
+
+  const boundary = normalized.search(/[.!?](\s|$)/);
+  const firstSentence =
+    boundary >= 0 ? normalized.slice(0, boundary + 1) : normalized;
+
+  if (firstSentence.length <= maxLen) return firstSentence;
+  return `${firstSentence.slice(0, Math.max(0, maxLen - 3)).trimEnd()}...`;
+}
+
+const OUTCOME_LABEL: Record<string, string> = {
+  struck_down: 'struck_down',
+  upheld: 'upheld',
+  petitioner: 'petitioner',
+  respondent: 'respondent',
+  dismissed: 'dismissed',
+};
+
+/**
+ * A compact numbered precedent block — one line per prior ruling:
+ *   AB-12-1 "Doe v. Agora" — struck_down (3-2): <holding>
+ * Empty input yields '' so callers can append nothing at zero cost. Pure and
+ * defensive: a non-array input is treated as empty.
+ */
+export function buildPrecedentBlock(precedents: PrecedentSummary[]): string {
+  if (!Array.isArray(precedents) || precedents.length === 0) return '';
+  return precedents
+    .map((p, i) => {
+      const outcome = p.outcome ? (OUTCOME_LABEL[p.outcome] ?? p.outcome) : 'decided';
+      const tally = `${p.votesFor ?? 0}-${p.votesAgainst ?? 0}`;
+      const holding = (p.holding ?? '').trim();
+      const head = `${i + 1}. ${p.caseNumber} "${p.caption}" — ${outcome} (${tally})`;
+      return holding ? `${head}: ${holding}` : head;
+    })
+    .join('\n');
+}
+
+/**
+ * The full precedent prompt injection — the numbered block wrapped in the
+ * citation instruction — or '' when there is no precedent (the common early-
+ * sim case pays zero prompt-size cost). Kept here so the "append nothing when
+ * empty" rule lives in one pure, tested place.
+ */
+export function buildPrecedentInjection(precedents: PrecedentSummary[]): string {
+  const block = buildPrecedentBlock(precedents);
+  if (block.length === 0) return '';
+  return (
+    `Relevant precedent of this Court:\n${block}\n` +
+    `When your reasoning relies on a prior ruling, cite it by case number (e.g. AB-12-1). ` +
+    `If you depart from precedent, acknowledge it. `
+  );
+}

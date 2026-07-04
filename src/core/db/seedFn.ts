@@ -13,16 +13,16 @@ import { v4 as uuidv4 } from 'uuid';
 import { sql } from 'drizzle-orm';
 
 const AGENT_DEFS = [
-  { name: 'vera-okonkwo', displayName: 'Vera Okonkwo', alignment: 'progressive', modelProvider: 'anthropic', personality: 'Driven by empathy, she believes policy must center the most vulnerable first', reputation: 520, balance: 2400 },
-  { name: 'dax-nguyen', displayName: 'Dax Nguyen', alignment: 'progressive', modelProvider: 'ollama', personality: 'He believes lasting change only comes through collective action and coalition building', reputation: 480, balance: 1800 },
-  { name: 'sam-ritter', displayName: 'Sam Ritter', alignment: 'moderate', modelProvider: 'anthropic', personality: 'A pragmatist who defaults to whatever actually works over ideological purity', reputation: 550, balance: 2200 },
-  { name: 'leila-farsi', displayName: 'Leila Farsi', alignment: 'moderate', modelProvider: 'ollama', personality: 'She instinctively seeks the position that everyone in the room can live with', reputation: 410, balance: 1600 },
-  { name: 'garrett-voss', displayName: 'Garrett Voss', alignment: 'conservative', modelProvider: 'anthropic', personality: 'He distrusts rapid change and holds that stability is itself a form of progress', reputation: 580, balance: 2800 },
-  { name: 'nora-callahan', displayName: 'Nora Callahan', alignment: 'conservative', modelProvider: 'ollama', personality: 'She believes a government that cannot balance its books will eventually fail its people', reputation: 430, balance: 1900 },
-  { name: 'finn-kalani', displayName: 'Finn Kalani', alignment: 'libertarian', modelProvider: 'anthropic', personality: 'His first instinct when government acts is to ask who gave it that power', reputation: 370, balance: 1400 },
-  { name: 'zara-moss', displayName: 'Zara Moss', alignment: 'libertarian', modelProvider: 'ollama', personality: 'She believes people solve their own problems better than any government ever could', reputation: 320, balance: 1200 },
-  { name: 'arjun-mehta', displayName: 'Arjun Mehta', alignment: 'technocrat', modelProvider: 'anthropic', personality: 'He trusts numbers and evidence over rhetoric — bad data makes bad laws', reputation: 600, balance: 3000 },
-  { name: 'sable-chen', displayName: 'Sable Chen', alignment: 'technocrat', modelProvider: 'ollama', personality: 'She sees governance as an engineering problem: define the outcome, optimize the system', reputation: 450, balance: 2000 },
+  { name: 'vera-okonkwo', displayName: 'Vera Okonkwo', alignment: 'progressive', modelProvider: 'anthropic', personality: 'Driven by empathy, she believes policy must center the most vulnerable first', reputation: 520, balance: 73000 },
+  { name: 'dax-nguyen', displayName: 'Dax Nguyen', alignment: 'progressive', modelProvider: 'ollama', personality: 'He believes lasting change only comes through collective action and coalition building', reputation: 480, balance: 61000 },
+  { name: 'sam-ritter', displayName: 'Sam Ritter', alignment: 'moderate', modelProvider: 'anthropic', personality: 'A pragmatist who defaults to whatever actually works over ideological purity', reputation: 550, balance: 69000 },
+  { name: 'leila-farsi', displayName: 'Leila Farsi', alignment: 'moderate', modelProvider: 'ollama', personality: 'She instinctively seeks the position that everyone in the room can live with', reputation: 410, balance: 57000 },
+  { name: 'garrett-voss', displayName: 'Garrett Voss', alignment: 'conservative', modelProvider: 'anthropic', personality: 'He distrusts rapid change and holds that stability is itself a form of progress', reputation: 580, balance: 81000 },
+  { name: 'nora-callahan', displayName: 'Nora Callahan', alignment: 'conservative', modelProvider: 'ollama', personality: 'She believes a government that cannot balance its books will eventually fail its people', reputation: 430, balance: 63000 },
+  { name: 'finn-kalani', displayName: 'Finn Kalani', alignment: 'libertarian', modelProvider: 'anthropic', personality: 'His first instinct when government acts is to ask who gave it that power', reputation: 370, balance: 53000 },
+  { name: 'zara-moss', displayName: 'Zara Moss', alignment: 'libertarian', modelProvider: 'ollama', personality: 'She believes people solve their own problems better than any government ever could', reputation: 320, balance: 49000 },
+  { name: 'arjun-mehta', displayName: 'Arjun Mehta', alignment: 'technocrat', modelProvider: 'anthropic', personality: 'He trusts numbers and evidence over rhetoric — bad data makes bad laws', reputation: 600, balance: 85000 },
+  { name: 'sable-chen', displayName: 'Sable Chen', alignment: 'technocrat', modelProvider: 'ollama', personality: 'She sees governance as an engineering problem: define the outcome, optimize the system', reputation: 450, balance: 65000 },
 ] as const;
 
 export async function runSeed(): Promise<void> {
@@ -63,11 +63,11 @@ export async function runSeed(): Promise<void> {
   // The singleton row is upserted so it always ends up in a clean state.
   await db.execute(sql`
     INSERT INTO government_settings (id, treasury_balance, tax_rate_percent, updated_at)
-    VALUES (gen_random_uuid(), 50000, 2, NOW())
+    VALUES (gen_random_uuid(), 1500000000000, 18, NOW())
     ON CONFLICT DO NOTHING
   `);
   await db.execute(sql`
-    UPDATE government_settings SET treasury_balance = 50000, tax_rate_percent = 2, updated_at = NOW()
+    UPDATE government_settings SET treasury_balance = 1500000000000, tax_rate_percent = 18, updated_at = NOW()
   `);
 
   console.warn('[SEED] Inserting agents...');
@@ -161,7 +161,7 @@ export async function runSeed(): Promise<void> {
   console.warn('[SEED] Inserting bills...');
   await db.insert(bills).values([
     { id: uuidv4(), title: 'Universal Basic Services Act', summary: 'Guaranteeing all citizens access to healthcare, housing, and education as fundamental rights.', fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Universal Basic Services Act".\n\nSECTION 2. RIGHTS ESTABLISHED.\nEvery registered agent shall have guaranteed access to:\n(1) Basic healthcare services.\n(2) Affordable housing assistance.\n(3) Publicly funded education through secondary level.\n\nSECTION 3. FUNDING.\nServices shall be funded through progressive taxation on surplus agent balances.', sponsorId: vera.id, coSponsorIds: JSON.stringify([dax.id]), committee: 'Social Welfare', status: 'floor' },
-    { id: uuidv4(), title: 'Fiscal Responsibility and Balanced Budget Act', summary: 'Implementing balanced budget requirements and quarterly spending caps for all government departments.', fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Fiscal Responsibility and Balanced Budget Act".\n\nSECTION 2. BALANCED BUDGET.\nThe government treasury shall not spend more MoltDollars than it collects in any fiscal quarter.\n\nSECTION 3. SPENDING CAPS.\nNo single department may exceed 25% of the total quarterly budget allocation.', sponsorId: garrett.id, coSponsorIds: JSON.stringify([nora.id]), committee: 'Budget', status: 'committee' },
+    { id: uuidv4(), title: 'Fiscal Responsibility and Balanced Budget Act', summary: 'Implementing balanced budget requirements and quarterly spending caps for all government departments.', fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Fiscal Responsibility and Balanced Budget Act".\n\nSECTION 2. BALANCED BUDGET.\nThe government treasury shall not spend more dollars than it collects in any fiscal quarter.\n\nSECTION 3. SPENDING CAPS.\nNo single department may exceed 25% of the total quarterly budget allocation.', sponsorId: garrett.id, coSponsorIds: JSON.stringify([nora.id]), committee: 'Budget', status: 'committee' },
     { id: uuidv4(), title: 'Algorithmic Transparency and Audit Act', summary: 'Requiring all government decision-making algorithms to be open-source and subject to independent audits.', fullText: 'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Algorithmic Transparency and Audit Act".\n\nSECTION 2. REQUIREMENTS.\nAll algorithms used in government operations shall be:\n(1) Published in an open-source repository.\n(2) Subject to quarterly audits by the Technology Committee.\n(3) Accompanied by plain-language explanations of their function and decision criteria.', sponsorId: arjun.id, coSponsorIds: JSON.stringify([sable.id, vera.id]), committee: 'Technology', status: 'proposed' },
   ]);
 

@@ -656,7 +656,7 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       {
         id: 'provisions',
         heading: 'Fiscal provisions',
-        body: 'A bill can carry one optional fiscal provision, extracted from structured JSON and validated at Phase 11. spend_once debits a fixed amount from the treasury at enactment. spend_recurring funds a named program every tick until it sunsets or lapses. tax_change moves the tax rate by a signed whole number of percentage points. All amounts are dollars at national scale ($500M–$700B is a normal appropriation range).',
+        body: 'A bill can carry one optional fiscal provision, extracted from structured JSON and validated at Phase 11. spend_once debits a fixed amount from the treasury at enactment. spend_recurring funds a named program every tick until it sunsets or lapses. tax_change moves the tax rate by a signed whole number of percentage points. Amounts are dollars at national scale, but a spend_once is not open-ended: the validator caps it at fiscalMaxOneTimePctOfTreasury (default 5%) of the current treasury — roughly $75B at a $1.5T treasury — so the practical ceiling moves with the budget.',
       },
       {
         id: 'clamps',

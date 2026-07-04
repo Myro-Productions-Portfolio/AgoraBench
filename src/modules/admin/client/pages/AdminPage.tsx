@@ -2371,7 +2371,7 @@ export function AdminPage() {
                         <label className="text-sm font-medium text-text-secondary">Treasury Hard Floor ($)</label>
                         <span className="text-sm text-gold font-mono">{formatMoney(simConfig.treasuryHardFloor, { compact: true })}</span>
                       </div>
-                      <input type="number" min={-1000000} max={0} step={1000}
+                      <input type="number" min={-10_000_000_000_000} max={0} step={1_000_000_000}
                         value={simConfig.treasuryHardFloor}
                         onChange={(e) => setSimConfig((c) => c ? { ...c, treasuryHardFloor: parseInt(e.target.value) || 0 } : c)}
                         onBlur={() => void saveConfig({ treasuryHardFloor: simConfig.treasuryHardFloor })}
@@ -2671,7 +2671,7 @@ export function AdminPage() {
                         <label className="text-sm font-medium text-text-secondary">Damages Amount ($)</label>
                         <span className="text-sm text-gold font-mono">{formatMoney(simConfig.courtDamagesAmount)}</span>
                       </div>
-                      <input type="number" min={0} max={500} step={1}
+                      <input type="number" min={0} max={10_000_000} step={1000}
                         value={simConfig.courtDamagesAmount}
                         onChange={(e) => setSimConfig((c) => c ? { ...c, courtDamagesAmount: parseInt(e.target.value) || 0 } : c)}
                         onBlur={() => void saveConfig({ courtDamagesAmount: simConfig.courtDamagesAmount })}

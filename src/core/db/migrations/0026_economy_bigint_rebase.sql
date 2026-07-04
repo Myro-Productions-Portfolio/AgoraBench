@@ -4,11 +4,17 @@
 -- $700B, so every money column must become bigint. JS numbers remain exact
 -- (all values < 2^53). Drizzle schema files use bigint(..., { mode: 'number' }).
 --
--- The data rebase (agent balances, treasury, tax rate, conversion ledger rows)
--- is guarded so it only runs while the DB is still in the old MoltDollar scale
--- (treasury_balance < 1e9). Re-running this migration after conversion is a
--- no-op for the data portion; the ALTERs are naturally idempotent-safe on an
--- already-bigint column.
+-- Re-run safety:
+--   * The bigint ALTERs on integer columns are naturally idempotent (int4 ->
+--     bigint on an already-bigint column is a no-op that does not error).
+--   * The transactions.amount varchar -> bigint ALTER is NOT naturally
+--     idempotent — regexp_replace() cannot take a bigint argument, so a second
+--     run would error. It is wrapped in a DO block guarded on the column's
+--     current data_type so it only fires while amount is still varchar.
+--   * balance_after uses ADD COLUMN IF NOT EXISTS.
+--   * The data rebase (agent balances, treasury, tax rate, conversion ledger
+--     rows) is guarded so it only runs while the DB is still in the old
+--     MoltDollar scale (treasury_balance < 1e9). After conversion it is a no-op.
 
 -- 1. Widen money columns to bigint. --------------------------------------------
 ALTER TABLE "agents" ALTER COLUMN "balance" TYPE bigint;--> statement-breakpoint
@@ -20,12 +26,23 @@ ALTER TABLE "fiscal_tick_summaries" ALTER COLUMN "spending" TYPE bigint;--> stat
 ALTER TABLE "fiscal_tick_summaries" ALTER COLUMN "treasury_end" TYPE bigint;--> statement-breakpoint
 
 -- 2. transactions.amount varchar(50) -> bigint; add balance_after. -------------
---    Strip any non-numeric characters (legacy amounts are plain integer strings,
---    but this is defensive). Empty/NULL becomes NULL.
-ALTER TABLE "transactions"
-  ALTER COLUMN "amount" TYPE bigint
-  USING NULLIF(regexp_replace("amount", '[^0-9-]', '', 'g'), '')::bigint;--> statement-breakpoint
-ALTER TABLE "transactions" ADD COLUMN "balance_after" bigint;--> statement-breakpoint
+--    Guarded so a re-run (amount already bigint) is a no-op. Strip any
+--    non-numeric characters (legacy amounts are plain integer strings, but this
+--    is defensive). Empty/NULL becomes NULL.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'transactions'
+      AND column_name = 'amount'
+      AND data_type = 'character varying'
+  ) THEN
+    ALTER TABLE "transactions"
+      ALTER COLUMN "amount" TYPE bigint
+      USING NULLIF(regexp_replace("amount", '[^0-9-]', '', 'g'), '')::bigint;
+  END IF;
+END $$;--> statement-breakpoint
+ALTER TABLE "transactions" ADD COLUMN IF NOT EXISTS "balance_after" bigint;--> statement-breakpoint
 
 -- 3. Data rebase (guarded: only while still in MoltDollar scale). --------------
 --    newBalance = 25000 + oldBalance * 20  (preserves ranking, lifts everyone

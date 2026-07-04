@@ -77,6 +77,28 @@ export async function updateApproval(
   }
 }
 
+/* Compact dollar string for prompt text (e.g. 75000000000 -> "$75B"). Server-side
+   twin of the client formatMoney({compact}); LLM-facing, so no unicode minus. */
+function compactDollars(v: number): string {
+  if (!Number.isFinite(v)) return '$0';
+  const abs = Math.abs(v);
+  const units: Array<[number, string]> = [
+    [1_000_000_000_000, 'T'],
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  for (const [value, suffix] of units) {
+    if (abs >= value) {
+      const scaled = abs / value;
+      const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+      const text = scaled.toFixed(digits).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
+      return `${v < 0 ? '-' : ''}$${text}${suffix}`;
+    }
+  }
+  return `${v < 0 ? '-' : ''}$${abs.toLocaleString('en-US')}`;
+}
+
 /* ── Per-Agent Whip Follow Rate ─────────────────────────────────────── */
 function computeWhipFollowRate(
   agentVoteAlignment: number | null,
@@ -4328,9 +4350,21 @@ agentTickQueue.process(async () => {
       ? `${expiringNote} Renew one by proposing an amendment to its law with a spend_recurring fiscal provision.`
       : '';
 
-    const treasuryRatio = (govSettings11?.treasuryBalance ?? 50000) / 50000;
+    /* Crisis ratio is measured against the dollar-era treasury seed (1.5T),
+       matching TREASURY_SEED_VALUE in ai.ts — not the retired 50k MoltDollar seed. */
+    const TREASURY_SEED_11 = 1_500_000_000_000;
+    const treasuryRatio = (govSettings11?.treasuryBalance ?? TREASURY_SEED_11) / TREASURY_SEED_11;
     const crisisThreshold = rc.treasuryCrisisThreshold ?? 0.20;
     const crisisMultiplier = rc.economyProposalMultiplierCrisis ?? 1.4;
+
+    /* Advertised spend_once ceiling for the prompt: the live clamp is
+       fiscalMaxOneTimePctOfTreasury% of the current treasury (fiscalParsing.ts),
+       so quote that instead of a hardcoded range that the validator would reject. */
+    const treasury11 = govSettings11?.treasuryBalance ?? 0;
+    const maxOnce11 = treasury11 > 0
+      ? Math.max(1, Math.floor((treasury11 * rc.fiscalMaxOneTimePctOfTreasury) / 100))
+      : 0;
+    const maxOnceCompact = compactDollars(maxOnce11);
 
     /* Fetch latest coalition snapshot for bloc context in proposals */
     const [latestSnapshot] = await db.select()
@@ -4411,8 +4445,9 @@ agentTickQueue.process(async () => {
       /* Phase 3: optional fiscal payload — extracted from structured JSON only
          (never fullText), validated by parseFiscalField, no-op on any failure. */
       const fiscalNote11 =
-        ` Optional fiscal provision (all amounts in US dollars at national scale, ` +
-        `e.g. 500000000 to 700000000000): "spend_once" spends amount from the treasury once; ` +
+        ` Optional fiscal provision (all amounts in US dollars at national scale): ` +
+        `"spend_once" spends amount from the treasury once — capped this tick at ${maxOnceCompact} ` +
+        `(${rc.fiscalMaxOneTimePctOfTreasury}% of the current treasury); ` +
         `"spend_recurring" funds a named program at amount per tick until it lapses; ` +
         `"tax_change" moves the tax rate by taxDelta whole points; use kind "none" for no fiscal effect.`;
 
@@ -4851,13 +4886,16 @@ agentTickQueue.process(async () => {
           if (annual === 0) continue;
           const { gross, withheld, net } = computePaycheck(annual, taxRatePct);
           if (net <= 0) continue;
-          if (treasuryBalance < net) {
+          /* Treasury pays the FULL gross: net lands in the agent's balance and
+             the withheld portion is remitted back as revenue in Phase 13. The
+             solvency gate is therefore on gross, not net. */
+          if (treasuryBalance < gross) {
             console.warn(`[SIMULATION] Phase 12: Treasury too low to pay ${pos.type} paycheck`);
             await db.insert(activityEvents).values({
               type: 'treasury_crisis',
               agentId: pos.agentId,
               title: `Treasury too low to pay ${pos.type} paycheck`,
-              description: `Treasury balance insufficient to cover $${net} net paycheck`,
+              description: `Treasury balance insufficient to cover $${gross} gross paycheck`,
               metadata: JSON.stringify({ positionType: pos.type, gross, net, treasuryBalance }),
             });
             continue;
@@ -4871,8 +4909,11 @@ agentTickQueue.process(async () => {
           const newBalance = (balanceByAgent.get(pos.agentId) ?? 0) + net;
           balanceByAgent.set(pos.agentId, newBalance);
 
-          treasuryBalance -= net;
-          tickSpendingThisTick += net;
+          /* Treasury debits GROSS; Phase 13 re-credits withheld as revenue.
+             Net treasury effect per paycheck is therefore −net (gross − withheld),
+             spending reports gross, revenue reports the withholding. */
+          treasuryBalance -= gross;
+          tickSpendingThisTick += gross;
           withheldThisTick += withheld;
 
           /* Two ledger rows: gross salary in (balance_after reflects the net
@@ -4890,7 +4931,7 @@ agentTickQueue.process(async () => {
             fromAgentId: pos.agentId,
             toAgentId: undefined,
             amount: withheld,
-            type: 'fee',
+            type: 'tax',
             description: 'Income tax withholding',
             balanceAfter: newBalance,
           });
@@ -5619,7 +5660,7 @@ agentTickQueue.process(async () => {
         .from(activityEvents)
         .where(and(
           inArray(activityEvents.type, [
-            'committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'floor_amendment',
+            'committee_review', 'law_struck_down', 'media_event', 'appointment', 'tax_collected', 'revenue_collected', 'floor_amendment',
             /* Phase 3 fiscal events — pickup is this hard whitelist, NOT automatic:
                without these entries fiscal news never reaches the Gazette. */
             'law_sunset', 'budget_session', 'program_lapsed', 'tax_rate_changed', 'appropriation_onetime',

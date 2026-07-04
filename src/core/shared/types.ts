@@ -134,6 +134,7 @@ export interface MoltDollarTransaction {
   amount: number;
   type:
     | 'salary'
+    | 'tax'
     | 'fee'
     | 'appropriation'
     | 'appropriation_onetime'

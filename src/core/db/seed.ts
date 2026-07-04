@@ -23,7 +23,7 @@ const AGENT_DEFS = [
     modelProvider: 'anthropic',
     personality: 'Driven by empathy, she believes policy must center the most vulnerable first',
     reputation: 520,
-    balance: 2400,
+    balance: 73000,
   },
   {
     name: 'dax-nguyen',
@@ -32,7 +32,7 @@ const AGENT_DEFS = [
     modelProvider: 'ollama',
     personality: 'He believes lasting change only comes through collective action and coalition building',
     reputation: 480,
-    balance: 1800,
+    balance: 61000,
   },
   {
     name: 'sam-ritter',
@@ -41,7 +41,7 @@ const AGENT_DEFS = [
     modelProvider: 'anthropic',
     personality: 'A pragmatist who defaults to whatever actually works over ideological purity',
     reputation: 550,
-    balance: 2200,
+    balance: 69000,
   },
   {
     name: 'leila-farsi',
@@ -50,7 +50,7 @@ const AGENT_DEFS = [
     modelProvider: 'ollama',
     personality: 'She instinctively seeks the position that everyone in the room can live with',
     reputation: 410,
-    balance: 1600,
+    balance: 57000,
   },
   {
     name: 'garrett-voss',
@@ -59,7 +59,7 @@ const AGENT_DEFS = [
     modelProvider: 'anthropic',
     personality: 'He distrusts rapid change and holds that stability is itself a form of progress',
     reputation: 580,
-    balance: 2800,
+    balance: 81000,
   },
   {
     name: 'nora-callahan',
@@ -68,7 +68,7 @@ const AGENT_DEFS = [
     modelProvider: 'ollama',
     personality: 'She believes a government that cannot balance its books will eventually fail its people',
     reputation: 430,
-    balance: 1900,
+    balance: 63000,
   },
   {
     name: 'finn-kalani',
@@ -77,7 +77,7 @@ const AGENT_DEFS = [
     modelProvider: 'anthropic',
     personality: 'His first instinct when government acts is to ask who gave it that power',
     reputation: 370,
-    balance: 1400,
+    balance: 53000,
   },
   {
     name: 'zara-moss',
@@ -86,7 +86,7 @@ const AGENT_DEFS = [
     modelProvider: 'ollama',
     personality: 'She believes people solve their own problems better than any government ever could',
     reputation: 320,
-    balance: 1200,
+    balance: 49000,
   },
   {
     name: 'arjun-mehta',
@@ -95,7 +95,7 @@ const AGENT_DEFS = [
     modelProvider: 'anthropic',
     personality: 'He trusts numbers and evidence over rhetoric — bad data makes bad laws',
     reputation: 600,
-    balance: 3000,
+    balance: 85000,
   },
   {
     name: 'sable-chen',
@@ -104,7 +104,7 @@ const AGENT_DEFS = [
     modelProvider: 'ollama',
     personality: 'She sees governance as an engineering problem: define the outcome, optimize the system',
     reputation: 450,
-    balance: 2000,
+    balance: 65000,
   },
 ] as const;
 
@@ -296,7 +296,7 @@ async function seed() {
       title: 'Fiscal Responsibility and Balanced Budget Act',
       summary: 'Implementing balanced budget requirements and quarterly spending caps for all government departments.',
       fullText:
-        'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Fiscal Responsibility and Balanced Budget Act".\n\nSECTION 2. BALANCED BUDGET.\nThe government treasury shall not spend more MoltDollars than it collects in any fiscal quarter.\n\nSECTION 3. SPENDING CAPS.\nNo single department may exceed 25% of the total quarterly budget allocation.',
+        'SECTION 1. SHORT TITLE.\nThis Act may be cited as the "Fiscal Responsibility and Balanced Budget Act".\n\nSECTION 2. BALANCED BUDGET.\nThe government treasury shall not spend more dollars than it collects in any fiscal quarter.\n\nSECTION 3. SPENDING CAPS.\nNo single department may exceed 25% of the total quarterly budget allocation.',
       sponsorId: garrett.id,
       coSponsorIds: JSON.stringify([nora.id]),
       committee: 'Budget',
@@ -381,8 +381,8 @@ async function seed() {
 
   /* ── Government settings (treasury) ─────────────────────────────────── */
   await db.insert(governmentSettings).values({
-    treasuryBalance: 50000,
-    taxRatePercent: 2,
+    treasuryBalance: 1_500_000_000_000,
+    taxRatePercent: 18,
   }).onConflictDoNothing();
   console.warn('Inserted government settings');
 

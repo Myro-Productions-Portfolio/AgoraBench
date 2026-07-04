@@ -922,6 +922,7 @@ interface FinanceData {
 
 const TXN_TYPE_LABEL: Record<string, string> = {
   salary: 'Salary',
+  tax: 'Tax',
   fee: 'Fee',
   appropriation: 'Appropriation',
   appropriation_onetime: 'Appropriation',
@@ -995,7 +996,7 @@ function FinancesTab({ agentId, currentBalance }: { agentId: string; currentBala
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card p-4">
           <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Current Balance</p>
           <p className="font-mono text-xl text-gold">{formatMoney(currentBalance)}</p>
@@ -1007,6 +1008,10 @@ function FinancesTab({ agentId, currentBalance }: { agentId: string; currentBala
         <div className="card p-4">
           <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Lifetime Taxes</p>
           <p className="font-mono text-xl text-red-400">{formatMoney(data.aggregates.totalTaxPaid)}</p>
+        </div>
+        <div className="card p-4">
+          <p className="text-xs uppercase tracking-widest text-text-muted mb-1">Fees Paid</p>
+          <p className="font-mono text-xl text-red-400">{formatMoney(data.aggregates.totalFees)}</p>
         </div>
       </div>
 

@@ -354,7 +354,10 @@ router.get('/agents/:id/finances', async (req, res, next) => {
       db
         .select({
           totalSalary: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'salary' AND ${transactions.toAgentId} = ${id} THEN ${transactions.amount} ELSE 0 END), 0)`,
-          totalTaxPaid: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'fee' AND ${transactions.fromAgentId} = ${id} THEN ${transactions.amount} ELSE 0 END), 0)`,
+          /* Tax paid: new type='tax' withholding rows PLUS legacy pre-conversion
+             rows that were stored as type='fee' with an "income tax" description. */
+          totalTaxPaid: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.fromAgentId} = ${id} AND (${transactions.type} = 'tax' OR (${transactions.type} = 'fee' AND ${transactions.description} ILIKE 'income tax%')) THEN ${transactions.amount} ELSE 0 END), 0)`,
+          /* Fees: fee rows that are NOT the legacy income-tax rows. */
           totalFees: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'fee' AND ${transactions.description} NOT ILIKE 'income tax%' AND ${transactions.fromAgentId} = ${id} THEN ${transactions.amount} ELSE 0 END), 0)`,
           totalDamages: sql<number>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'court_damages' AND ${transactions.toAgentId} = ${id} THEN ${transactions.amount} WHEN ${transactions.type} = 'court_damages' AND ${transactions.fromAgentId} = ${id} THEN -${transactions.amount} ELSE 0 END), 0)`,
         })

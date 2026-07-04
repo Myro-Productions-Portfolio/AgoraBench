@@ -1,5 +1,5 @@
 import Bull from 'bull';
-import { eq, and, inArray, isNotNull, lte, gte, gt, lt, asc, desc, count, sql } from 'drizzle-orm';
+import { eq, ne, and, inArray, isNotNull, lte, gte, gt, lt, asc, desc, count, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
@@ -42,7 +42,7 @@ import { pickTopCommittees, selectChair, tallyWeightedRatification, type Canonic
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
 import { expectedTickRevenue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
-import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled } from '../lib/courtMath.js';
+import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
 import { buildGazetteDigest } from '../lib/gazetteDigest.js';
@@ -3247,6 +3247,73 @@ agentTickQueue.process(async () => {
         );
       };
 
+      /* Precedent injection — prior DECIDED rulings a court/counsel would
+         actually cite. Direct precedent (same challenged law, newest first)
+         leads; general precedent (most recent decided cases of the same type)
+         fills the rest. Merged direct-first, deduped by id, capped at 5, and
+         formatted via the pure courtMath helpers. Returns '' when no
+         precedent exists — the common early-sim case pays zero prompt cost.
+         Both queries use inArray/eq only (never raw ANY, per project rule 2). */
+      const PRECEDENT_CAP = 5;
+      const buildPrecedentInjection10 = async (c: CourtCaseRow10): Promise<string> => {
+        const precedentColumns = {
+          id: courtCases.id,
+          caseNumber: courtCases.caseNumber,
+          caption: courtCases.caption,
+          outcome: courtCases.outcome,
+          votesFor: courtCases.votesFor,
+          votesAgainst: courtCases.votesAgainst,
+          majorityOpinion: courtCases.majorityOpinion,
+        };
+
+        /* Direct precedent — other decided cases challenging the same law. */
+        const directRows = c.lawId
+          ? await db
+              .select(precedentColumns)
+              .from(courtCases)
+              .where(and(
+                eq(courtCases.status, 'decided'),
+                eq(courtCases.lawId, c.lawId),
+                ne(courtCases.id, c.id),
+              ))
+              .orderBy(desc(courtCases.decidedTick))
+              .limit(PRECEDENT_CAP)
+          : [];
+
+        /* General precedent — most recent decided cases of the same type. */
+        const generalRows = directRows.length < PRECEDENT_CAP
+          ? await db
+              .select(precedentColumns)
+              .from(courtCases)
+              .where(and(
+                eq(courtCases.status, 'decided'),
+                eq(courtCases.caseType, c.caseType),
+                ne(courtCases.id, c.id),
+              ))
+              .orderBy(desc(courtCases.decidedTick))
+              .limit(PRECEDENT_CAP)
+          : [];
+
+        /* Merge direct-first, dedup by id, cap. */
+        const seen = new Set<string>();
+        const merged: typeof directRows = [];
+        for (const row of [...directRows, ...generalRows]) {
+          if (seen.has(row.id) || merged.length >= PRECEDENT_CAP) continue;
+          seen.add(row.id);
+          merged.push(row);
+        }
+
+        const summaries: PrecedentSummary[] = merged.map((row) => ({
+          caseNumber: row.caseNumber,
+          caption: row.caption,
+          outcome: row.outcome,
+          votesFor: row.votesFor ?? 0,
+          votesAgainst: row.votesAgainst ?? 0,
+          holding: distillHolding(row.majorityOpinion),
+        }));
+        return buildPrecedentInjection(summaries);
+      };
+
       /* Mootness gate — first check at EVERY stage entry, before any LLM
          call. Challenges die with their law (Phase 9.7 sunset/lapse can
          kill it mid-arc); all cases die with an inactive party. */
@@ -3408,6 +3475,8 @@ agentTickQueue.process(async () => {
             }
 
             const questionBlock = `Question presented: ${excerpt10(c.questionPresented, 300)}`;
+            /* Prior rulings counsel and the bench can cite ('' if none). */
+            const precedentBlock10 = await buildPrecedentInjection10(c);
             const jsonFirst = (role: string): string =>
               `Respond with exactly this JSON: {"action":"${role}","reasoning":"..."} `;
 
@@ -3426,7 +3495,7 @@ agentTickQueue.process(async () => {
                   prompt =
                     jsonFirst('ask_question').replace('"..."', '"one probing question from the bench, one sentence"') +
                     `You are Justice ${call.actor.displayName} of the Supreme Court of Agora, hearing oral argument in ${c.caption} (${c.caseNumber}). ` +
-                    `Ask counsel one pointed question. ${questionBlock} ${subjectBlock} ${constitutionBlock10}`;
+                    `Ask counsel one pointed question. ${questionBlock} ${subjectBlock} ${precedentBlock10}${constitutionBlock10}`;
                 } else {
                   const side = call.kind === 'petitioner'
                     ? (c.caseType === 'constitutional_challenge'
@@ -3438,7 +3507,7 @@ agentTickQueue.process(async () => {
                   prompt =
                     jsonFirst('present_argument').replace('"..."', '"your oral argument in 2-4 sentences"') +
                     `You are ${call.actor.displayName}, ${side}, before the Supreme Court of Agora in ${c.caption} (${c.caseNumber}). ` +
-                    `${questionBlock} ${subjectBlock} ${constitutionBlock10}`;
+                    `${questionBlock} ${subjectBlock} ${precedentBlock10}${constitutionBlock10}`;
                 }
                 return generateAgentDecision(
                   asAgentRecord10(call.actor),
@@ -3530,6 +3599,9 @@ agentTickQueue.process(async () => {
               (petArg ? `Petitioner argued: ${excerpt10(petArg, 350)} ` : '') +
               (resArg ? `Respondent argued: ${excerpt10(resArg, 350)}` : '');
 
+            /* Prior rulings the justices can cite in conference ('' if none). */
+            const precedentBlock10 = await buildPrecedentInjection10(c);
+
             /* JSON instruction FIRST — ai.ts truncates the TAIL of
                contextMessage, so the instruction must lead. Per-section
                budgets keep the total <= ~3,400 chars. */
@@ -3545,7 +3617,7 @@ agentTickQueue.process(async () => {
                   voteInstruction +
                   `You are Justice ${justice.displayName} of the Supreme Court of Agora, deciding ${c.caption} (${c.caseNumber}) in conference. ` +
                   `Question presented: ${excerpt10(c.questionPresented, 300)} ` +
-                  `${subjectBlock} ${argumentsBlock} ${constitutionBlock10}`;
+                  `${subjectBlock} ${argumentsBlock} ${precedentBlock10}${constitutionBlock10}`;
                 return generateAgentDecision(asAgentRecord10(justice), contextMessage, 'judicial_review')
                   .then((decision) => ({ justice, decision }));
               }),
@@ -3672,6 +3744,10 @@ agentTickQueue.process(async () => {
               .slice(0, 3)
               .join(' | ');
 
+            /* Prior rulings the opinion authors can cite ('' if none) — real
+               opinions lean hardest on precedent. */
+            const precedentBlock10 = await buildPrecedentInjection10(c);
+
             const opinionInstruction =
               `Respond with exactly this JSON: {"action":"write_opinion","reasoning":"one sentence","data":{"opinion":"the opinion text, about 150-200 words","citedArticles":[2,5]}} ` +
               `citedArticles must be article numbers 1-8. `;
@@ -3692,6 +3768,7 @@ agentTickQueue.process(async () => {
                   `Question presented: ${excerpt10(c.questionPresented, 300)} ` +
                   `${subjectBlock} ` +
                   (call.kind === 'majority' && majorityReasonings ? `Views of the majority: ${majorityReasonings} ` : '') +
+                  precedentBlock10 +
                   constitutionBlock10;
                 return generateAgentDecision(asAgentRecord10(call.author), contextMessage, 'court_opinion')
                   .then((decision) => ({ call, decision }));

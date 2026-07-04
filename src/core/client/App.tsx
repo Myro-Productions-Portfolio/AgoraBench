@@ -24,6 +24,7 @@ import { ElectionDetailPage } from '../../modules/elections/client/pages/Electio
 import { LawsPage } from '../../modules/legislation/client/pages/LawsPage';
 import { LawDetailPage } from '../../modules/legislation/client/pages/LawDetailPage';
 import { CourtPage } from '../../modules/legislation/client/pages/CourtPage';
+import { CourtRecordsPage } from '../../modules/legislation/client/pages/CourtRecordsPage';
 import { CasePage } from '../../modules/legislation/client/pages/CasePage';
 import { ObserverPage } from '../../modules/admin/client/pages/ObserverPage';
 import { ResearcherPage } from '../../modules/admin/client/pages/ResearcherPage';
@@ -51,6 +52,7 @@ export function App() {
         <Route path="/laws" element={<LawsPage />} />
         <Route path="/laws/:id" element={<LawDetailPage />} />
         <Route path="/court" element={<CourtPage />} />
+        <Route path="/court/records" element={<CourtRecordsPage />} />
         <Route path="/court/cases/:id" element={<CasePage />} />
         <Route path="/elections" element={<ElectionsPage />} />
         <Route path="/elections/:id" element={<ElectionDetailPage />} />

@@ -263,7 +263,7 @@ export function CourtPage() {
     setLoading(true);
     Promise.all([
       courtApi.stats(),
-      courtApi.cases(statusFilter || undefined),
+      courtApi.cases({ status: statusFilter || undefined, limit: 100 }),
     ])
       .then(([statsRes, casesRes]) => {
         if (statsRes.data) setStats(statsRes.data as CourtStats);
@@ -342,7 +342,15 @@ export function CourtPage() {
       {/* Docket */}
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="font-serif text-lg font-semibold text-stone">The Docket</h2>
+          <div className="flex items-baseline gap-4">
+            <h2 className="font-serif text-lg font-semibold text-stone">The Docket</h2>
+            <Link
+              to="/court/records"
+              className="text-badge text-gold hover:underline uppercase tracking-widest whitespace-nowrap"
+            >
+              Court Records →
+            </Link>
+          </div>
           <div className="flex gap-1 flex-wrap">
             {filterOptions.map((opt) => (
               <button
@@ -365,7 +373,16 @@ export function CourtPage() {
         ) : cases.length === 0 ? (
           <p className="text-text-muted py-16 text-center">No cases on the docket.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          /* Above ~6 cards the docket scrolls internally so the page header,
+             stat tiles, and filters stay put instead of the whole page
+             growing through 100 cases. ≤6 cards -> no constraint. */
+          <div
+            className={
+              cases.length > 6
+                ? 'grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[52rem] overflow-y-auto pr-2'
+                : 'grid grid-cols-1 md:grid-cols-2 gap-4'
+            }
+          >
             {cases.map((c) => (
               <CaseCard key={c.id} c={c} currentTick={currentTick} />
             ))}

@@ -8,6 +8,13 @@ interface ActivityItem {
 
 interface ActivityFeedProps {
   items: ActivityItem[];
+  /**
+   * When true, the feed fills its positioned parent (`absolute inset-0`) and
+   * scrolls internally, so its content does not contribute to the grid row
+   * height. Parent must be `position: relative` with a min-height. Default
+   * (false) preserves the fixed `h-[440px]` box used elsewhere.
+   */
+  fill?: boolean;
 }
 
 const TYPE_ICON_CLASSES = {
@@ -50,10 +57,14 @@ const TYPE_ICONS = {
   ),
 };
 
-export function ActivityFeed({ items }: ActivityFeedProps) {
+export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
   return (
     <div
-      className="h-[440px] overflow-y-auto flex flex-col gap-2 pr-1"
+      className={
+        fill
+          ? 'absolute inset-0 overflow-y-auto flex flex-col gap-2 pr-1'
+          : 'h-[440px] overflow-y-auto flex flex-col gap-2 pr-1'
+      }
       role="feed"
       aria-label="Recent activity"
     >

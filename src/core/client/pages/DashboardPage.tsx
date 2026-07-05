@@ -356,7 +356,9 @@ export function DashboardPage() {
       <section className="px-8 xl:px-16 py-section">
         <SectionHeader title="Recent Activity" badge="Last Hour" />
         <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
-          <ActivityFeed items={mappedActivity} />
+          <div className="relative min-h-[440px]">
+            <ActivityFeed items={mappedActivity} fill />
+          </div>
           <div>
             <ForumWidget />
             {allAgents.length > 0 && (() => {

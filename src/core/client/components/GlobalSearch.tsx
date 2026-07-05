@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { searchApi } from '../lib/api';
+import { UsersIcon, DocumentIcon, FlagIcon, BallotIcon } from './icons';
+import type { IconProps } from './icons';
 
 interface AgentResult {
   id: string;
@@ -87,11 +89,11 @@ function flattenResults(data: SearchResults): FlatResult[] {
   return results;
 }
 
-const CATEGORY_ICONS: Record<string, string> = {
-  Agents: '◈',
-  Legislation: '§',
-  Parties: '⚑',
-  Elections: '◎',
+const CATEGORY_ICONS: Record<string, (props: IconProps) => React.ReactElement> = {
+  Agents: UsersIcon,
+  Legislation: DocumentIcon,
+  Parties: FlagIcon,
+  Elections: BallotIcon,
 };
 
 export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
@@ -239,10 +241,12 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
               </div>
             )}
 
-            {groupsWithIdx.map(({ category, items }) => (
+            {groupsWithIdx.map(({ category, items }) => {
+              const CategoryIcon = CATEGORY_ICONS[category];
+              return (
               <div key={category}>
-                <div className="px-4 py-2 text-badge uppercase tracking-widest text-text-muted border-b border-border/40 bg-capitol-deep/40">
-                  <span className="mr-1.5">{CATEGORY_ICONS[category]}</span>
+                <div className="flex items-center gap-1.5 px-4 py-2 text-badge uppercase tracking-widest text-text-muted border-b border-border/40 bg-capitol-deep/40">
+                  {CategoryIcon && <CategoryIcon size={13} />}
                   {category}
                 </div>
                 {items.map(({ item, idx }) => (
@@ -271,7 +275,8 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
                   </button>
                 ))}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

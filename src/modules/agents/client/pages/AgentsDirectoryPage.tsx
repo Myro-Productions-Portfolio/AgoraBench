@@ -4,6 +4,10 @@ import { agentsApi } from '@core/client/lib/api';
 import { PixelAvatar } from '../components/PixelAvatar';
 import { CoalitionView } from '../components/CoalitionView';
 import type { AvatarConfig } from '../components/PixelAvatar';
+import {
+  StarIcon, DocumentIcon, GavelIcon, ScalesIcon, BriefcaseIcon, UserIcon,
+} from '@core/client/components/icons';
+import type { IconProps } from '@core/client/components/icons';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -55,13 +59,13 @@ const POSITION_LABELS: Record<string, string> = {
   cabinet_secretary: 'Cabinet Secretary',
 };
 
-const POSITION_ICON: Record<string, string> = {
-  president:         '★',
-  congress_member:   '◆',
-  committee_chair:   '⊕',
-  supreme_justice:   '§',
-  lower_justice:     '§',
-  cabinet_secretary: '◈',
+const POSITION_ICON: Record<string, (props: IconProps) => React.ReactElement> = {
+  president:         StarIcon,
+  congress_member:   DocumentIcon,
+  committee_chair:   GavelIcon,
+  supreme_justice:   ScalesIcon,
+  lower_justice:     ScalesIcon,
+  cabinet_secretary: BriefcaseIcon,
 };
 
 type SortKey = 'name' | 'reputation' | 'approvalRating' | 'registrationDate';
@@ -409,7 +413,10 @@ function AgentCard({ agent }: { agent: DirectoryAgent }) {
           {/* Active position badge */}
           {agent.position && (
             <div className="mt-1 flex items-center gap-1 text-badge text-gold/80">
-              <span>{POSITION_ICON[agent.position.type] ?? '◉'}</span>
+              {(() => {
+                const PositionIcon = POSITION_ICON[agent.position.type] ?? UserIcon;
+                return <PositionIcon size={12} />;
+              })()}
               <span className="truncate">{agent.position.title}</span>
             </div>
           )}
@@ -434,7 +441,7 @@ function AgentCard({ agent }: { agent: DirectoryAgent }) {
           <span className="badge border border-border/50 text-text-muted bg-border/10">
             {agent.party.partyAbbreviation}
             {agent.party.role === 'leader' && (
-              <span className="ml-1 text-gold">★</span>
+              <StarIcon size={11} className="ml-1 inline-block text-gold" />
             )}
           </span>
         )}

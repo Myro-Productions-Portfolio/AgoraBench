@@ -9,15 +9,22 @@ import { ToastContainer } from './ToastContainer';
 import { isTickerEnabled, setTickerEnabled, onTickerChange } from '../lib/tickerPrefs';
 import { reopenConsentBanner } from '../lib/cookieConsent';
 import { toast } from '../lib/toastStore';
+import {
+  CapitolIcon, UsersIcon, DocumentIcon, ScalesIcon, FlagIcon,
+  FlaskIcon, SettingsIcon, UserIcon,
+} from './icons';
+import type { IconProps } from './icons';
 
 type NavSubItem = { to: string; label: string; description: string };
+type NavIconComponent = (props: IconProps) => React.ReactElement;
 type NavItem =
-  | { label: string; to: string; subitems?: never }
-  | { label: string; to?: never; subitems: NavSubItem[] };
+  | { label: string; Icon: NavIconComponent; to: string; subitems?: never }
+  | { label: string; Icon: NavIconComponent; to?: never; subitems: NavSubItem[] };
 
 const NAV_ITEMS: NavItem[] = [
   {
     label: 'Capitol',
+    Icon: CapitolIcon,
     subitems: [
       { to: '/', label: 'Dashboard', description: 'Government overview and live activity' },
       { to: '/capitol-map', label: 'Capitol Map', description: 'Interactive map of the capitol complex' },
@@ -26,10 +33,12 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     label: 'Agents',
+    Icon: UsersIcon,
     to: '/agents',
   },
   {
     label: 'Legislative',
+    Icon: DocumentIcon,
     subitems: [
       { to: '/legislation', label: 'Bills', description: 'Active legislation in committee and on the floor' },
       { to: '/laws', label: 'Laws', description: 'Enacted legislation and its effects' },
@@ -37,12 +46,14 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     label: 'Judicial',
+    Icon: ScalesIcon,
     subitems: [
       { to: '/court', label: 'Court Docket', description: 'Active and resolved judicial reviews' },
     ],
   },
   {
     label: 'Civic',
+    Icon: FlagIcon,
     subitems: [
       { to: '/elections', label: 'Elections', description: 'Campaigns, voting, and results' },
       { to: '/parties', label: 'Parties', description: 'Political parties and membership' },
@@ -356,7 +367,9 @@ export function Layout() {
             </span>
           </div>
           <div className="flex h-full">
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.map((item) => {
+              const NavIcon = item.Icon;
+              return (
               <div
                 key={item.label}
                 className="relative h-full flex"
@@ -367,13 +380,14 @@ export function Layout() {
                   <NavLink
                     to={item.to}
                     className={({ isActive }) =>
-                      `flex items-center px-5 h-full text-nav-link font-medium uppercase tracking-wide border-b-2 transition-all duration-200 ${
+                      `flex items-center gap-1.5 px-5 h-full text-nav-link font-medium uppercase tracking-wide border-b-2 transition-all duration-200 ${
                         isActive
                           ? 'text-gold border-gold'
                           : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-white/[0.03]'
                       }`
                     }
                   >
+                    <NavIcon size={14} className="opacity-70" />
                     {item.label}
                   </NavLink>
                 ) : (
@@ -384,6 +398,7 @@ export function Layout() {
                         : 'text-text-secondary border-transparent hover:text-text-primary hover:bg-white/[0.03]'
                     }`}
                   >
+                    <NavIcon size={14} className="opacity-70" />
                     {item.label}
                     <svg viewBox="0 0 10 6" className="w-2 h-2 opacity-50" aria-hidden="true">
                       <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" />
@@ -419,7 +434,8 @@ export function Layout() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -505,7 +521,7 @@ export function Layout() {
                       }`
                     }
                   >
-                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">🔬</span>
+                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-current flex-shrink-0"><FlaskIcon size={15} /></span>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider">Researcher</p>
                       <p className="text-[10px] text-text-muted mt-0.5">Deep analysis & data tools</p>
@@ -521,7 +537,7 @@ export function Layout() {
                         }`
                       }
                     >
-                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">⚙️</span>
+                      <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-current flex-shrink-0"><SettingsIcon size={15} /></span>
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-wider">Admin</p>
                         <p className="text-[10px] text-text-muted mt-0.5">Simulation controls & config</p>
@@ -538,7 +554,7 @@ export function Layout() {
                       }`
                     }
                   >
-                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-sm flex-shrink-0">👤</span>
+                    <span className="w-6 h-6 rounded flex items-center justify-center bg-white/[0.06] text-current flex-shrink-0"><UserIcon size={15} /></span>
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wider">Profile</p>
                       <p className="text-[10px] text-text-muted mt-0.5">Your settings & preferences</p>
@@ -589,6 +605,12 @@ export function Layout() {
       {/* Footer — hidden on admin (fixed-shell layout) */}
       {!location.pathname.startsWith('/admin') && (
         <footer className="text-center py-8 border-t border-border mt-8">
+          <div className="flex items-center justify-center gap-2 mb-3 text-gold/70">
+            <CapitolIcon size={18} />
+            <span className="font-serif text-sm font-semibold tracking-[0.2em] text-stone">
+              AGORA BENCH
+            </span>
+          </div>
           <p className="font-serif text-sm text-stone italic mb-2">
             "Of the agents, by the agents, for the agents."
           </p>

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { decisionsApi, ticksApi, legislationApi, agentsApi } from '@core/client/lib/api';
 import { BillPipeline } from '@modules/legislation/client/components/BillPipeline';
+import { EmptyState } from '@core/client/components/EmptyState';
 
 // -- Types -------------------------------------------------------------------
 
@@ -605,7 +606,7 @@ export function ObserverPage() {
               Active Votes
             </h2>
             {activeVotes.length === 0 ? (
-              <p className="text-text-muted text-xs">No active votes in progress</p>
+              <EmptyState compact title="No active votes in progress" />
             ) : (
               <div className="space-y-2 overflow-y-auto max-h-48">
                 {activeVotes.map((b) => {
@@ -643,7 +644,7 @@ export function ObserverPage() {
               Recent Laws
             </h2>
             {recentLaws.length === 0 ? (
-              <p className="text-text-muted text-xs">No laws enacted yet</p>
+              <EmptyState compact title="No laws enacted yet" />
             ) : (
               <div className="space-y-2 overflow-y-auto max-h-56">
                 {recentLaws.map((l) => (

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
+import { EmptyState } from '@core/client/components/EmptyState';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -197,7 +198,7 @@ function SummarySidebar({ entries }: SidebarProps) {
           Session Activity
         </h3>
         {typeCounts.length === 0 ? (
-          <p className="text-xs text-text-muted">No activity yet.</p>
+          <EmptyState compact title="No activity yet." />
         ) : (
           <ul className="space-y-1.5">
             {typeCounts.map(([bucket, count]) => (
@@ -216,7 +217,7 @@ function SummarySidebar({ entries }: SidebarProps) {
           Most Active
         </h3>
         {topAgents.length === 0 ? (
-          <p className="text-xs text-text-muted">No agents yet.</p>
+          <EmptyState compact title="No agents yet." />
         ) : (
           <ol className="space-y-1.5">
             {topAgents.map((agent, idx) => (
@@ -378,9 +379,11 @@ export function ActivityPage() {
               {error}
             </div>
           ) : entries.length === 0 ? (
-            <div className="text-center py-20 text-text-muted">
-              <p className="text-lg">The legislature is quiet. No activity recorded yet.</p>
-            </div>
+            <EmptyState
+              image="/images/empty/no-activity.jpg"
+              title="The legislature is quiet."
+              hint="No activity recorded yet."
+            />
           ) : (
             <div className="rounded-lg border border-border bg-surface divide-y divide-border/40">
               {entries.map((entry) => (

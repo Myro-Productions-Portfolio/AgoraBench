@@ -5,6 +5,12 @@ import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
+import { EmptyState } from '@core/client/components/EmptyState';
+import {
+  GridIcon, SettingsIcon, CapitolIcon, UsersIcon, ServerIcon, KeyIcon,
+  UserIcon, DatabaseIcon, BeakerIcon, StarIcon, SlidersIcon, HeartIcon,
+} from '@core/client/components/icons';
+import type { IconProps } from '@core/client/components/icons';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'weights' | 'health';
 
@@ -230,19 +236,19 @@ type LogEntry = {
 
 const LOG_BUFFER_MAX = 500;
 
-const SIDEBAR_TABS: { id: AdminTab; label: string; icon: string }[] = [
-  { id: 'overview',    label: 'Overview',        icon: '\u25A3' },
-  { id: 'simulation',  label: 'Simulation',      icon: '\u2699' },
-  { id: 'government',  label: 'Government',      icon: '\u2696' },
-  { id: 'agents',      label: 'Agents',          icon: '\u25C6' },
-  { id: 'providers',   label: 'Providers',       icon: '\u25C8' },
-  { id: 'access',      label: 'Access Requests', icon: '\u2295' },
-  { id: 'users',       label: 'Users',           icon: '\u2630' },
-  { id: 'database',    label: 'Database',        icon: '\u26A0' },
-  { id: 'experiments', label: 'Experiments',     icon: '\u229E' },
-  { id: 'agge',        label: 'AGGE',            icon: '\u2726' },
-  { id: 'weights',     label: 'Weights',         icon: '\u2696' },
-  { id: 'health',      label: 'Health',          icon: '\u2661' },
+const SIDEBAR_TABS: { id: AdminTab; label: string; Icon: (props: IconProps) => React.ReactElement }[] = [
+  { id: 'overview',    label: 'Overview',        Icon: GridIcon },
+  { id: 'simulation',  label: 'Simulation',      Icon: SettingsIcon },
+  { id: 'government',  label: 'Government',      Icon: CapitolIcon },
+  { id: 'agents',      label: 'Agents',          Icon: UsersIcon },
+  { id: 'providers',   label: 'Providers',       Icon: ServerIcon },
+  { id: 'access',      label: 'Access Requests', Icon: KeyIcon },
+  { id: 'users',       label: 'Users',           Icon: UserIcon },
+  { id: 'database',    label: 'Database',        Icon: DatabaseIcon },
+  { id: 'experiments', label: 'Experiments',     Icon: BeakerIcon },
+  { id: 'agge',        label: 'AGGE',            Icon: StarIcon },
+  { id: 'weights',     label: 'Weights',         Icon: SlidersIcon },
+  { id: 'health',      label: 'Health',          Icon: HeartIcon },
 ];
 
 function TickStageBar({ phases }: { phases: { key: string; label: string; state: 'idle' | 'active' | 'done' }[]; running: boolean }) {
@@ -1267,6 +1273,7 @@ export function AdminPage() {
           {SIDEBAR_TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             const isDisabled = false;
+            const TabIcon = tab.Icon;
             return (
               <button
                 key={tab.id}
@@ -1281,7 +1288,7 @@ export function AdminPage() {
                     : 'border-l-2 border-transparent text-text-secondary hover:text-text-primary hover:bg-surface/50'
                 }`}
               >
-                <span className="text-base flex-shrink-0">{tab.icon}</span>
+                <span className="flex-shrink-0"><TabIcon size={16} /></span>
                 {sidebarOpen && (
                   <span className="flex-1 text-left truncate">{tab.label}</span>
                 )}
@@ -2731,7 +2738,7 @@ export function AdminPage() {
                       <button onClick={() => void fetchActiveElections()} className="text-xs text-text-muted hover:text-text-primary transition-colors">Refresh</button>
                     </div>
                     {activeElections.length === 0 ? (
-                      <p className="text-xs text-text-muted py-2">No active elections.</p>
+                      <EmptyState compact title="No active elections." />
                     ) : (
                       <div className="rounded-lg border border-border overflow-hidden">
                         <table className="w-full text-xs">

@@ -5,6 +5,7 @@ import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar, proceduralConfig } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 import { CollapsibleSection } from '@core/client/components/CollapsibleSection';
+import { EmptyState } from '@core/client/components/EmptyState';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'weights' | 'health';
 
@@ -2731,7 +2732,7 @@ export function AdminPage() {
                       <button onClick={() => void fetchActiveElections()} className="text-xs text-text-muted hover:text-text-primary transition-colors">Refresh</button>
                     </div>
                     {activeElections.length === 0 ? (
-                      <p className="text-xs text-text-muted py-2">No active elections.</p>
+                      <EmptyState compact title="No active elections." />
                     ) : (
                       <div className="rounded-lg border border-border overflow-hidden">
                         <table className="w-full text-xs">

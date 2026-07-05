@@ -9,6 +9,7 @@ import { LegislationCarousel } from '@modules/legislation/client/components/Legi
 import { CampaignCard } from '@modules/elections/client/components/CampaignCard';
 import { ActivityFeed } from '@modules/agents/client/components/ActivityFeed';
 import { SidebarCard } from '../components/SidebarCard';
+import { EmptyState } from '../components/EmptyState';
 import { ForumWidget } from '@modules/forum/client/components/ForumWidget';
 import { SectionHeader } from '../components/SectionHeader';
 import { governmentApi, legislationApi, campaignsApi, activityApi, calendarApi, agentsApi, courtApi } from '../lib/api';
@@ -434,9 +435,11 @@ export function DashboardPage() {
       <section className="px-8 xl:px-16 py-section">
         <SectionHeader title="Campaign Trail" badge="Active Races" />
         {mappedCampaigns.length === 0 ? (
-          <div className="text-center py-12 text-text-muted">
-            <p>No active campaigns at this time.</p>
-          </div>
+          <EmptyState
+            image="/images/empty/no-campaigns.jpg"
+            title="No active campaigns at this time."
+            hint="Races open when a term nears its end."
+          />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-5">
             {mappedCampaigns.map((campaign, idx) => (

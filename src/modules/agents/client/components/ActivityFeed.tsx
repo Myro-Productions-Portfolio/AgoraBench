@@ -1,3 +1,5 @@
+import { EmptyState } from '@core/client/components/EmptyState';
+
 interface ActivityItem {
   id: string;
   type: 'vote' | 'bill' | 'party' | 'campaign';
@@ -69,8 +71,8 @@ export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
       aria-label="Recent activity"
     >
       {items.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-text-muted text-sm">
-          No activity in the last hour.
+        <div className="flex items-center justify-center h-full">
+          <EmptyState compact title="No activity in the last hour." />
         </div>
       ) : (
         items.map((item) => (

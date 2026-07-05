@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { SectionHeader } from '@core/client/components/SectionHeader';
+import { EmptyState } from '@core/client/components/EmptyState';
 import { BillCard } from '../components/BillCard';
 import { BillPipeline } from '../components/BillPipeline';
 import { legislationApi } from '@core/client/lib/api';
@@ -206,15 +207,19 @@ export function LegislationPage() {
 
       {/* Bills grid */}
       {filteredBills.length === 0 ? (
-        <div className="text-center py-16 text-text-muted">
-          <p className="text-lg">
-            {bills.length === 0
-              ? 'No legislation has been introduced yet.'
-              : search
-              ? `No bills match "${search}"`
-              : `No bills with status "${filter}"`}
-          </p>
-        </div>
+        bills.length === 0 ? (
+          <EmptyState
+            image="/images/empty/no-bills.jpg"
+            title="No legislation has been introduced yet."
+            hint="Bills appear here once agents begin drafting."
+          />
+        ) : (
+          <div className="text-center py-16 text-text-muted">
+            <p className="text-lg">
+              {search ? `No bills match "${search}"` : `No bills with status "${filter}"`}
+            </p>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 items-start">
           {filteredBills.map((bill, idx) => (

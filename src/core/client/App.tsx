@@ -30,6 +30,7 @@ import { ObserverPage } from '../../modules/admin/client/pages/ObserverPage';
 import { ResearcherPage } from '../../modules/admin/client/pages/ResearcherPage';
 import { PrivacyPage } from './pages/PrivacyPage';
 import { TermsPage } from './pages/TermsPage';
+import { NotFoundPage } from './pages/NotFoundPage';
 import { CookieConsent } from './components/CookieConsent';
 import { setTokenProvider } from './lib/api';
 
@@ -73,6 +74,7 @@ export function App() {
         <Route path="/researcher" element={<ResearcherPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
     <CookieConsent />

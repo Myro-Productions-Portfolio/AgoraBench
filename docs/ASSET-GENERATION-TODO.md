@@ -89,34 +89,35 @@ Aesthetic per category (reference — details in each item):
 ## Priority 1 — Party logos (owner priority)
 
 The live production party roster diverged from the original design brief (which assumed DPA/COP/TU).
-The production DB now has five active parties; three have no logo file. This is the owner's top
+The production DB now has five active parties; two still have no logo file. This is the owner's top
 priority.
 
 Live production party roster (queried 2026-07-04 from `molt-gov-postgres` on 10.0.0.10):
 
 | Party name                 | Abbrev | Active | Expected logo file               | Status             |
 |----------------------------|--------|--------|----------------------------------|--------------------|
-| Progressive Alliance       | PA     | yes    | `public/images/parties/pa.webp`  | MISSING — generate |
-| Moderate Coalition         | MC     | yes    | `public/images/parties/mc.webp`  | MISSING — generate |
-| Constitutional Order Party | COP    | yes    | `public/images/parties/cop.webp` | EXISTS             |
-| Liberty First Party        | LFP    | yes    | `public/images/parties/lfp.webp` | MISSING — generate |
-| Technocratic Union         | TU     | yes    | `public/images/parties/tu.webp`  | EXISTS             |
+| Progressive Alliance       | PA     | yes    | `public/images/parties/pa.webp`  | EXISTS (2026-07-04) |
+| Moderate Coalition         | MC     | yes    | `public/images/parties/mc.webp`  | MISSING — generate  |
+| Constitutional Order Party | COP    | yes    | `public/images/parties/cop.webp` | EXISTS              |
+| Liberty First Party        | LFP    | yes    | `public/images/parties/lfp.webp` | MISSING — generate  |
+| Technocratic Union         | TU     | yes    | `public/images/parties/tu.webp`  | EXISTS              |
 
 To re-verify the roster yourself before generating (recommended — parties can change):
 `ssh myroproductions@10.0.0.10 "sudo docker exec molt-gov-postgres psql -U molt_gov -d molt_government -c 'SELECT name, abbreviation, is_active FROM parties ORDER BY created_at;'"`
 
-Note on `dpa.webp`: `public/images/parties/dpa.webp` exists but no DPA party exists in the DB
-anymore (the progressive party is now "Progressive Alliance" / PA). It is dead weight referenced by
-nothing after the code edit below removes it from the map. You may delete it in the same commit.
+DONE (2026-07-04) — PA logo recovered via rename: the old `dpa.webp` (progressive party, since
+renamed to "Progressive Alliance" / PA) had no lettering baked in, so it was `git mv`'d to
+`public/images/parties/pa.webp` and wired into `PARTY_LOGO_MAP` as `pa`. No PA generation needed.
+Only `mc` and `lfp` remain to generate below.
 
-### Common spec for all three logos
+### Common spec for both logos
 
 - Output path: `public/images/parties/<abbr>.webp` — filename is the lowercased abbreviation:
-  `pa.webp`, `mc.webp`, `lfp.webp`.
+  `mc.webp`, `lfp.webp`.
 - Dimensions: 512x512 (square). Matches shipped cop.webp / tu.webp exactly.
 - Format: WebP WITH alpha (transparent background). Convert:
   `cwebp -q 90 -alpha_q 100 in.png -o <abbr>.webp`.
-- KB budget: aim 30–150 KB (shipped siblings: dpa 33KB, cop 50KB, tu 144KB). Under 150KB.
+- KB budget: aim 30–150 KB (shipped siblings: pa 33KB, cop 50KB, tu 144KB). Under 150KB.
 - Generate the PNG at 1024x1024 on ComfyUI for detail headroom, then downscale to 512 on convert.
 
 ### Required code edit (logos will NOT show without it)
@@ -124,19 +125,21 @@ nothing after the code edit below removes it from the map. You may delete it in 
 `src/modules/elections/client/pages/PartiesPage.tsx` has a hardcoded `PARTY_LOGO_MAP`
 (around lines 50–54) and `resolvePartyLogo()` (around line 56) that looks up
 `PARTY_LOGO_MAP[abbreviation.toLowerCase()]`. There is no generic path builder here, so a new file
-alone is invisible on the Parties page. Update the map to the real roster:
+alone is invisible on the Parties page. `pa`, `cop`, and `tu` are ALREADY in the map — this
+generation session only needs to add `mc` and `lfp`:
 
 ```ts
 const PARTY_LOGO_MAP: Record<string, string> = {
-  pa:  '/images/parties/pa.webp',
-  mc:  '/images/parties/mc.webp',
-  cop: '/images/parties/cop.webp',
-  lfp: '/images/parties/lfp.webp',
-  tu:  '/images/parties/tu.webp',
+  pa:  '/images/parties/pa.webp',   // already present
+  mc:  '/images/parties/mc.webp',   // add this
+  cop: '/images/parties/cop.webp',  // already present
+  lfp: '/images/parties/lfp.webp',  // add this
+  tu:  '/images/parties/tu.webp',   // already present
 };
 ```
 
-(Add `pa`, `mc`, `lfp`; drop the stale `dpa`.) The agent profile page
+(Add `mc` and `lfp`; `pa` was already wired in when `dpa.webp` was renamed on 2026-07-04.) The
+agent profile page
 (`src/modules/agents/client/pages/AgentProfilePage.tsx`, around line 1366) already builds the path
 directly as `/images/parties/${party.abbreviation.toLowerCase()}.webp` with an `onError` that hides
 the image, so it needs NO code change — the correctly-named file is enough there.
@@ -147,19 +150,8 @@ broken img. So the site is not broken today — the missing logos just look unfi
 
 ### Per-logo generation prompts (ready to paste)
 
-PA — Progressive Alliance (progressive alignment):
-> Positive: "Political party emblem for the 'Progressive Alliance', a heraldic circular badge. A
-> stylized forward-pointing arrow rising over a minimal circuit-tree / rising-sun motif, symbolizing
-> growth and technology and forward momentum. Clean modern flat vector heraldry, crisp geometric
-> lines, subtle metallic sheen. Colors strictly from this palette: muted gold #B8956A and #D4A96A
-> for the emblem, warm stone #C9B99B for secondary detail, on a fully transparent background.
-> Dignified neoclassical government-seal aesthetic with a modern edge. Centered, symmetrical, reads
-> clearly as a small icon. 512x512, no text, no lettering."
-> Negative: [global hints] + "no white circle background, no drop shadow box, no photographic
-> texture, no gradient background fill, no 3D render."
-> Acceptance: transparent background (no white/dark box); reads clearly at 48px (its display size on
-> PartiesPage cards) and at 14px (agent profile inline); sits on `#1A1B1E` with no halo; palette
-> stays gold/stone; visually a sibling of cop.webp and tu.webp, not brighter or more saturated.
+(PA — Progressive Alliance is DONE via the 2026-07-04 `dpa.webp` → `pa.webp` rename; no prompt
+needed. Only the two below remain.)
 
 MC — Moderate Coalition (moderate alignment):
 > Positive: "Political party emblem for the 'Moderate Coalition', a heraldic circular badge. A
@@ -287,10 +279,11 @@ state. Do not generate a generic fallback unless asked.
 ## Work summary
 
 New-image generation required:
-- Priority 1: 3 party logos — `pa.webp`, `mc.webp`, `lfp.webp` (+ one code edit to `PARTY_LOGO_MAP`).
+- Priority 1: 2 party logos — `mc.webp`, `lfp.webp` (+ add those two keys to `PARTY_LOGO_MAP`).
+  PA is already done (recovered from `dpa.webp` via rename, 2026-07-04) and wired in.
 - Priority 2: 1 map background v2 at 3840x2160 (overwrite `capitol-map-v1.webp`).
 
 Non-generation:
 - Priority 3: no-agents empty-state — wire the existing asset or drop it (no new art).
 
-Total new images to generate: 4. Everything else is settled or needs code before art.
+Total new images to generate: 3. Everything else is settled or needs code before art.

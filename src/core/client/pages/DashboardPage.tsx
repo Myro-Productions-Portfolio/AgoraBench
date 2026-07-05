@@ -359,7 +359,7 @@ export function DashboardPage() {
           <div className="relative min-h-[440px]">
             <ActivityFeed items={mappedActivity} fill />
           </div>
-          <div>
+          <div className="[&>*:last-child]:mb-0">
             <ForumWidget />
             {allAgents.length > 0 && (() => {
               const sorted = [...allAgents].sort((a, b) => b.approvalRating - a.approvalRating);

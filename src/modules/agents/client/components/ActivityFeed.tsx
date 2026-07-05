@@ -1,4 +1,6 @@
 import { EmptyState } from '@core/client/components/EmptyState';
+import { BallotIcon, DocumentIcon, FlagIcon, MegaphoneIcon } from '@core/client/components/icons';
+import type { IconProps } from '@core/client/components/icons';
 
 interface ActivityItem {
   id: string;
@@ -33,31 +35,24 @@ const TYPE_BORDER_CLASSES = {
   campaign: 'border-l-success',
 } as const;
 
-const TYPE_ICONS = {
-  vote: (
-    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" aria-hidden="true">
-      <path d="M8 1L1 8H5V15H11V8H15L8 1Z" stroke="#B8956A" strokeWidth="1.2" />
-    </svg>
-  ),
-  bill: (
-    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" aria-hidden="true">
-      <path d="M3 1H13V15H3V1Z" stroke="#6B7A8D" strokeWidth="1.2" />
-      <path d="M5 5H11M5 8H11M5 11H9" stroke="#6B7A8D" strokeWidth="1" />
-    </svg>
-  ),
-  party: (
-    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" aria-hidden="true">
-      <circle cx="8" cy="5" r="3" stroke="#8B3A3A" strokeWidth="1.2" />
-      <path d="M2 15C2 11.5 4.5 9 8 9C11.5 9 14 11.5 14 15" stroke="#8B3A3A" strokeWidth="1.2" />
-    </svg>
-  ),
-  campaign: (
-    <svg viewBox="0 0 16 16" fill="none" className="w-4 h-4" aria-hidden="true">
-      <path d="M8 1V11M4 7L8 11L12 7" stroke="#3A6B3A" strokeWidth="1.2" />
-      <path d="M3 14H13" stroke="#3A6B3A" strokeWidth="1.2" />
-    </svg>
-  ),
+/*
+ * Icons come from the shared inline-SVG set (single source of truth). They draw
+ * with currentColor, so the colored-stroke look is achieved by the text-color
+ * class in TYPE_ICON_STROKE below, one per activity type.
+ */
+const TYPE_ICON_COMPONENTS: Record<ActivityItem['type'], (props: IconProps) => React.ReactElement> = {
+  vote: BallotIcon,
+  bill: DocumentIcon,
+  party: FlagIcon,
+  campaign: MegaphoneIcon,
 };
+
+const TYPE_ICON_STROKE = {
+  vote: 'text-gold',
+  bill: 'text-slate-judicial',
+  party: 'text-danger',
+  campaign: 'text-success',
+} as const;
 
 export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
   return (
@@ -75,7 +70,9 @@ export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
           <EmptyState compact title="No activity in the last hour." />
         </div>
       ) : (
-        items.map((item) => (
+        items.map((item) => {
+          const TypeIcon = TYPE_ICON_COMPONENTS[item.type];
+          return (
           <article
             key={item.id}
             className={`flex gap-3 p-3 px-4 card text-sm border-l-2 ${TYPE_BORDER_CLASSES[item.type]}`}
@@ -84,7 +81,7 @@ export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
             <div
               className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${TYPE_ICON_CLASSES[item.type]}`}
             >
-              {TYPE_ICONS[item.type]}
+              <TypeIcon size={16} className={TYPE_ICON_STROKE[item.type]} />
             </div>
             <div className="flex-1">
               <div className="text-text-secondary">
@@ -94,7 +91,8 @@ export function ActivityFeed({ items, fill = false }: ActivityFeedProps) {
               <div className="text-badge text-text-muted font-mono mt-0.5">{item.time}</div>
             </div>
           </article>
-        ))
+          );
+        })
       )}
     </div>
   );

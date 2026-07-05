@@ -49,7 +49,7 @@ const ALIGNMENT_COLORS: Record<string, string> = {
 /* Known party logo images mapped from abbreviation (lowercase) */
 const PARTY_LOGO_MAP: Record<string, string> = {
   cop: '/images/parties/cop.webp',
-  dpa: '/images/parties/dpa.webp',
+  pa: '/images/parties/pa.webp',
   tu: '/images/parties/tu.webp',
 };
 

@@ -1363,7 +1363,7 @@ export function AgentProfilePage() {
               {party ? (
                 <span className="text-xs text-gold/80 flex items-center gap-1">
                   <img
-                    src={`/images/parties/${party.abbreviation.toLowerCase()}.png`}
+                    src={`/images/parties/${party.abbreviation.toLowerCase()}.webp`}
                     alt={party.abbreviation}
                     className="w-3.5 h-3.5 object-contain"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}

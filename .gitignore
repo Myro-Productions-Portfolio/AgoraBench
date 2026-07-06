@@ -80,3 +80,6 @@ ds-bundle/
 .design-sync/.cache/
 .design-sync/learnings/
 .design-sync/node_modules
+
+# Session handoff docs — local scratch for Claude sessions, not project docs
+docs/handoffs/

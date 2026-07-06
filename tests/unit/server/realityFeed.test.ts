@@ -85,7 +85,7 @@ describe('normalizeMts9Row', () => {
   it('returns null (not throw) for a malformed/missing row', () => {
     // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeMts9Row({})).toBeNull();
-    // @ts-expect-error
+    // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeMts9Row(malformedFixture)).toBeNull();
   });
 });
@@ -121,9 +121,9 @@ describe('normalizeMts1Row', () => {
   });
 
   it('returns null (not throw) for a malformed row', () => {
-    // @ts-expect-error
+    // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeMts1Row({})).toBeNull();
-    // @ts-expect-error
+    // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeMts1Row(malformedFixture)).toBeNull();
   });
 });
@@ -146,9 +146,9 @@ describe('normalizeDebtToPennyRow', () => {
   });
 
   it('returns null (not throw) for a malformed row', () => {
-    // @ts-expect-error
+    // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeDebtToPennyRow({})).toBeNull();
-    // @ts-expect-error
+    // @ts-expect-error -- deliberately malformed input for the error path
     expect(normalizeDebtToPennyRow(malformedFixture)).toBeNull();
   });
 });

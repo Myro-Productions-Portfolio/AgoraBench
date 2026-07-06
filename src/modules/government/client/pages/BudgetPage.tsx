@@ -164,7 +164,7 @@ function RevenueSpendingBars({ series }: { series: SeriesPoint[] }) {
     <div>
       <div className="flex items-end gap-[3px] h-32" role="img" aria-label="Revenue versus spending per day">
         {recent.map((p) => (
-          <div key={p.tickNumber} className="flex-1 flex items-end gap-px min-w-[6px]" title={`Tick ${p.tickNumber}: revenue ${fmtM(p.revenue)}, spending ${fmtM(p.spending)}`}>
+          <div key={p.tickNumber} className="flex-1 h-full flex items-end gap-px min-w-[6px]" title={`Tick ${p.tickNumber}: revenue ${fmtM(p.revenue)}, spending ${fmtM(p.spending)}`}>
             <div
               className="flex-1 bg-green-500/70 rounded-t-sm"
               style={{ height: `${barHeightPct(p.revenue, maxVal)}%` }}

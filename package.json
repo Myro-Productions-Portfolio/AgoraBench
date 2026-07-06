@@ -30,6 +30,7 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/core/db/seed.ts",
+    "seed:divergence": "tsx scripts/seed-divergence-baseline.ts",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   },

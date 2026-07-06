@@ -164,7 +164,7 @@ describe('pickCurrentFyYtdRow', () => {
   const rows = (mts1DualFyFixture as { data: Parameters<typeof normalizeMts1Row>[0][] }).data;
 
   it('picks the current-FY row (higher src_line_nbr), not the prior-FY comparison row', () => {
-    const picked = pickCurrentFyYtdRow(rows as any);
+    const picked = pickCurrentFyYtdRow(rows);
     expect(picked).not.toBeNull();
     expect(picked?.src_line_nbr).toBe('24');
 
@@ -181,7 +181,7 @@ describe('pickCurrentFyYtdRow', () => {
 
   it('is a no-op passthrough when only one candidate row exists', () => {
     const single = [rows[0]];
-    expect(pickCurrentFyYtdRow(single as any)).toBe(single[0]);
+    expect(pickCurrentFyYtdRow(single)).toBe(single[0]);
   });
 });
 

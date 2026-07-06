@@ -11,11 +11,15 @@ import { pgTable, uuid, date, integer, varchar, bigint, timestamp, unique, index
        (National Defense, Medicare, Social Security, Net Interest, ...),
        `category` set, `outlaysFytd` populated.
      - 'mts_table_1' -- the single top-line row (receipts/outlays/deficit
-       FYTD), `category` null.
+       FYTD), `category` = '' (empty string, not SQL NULL -- see below).
      - 'debt_to_penny' -- the latest total public debt outstanding,
-       `category` null, only `debtOutstanding` populated.
+       `category` = '', only `debtOutstanding` populated.
 
-   Unique on (recordDate, category, source) makes re-pulls idempotent. */
+   Unique on (recordDate, category, source) makes re-pulls idempotent --
+   `category` is deliberately '' rather than NULL on top-line rows because
+   Postgres treats every NULL as distinct under a UNIQUE constraint, which
+   would let re-pulls of the same date insert duplicates instead of
+   upserting (realityFeed.ts NO_CATEGORY). */
 export const realitySnapshots = pgTable(
   'reality_snapshots',
   {
@@ -23,7 +27,7 @@ export const realitySnapshots = pgTable(
     recordDate: date('record_date', { mode: 'string' }).notNull(),
     fiscalYear: integer('fiscal_year'),
     fiscalMonth: integer('fiscal_month'),
-    // Treasury MTS budget-function bucket name; null for top-line rows.
+    // Treasury MTS budget-function bucket name; '' (not null) for top-line rows.
     category: varchar('category', { length: 120 }),
     outlaysFytd: bigint('outlays_fytd', { mode: 'number' }),
     receiptsFytd: bigint('receipts_fytd', { mode: 'number' }),

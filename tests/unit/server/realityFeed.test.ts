@@ -98,7 +98,9 @@ describe('normalizeMts1Row', () => {
     const result = normalizeMts1Row(row);
     expect(result).toMatchObject({
       recordDate: '2026-05-31',
-      category: null,
+      // '' not null -- Postgres treats every NULL as distinct under the
+      // unique constraint, which would defeat idempotent re-pulls.
+      category: '',
       receiptsFytd: 3655648146756,
       outlaysFytd: 4901851413143,
       deficitFytd: 1246203266386,
@@ -134,7 +136,7 @@ describe('normalizeDebtToPennyRow', () => {
     const result = normalizeDebtToPennyRow(row);
     expect(result).toMatchObject({
       recordDate: '2026-07-03',
-      category: null,
+      category: '',
       outlaysFytd: null,
       receiptsFytd: null,
       deficitFytd: null,
@@ -156,7 +158,7 @@ describe('pickCurrentFyYtdRow', () => {
      section (current FY + prior FY), both with classification_desc=
      'Year-to-Date' and data_type_cd='T' -- confirmed live 2026-07-06. Both
      share the same record_date, so upserting both naively collides on the
-     (recordDate, category=null, source) unique key and the wrong one can
+     (recordDate, category='', source) unique key and the wrong one can
      silently win. The current-FY section's row always carries the higher
      src_line_nbr (prior-FY's section prints first). */
   const rows = (mts1DualFyFixture as { data: Parameters<typeof normalizeMts1Row>[0][] }).data;

@@ -8,6 +8,12 @@
 --
 -- Guarded with IF NOT EXISTS so a re-run is a no-op, matching the style of
 -- prior hand-written migrations in this directory (e.g. 0026).
+--
+-- "category" is nullable in SQL but the puller (realityFeed.ts) never
+-- writes NULL into it -- top-line rows (mts_table_1, debt_to_penny) get ''
+-- instead, because Postgres treats every NULL as distinct under the
+-- (record_date, category, source) UNIQUE constraint below, which would
+-- silently defeat idempotent re-pulls of the same date.
 
 CREATE TABLE IF NOT EXISTS "reality_snapshots" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

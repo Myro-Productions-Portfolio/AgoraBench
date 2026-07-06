@@ -38,6 +38,9 @@
 //
 // All amounts arrive as decimal-string dollars-and-cents (e.g.
 // "335512183227.42"); we floor() to whole dollars and store as bigint.
+//
+// `category` is '' (NOT SQL NULL) for mts_table_1/debt_to_penny top-line
+// rows -- see the NO_CATEGORY comment below for why.
 
 import { db } from '@db/connection';
 import { realitySnapshots } from '@db/schema/index';
@@ -130,6 +133,16 @@ export function normalizeMts9Row(row: Mts9Row): RealitySnapshotInsert | null {
   };
 }
 
+/**
+ * Sentinel for "no category" on top-line rows (mts_table_1, debt_to_penny).
+ * Deliberately NOT the SQL NULL: Postgres treats every NULL as distinct
+ * under a UNIQUE constraint, so two top-line rows for the same (recordDate,
+ * source) would never conflict and re-pulling the same date would insert a
+ * duplicate row instead of upserting. An empty string is a normal, non-null
+ * value the (recordDate, category, source) constraint can dedupe on.
+ */
+const NO_CATEGORY = '';
+
 /** Normalize the MTS Table 1 top-line "Year-to-Date" row. */
 export function normalizeMts1Row(row: Mts1Row): RealitySnapshotInsert | null {
   if (!row.record_date) return null;
@@ -141,7 +154,7 @@ export function normalizeMts1Row(row: Mts1Row): RealitySnapshotInsert | null {
     recordDate: row.record_date,
     fiscalYear: Number.parseInt(row.record_fiscal_year, 10) || null,
     fiscalMonth: Number.parseInt(row.record_calendar_month, 10) || null,
-    category: null,
+    category: NO_CATEGORY,
     outlaysFytd: outlays,
     receiptsFytd: receipts,
     deficitFytd: deficit,
@@ -159,7 +172,7 @@ export function normalizeDebtToPennyRow(row: DebtToPennyRow): RealitySnapshotIns
     recordDate: row.record_date,
     fiscalYear: null,
     fiscalMonth: null,
-    category: null,
+    category: NO_CATEGORY,
     outlaysFytd: null,
     receiptsFytd: null,
     deficitFytd: null,

@@ -475,3 +475,28 @@ describe('settleTreasury — end-of-tick shortfall→debt / surplus→retirement
     expect(settleTreasury(1_500, 1_000, -999)).toEqual({ treasury: 1_500, debtDelta: 0 });
   });
 });
+
+describe('Divergence E1 slice 1 — flag-off no-op guarantee (pure-function level)', () => {
+  /* debtEngineEnabled gates every call site in agentTick.ts/ai.ts/aggeTick.ts
+     — these three functions are never invoked at all when the flag is
+     false. What we CAN prove at the pure-function level: a debt stock that
+     never accrues (because tickInterest/settleTreasury are never called)
+     stays exactly 0 forever, and a 0 debt stock produces 0 interest and a
+     0 debtDelta on every settlement — i.e. even if a caller accidentally
+     invoked these functions against the flag-off world's permanent zero
+     debt state, they would still be silent no-ops, matching pre-slice-1
+     behavior byte-for-byte. */
+
+  it('zero debt (the eternal flag-off state) accrues zero interest regardless of rate', () => {
+    expect(tickInterest(0, 2.7)).toBe(0);
+    expect(tickInterest(0, 15)).toBe(0);
+  });
+
+  it('zero debt settles to a pure pass-through — cash in equals treasury out, never issuing debt from a healthy surplus', () => {
+    expect(settleTreasury(1_500_000_000_000, 1_500_000_000_000, 0)).toEqual({ treasury: 1_500_000_000_000, debtDelta: 0 });
+  });
+
+  it('a mandatory law that is never enacted (flag-off world has none) cannot be debited — 0 base is 0 spend at any tick', () => {
+    expect(mandatoryEffectiveAmount(0, 0, 100_000, 5)).toBe(0);
+  });
+});

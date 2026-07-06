@@ -41,7 +41,7 @@ import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
-import { dailyCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote } from '../lib/fiscalMath.js';
+import { dailyCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote, mandatoryEffectiveAmount, tickInterest, settleTreasury, type FiscalKind } from '../lib/fiscalMath.js';
 import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
@@ -2702,6 +2702,31 @@ agentTickQueue.process(async () => {
             }
             await db.update(laws).set(renewalPatch).where(eq(laws.id, existingLaw.id));
             console.warn(`[SIMULATION] Program "${existingLaw.fiscalProgramName ?? existingLaw.title}" renewed at tick ${tickNumber} by "${bill.title}"`);
+          } else if (
+            existingLaw.fiscalKind === 'mandatory' &&
+            bill.fiscalKind === 'mandatory' &&
+            typeof bill.fiscalAmount === 'number' && Number.isFinite(bill.fiscalAmount) && bill.fiscalAmount > 0
+          ) {
+            /* Divergence E1 slice 1: mandatory laws never lapse (no renewal
+               clock to reset — programActive/lastRenewedTick are irrelevant
+               to them), but an amendment MAY adjust the base amount within
+               the ±fiscalMaxMandatoryDeltaPct clamp already applied at
+               Phase 11 parse time. Bookkeeping only here (no treasury
+               movement — Phase 12 debits at the NEW base next tick), so it
+               stores regardless of the debt-engine kill switch, same as
+               the spend_recurring renewal hook above. */
+            const oldAmount = existingLaw.fiscalAmount;
+            await db.update(laws).set({ fiscalAmount: bill.fiscalAmount }).where(eq(laws.id, existingLaw.id));
+
+            await db.insert(activityEvents).values({
+              type: 'mandatory_amended',
+              agentId: null,
+              title: 'Mandatory program adjusted',
+              description: `"${existingLaw.fiscalProgramName ?? existingLaw.title}" base amount changed from $${oldAmount}/day to $${bill.fiscalAmount}/day by "${bill.title}"`,
+              metadata: JSON.stringify({ lawId: existingLaw.id, billId: bill.id, oldAmount, newAmount: bill.fiscalAmount }),
+            });
+
+            console.warn(`[SIMULATION] Mandatory program "${existingLaw.fiscalProgramName ?? existingLaw.title}" base amount $${oldAmount} -> $${bill.fiscalAmount} at tick ${tickNumber} by "${bill.title}"`);
           }
 
           await db
@@ -2978,6 +3003,13 @@ agentTickQueue.process(async () => {
   /*   hook). Kill switch: fiscalEffectsEnabled=false skips sunsets AND   */
   /*   lapse AND does NOT advance the session marker, so re-enabling      */
   /*   resumes the cycle naturally.                                       */
+  /*   Divergence E1 slice 1: `mandatory` rows are naturally exempt from  */
+  /*   BOTH loops below with zero extra code — the sunset query filters   */
+  /*   isNotNull(sunsetTicks), and fiscalParsing.ts's mandatory branch    */
+  /*   always returns sunsetTicks: null; the lapse query filters          */
+  /*   fiscalKind = 'spend_recurring' explicitly, which a 'mandatory' row */
+  /*   never matches. This is the "exemption costs zero code" the spec    */
+  /*   calls for — verified here, not re-implemented.                     */
   /* ------------------------------------------------------------------ */
   if (rc.fiscalEffectsEnabled) {
     try {
@@ -4294,11 +4326,16 @@ agentTickQueue.process(async () => {
       treasuryBalance: governmentSettings.treasuryBalance,
       taxRatePercent: governmentSettings.taxRatePercent,
       lastBudgetSessionTick: governmentSettings.lastBudgetSessionTick,
+      debtOutstanding: governmentSettings.debtOutstanding,
     }).from(governmentSettings).limit(1);
 
-    /* Get top 10 active laws for potential amendment */
+    /* Get top 10 active laws for potential amendment. fiscalKind/fiscalAmount
+       are carried alongside id/title (not just for display) so the mandatory-
+       amendment path below can build parseFiscalField's amendedLaw context
+       without a second per-bill query — same "read once, reuse" shape as the
+       existing renewal-pressure query just below. */
     const topActiveLaws = await db
-      .select({ id: laws.id, title: laws.title })
+      .select({ id: laws.id, title: laws.title, fiscalKind: laws.fiscalKind, fiscalAmount: laws.fiscalAmount })
       .from(laws)
       .where(eq(laws.isActive, true))
       .limit(10);
@@ -4337,11 +4374,16 @@ agentTickQueue.process(async () => {
       }
     }
 
-    const amendableLaws = [
+    /* Uniform shape across both sources so the mandatory-amendment lookup
+       below (keyed on fiscalKind/fiscalAmount) works regardless of which
+       query surfaced the law. Expiring programs are always spend_recurring
+       (mandatory never lapses — Phase 9.7), so their fiscalKind/perTick are
+       already known from that query. */
+    const amendableLaws: { id: string; title: string; fiscalKind: string | null; fiscalAmount: number | null }[] = [
       ...topActiveLaws,
       ...expiringPrograms
         .filter((p) => !topActiveLaws.some((l) => l.id === p.id))
-        .map((p) => ({ id: p.id, title: p.title })),
+        .map((p) => ({ id: p.id, title: p.title, fiscalKind: 'spend_recurring', fiscalAmount: p.perTick })),
     ];
     const lawsList = amendableLaws.map((l) => `${l.title} (ID: ${l.id})`).join(', ');
 
@@ -4357,6 +4399,16 @@ agentTickQueue.process(async () => {
     const crisisThreshold = rc.treasuryCrisisThreshold ?? 0.20;
     const crisisMultiplier = rc.economyProposalMultiplierCrisis ?? 1.4;
 
+    /* Divergence E1 slice 1: debt-ratio crisis condition, additive to the
+       existing treasury-level check above — only evaluated when the debt
+       engine is on (debtOutstanding is always 0 otherwise, so the ratio
+       would be a meaningless 0% anyway). Real debt/GDP is ~120%; default
+       threshold 150% per spec (nobody calls 120% a crisis today). */
+    const debtRatioPct11 = rc.debtEngineEnabled && rc.gdpAnnual > 0
+      ? ((govSettings11?.debtOutstanding ?? 0) / rc.gdpAnnual) * 100
+      : 0;
+    const debtCrisis11 = rc.debtEngineEnabled && debtRatioPct11 > rc.debtCrisisRatioPct;
+
     /* Advertised spend_once ceiling for the prompt: the live clamp is
        fiscalMaxOneTimePctOfTreasury% of the current treasury (fiscalParsing.ts),
        so quote that instead of a hardcoded range that the validator would reject. */
@@ -4365,6 +4417,32 @@ agentTickQueue.process(async () => {
       ? Math.max(1, Math.floor((treasury11 * rc.fiscalMaxOneTimePctOfTreasury) / 100))
       : 0;
     const maxOnceCompact = compactDollars(maxOnce11);
+
+    /* Divergence E1 slice 1: compact debt-context line for the proposal
+       prompt — debt outstanding, daily interest, mandatory total/day, and
+       the amend-mandatory allowance. Computed once (agent-invariant), not
+       per-agent. Zero cost when the debt engine is off. */
+    let debtContextNote11 = '';
+    if (rc.debtEngineEnabled) {
+      try {
+        const mandatoryRows11 = await db
+          .select({ fiscalAmount: laws.fiscalAmount, enactedTick: laws.enactedTick })
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.fiscalKind, 'mandatory')));
+        const mandatoryTotal11 = mandatoryRows11.reduce((sum, r) => {
+          if (typeof r.fiscalAmount !== 'number' || typeof r.enactedTick !== 'number') return sum;
+          return sum + mandatoryEffectiveAmount(r.fiscalAmount, r.enactedTick, tickNumber, rc.mandatoryGrowthPctAnnual);
+        }, 0);
+        const debtOutstanding11 = govSettings11?.debtOutstanding ?? 0;
+        const dailyInterest11 = tickInterest(debtOutstanding11, rc.debtInterestRatePct);
+        debtContextNote11 =
+          `\n\nNational debt: ${compactDollars(debtOutstanding11)} outstanding, ${compactDollars(dailyInterest11)}/day interest. ` +
+          `Mandatory spending (Social Security, Medicare, etc.): ${compactDollars(mandatoryTotal11)}/day, automatic, not subject to lapse. ` +
+          `You may amend an existing mandatory law's funding level by up to ±${rc.fiscalMaxMandatoryDeltaPct}% per amendment — you cannot create new mandatory programs.`;
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 11: debt-context query failed — omitting debt note:', err);
+      }
+    }
 
     /* Fetch latest coalition snapshot for bloc context in proposals */
     const [latestSnapshot] = await db.select()
@@ -4397,6 +4475,20 @@ agentTickQueue.process(async () => {
 
       /* Treasury pressure: fiscal crisis drives more legislation */
       if (treasuryRatio < crisisThreshold) {
+        const alignment = agent.alignment ?? 'moderate';
+        if (alignment === 'conservative' || alignment === 'libertarian') {
+          effectiveProposalChance *= crisisMultiplier; // austerity urgency
+        } else if (alignment === 'progressive') {
+          effectiveProposalChance *= (crisisMultiplier * 0.9); // tax reform urgency
+        }
+      }
+
+      /* Divergence E1 slice 1: debt-ratio crisis is additive to the
+         treasury-level check above (both may apply) — same alignment-based
+         urgency split, since a debt crisis is a distress signal exactly
+         like a depleted treasury. No-op entirely when the debt engine is
+         off (debtCrisis11 is always false). */
+      if (debtCrisis11) {
         const alignment = agent.alignment ?? 'moderate';
         if (alignment === 'conservative' || alignment === 'libertarian') {
           effectiveProposalChance *= crisisMultiplier; // austerity urgency
@@ -4453,7 +4545,7 @@ agentTickQueue.process(async () => {
 
       const contextMessage =
         `You are considering proposing new legislation. Based on your political alignment and values, propose a bill. ` +
-        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote}${fiscalNote11}${renewalNote} ` +
+        `Consider the political landscape of 2025: AI governance debates, automation policy, digital rights, fiscal challenges from technological disruption.${amendmentNote}${economyContext}${coalitionNote}${fiscalNote11}${renewalNote}${debtContextNote11} ` +
         `Respond with exactly this JSON: {"action":"propose","reasoning":"one sentence","data":{"title":"Bill Title","summary":"One sentence summary","committee":"Budget|Technology|Foreign Affairs|Judiciary","billType":"original","amendsLawId":"","fiscal":{"kind":"none|spend_once|spend_recurring|tax_change","amount":0,"taxDelta":0,"programName":"","sunsetTicks":0}}}`;
 
       proposalCalls.push({ agent, contextMessage });
@@ -4529,6 +4621,13 @@ agentTickQueue.process(async () => {
       const fullText =
         `SECTION 1. SHORT TITLE.\nThis Act may be cited as the "${title}".\n\nSECTION 2. PURPOSE.\n${summary}`;
 
+      /* Divergence E1 slice 1: minimal amendment-target context for the
+         mandatory clamp path — the SAME amendableLaws row validLawId was
+         just resolved against, so no extra query. Undefined for original
+         bills / unresolved amendments (parseFiscalField then structurally
+         rejects any kind:'mandatory' request, per spec). */
+      const amendedLawTarget = validLawId ? amendableLaws.find((l) => l.id === validLawId) : undefined;
+
       /* Phase 3: Rule-4 fiscal extraction — the ONLY point where LLM output
          can create fiscal state. Null (any parse/clamp failure, kind "none",
          cap bust) stores all-NULL fiscal columns: a guaranteed no-op. */
@@ -4542,8 +4641,12 @@ agentTickQueue.process(async () => {
           fiscalRecurringCapPctOfRevenue: rc.fiscalRecurringCapPctOfRevenue,
           fiscalMaxTaxDeltaPerLaw: rc.fiscalMaxTaxDeltaPerLaw,
           maxSunsetTicks: rc.maxSunsetTicks,
+          fiscalMaxMandatoryDeltaPct: rc.fiscalMaxMandatoryDeltaPct,
         },
         fallbackProgramName: title,
+        amendedLaw: amendedLawTarget
+          ? { kind: amendedLawTarget.fiscalKind as FiscalKind | null, currentAmount: amendedLawTarget.fiscalAmount }
+          : undefined,
       });
       if (fiscal?.kind === 'spend_recurring' && typeof fiscal.amount === 'number') {
         /* Count this approval against the cap for later results in the same loop. */
@@ -5000,6 +5103,74 @@ agentTickQueue.process(async () => {
         }
       }
 
+      /* ---- Divergence E1 slice 1: mandatory programs + debt interest --
+         Entirely gated on rc.debtEngineEnabled — flag off means this block
+         never runs and behavior is byte-identical to pre-slice-1 Phase 12.
+         Mandatory debits use the SAME in-memory treasuryBalance/
+         tickSpendingThisTick as recurring programs above (one final write
+         below), and are NOT subject to the treasuryHardFloor suspension
+         recurring programs use — mandatory spending is unconditional by
+         design (autopilot, no vote required), exactly like real entitlement
+         outlays; a shortfall is absorbed by the debt engine at Phase 13
+         settlement, not by suspending the program. */
+      if (rc.debtEngineEnabled) {
+        const mandatoryPrograms = await db
+          .select()
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.fiscalKind, 'mandatory')));
+
+        for (const program of mandatoryPrograms) {
+          const base = program.fiscalAmount;
+          if (typeof base !== 'number' || !Number.isFinite(base) || base <= 0) continue;
+          if (typeof program.enactedTick !== 'number' || !Number.isFinite(program.enactedTick)) continue;
+
+          const effective = mandatoryEffectiveAmount(base, program.enactedTick, tickNumber, rc.mandatoryGrowthPctAnnual);
+          if (effective <= 0) continue;
+
+          treasuryBalance -= effective;
+          tickSpendingThisTick += effective;
+
+          await db.insert(transactions).values({
+            fromAgentId: undefined,
+            toAgentId: undefined,
+            amount: effective,
+            type: 'mandatory_spend',
+            description: `Mandatory spending: ${program.fiscalProgramName ?? program.title}`,
+            relatedLawId: program.id,
+          });
+        }
+
+        if (mandatoryPrograms.length > 0) {
+          console.warn(`[SIMULATION] Phase 12: ${mandatoryPrograms.length} mandatory program(s) processed (debt engine on). Treasury: $${treasuryBalance}`);
+        }
+
+        /* Daily interest accrual on the outstanding debt stock — an
+           automatic outflow, not tied to any law. Uses the debt figure as
+           of the START of this tick (govSettings.debtOutstanding); the
+           actual debtOutstanding column update happens at Phase 13
+           settlement, after this tick's interest and mandatory spend are
+           both already netted into treasuryBalance/tickSpendingThisTick. */
+        const interest = tickInterest(govSettings.debtOutstanding, rc.debtInterestRatePct);
+        if (interest > 0) {
+          treasuryBalance -= interest;
+          tickSpendingThisTick += interest;
+
+          await db.insert(transactions).values({
+            fromAgentId: undefined,
+            toAgentId: undefined,
+            amount: interest,
+            type: 'debt_interest',
+            description: `Interest on outstanding debt ($${govSettings.debtOutstanding} @ ${rc.debtInterestRatePct}%/yr)`,
+          });
+
+          console.warn(`[SIMULATION] Phase 12: Debt interest $${interest} accrued (debt $${govSettings.debtOutstanding}). Treasury: $${treasuryBalance}`);
+        }
+      }
+      /* Phase 13 re-reads governmentSettings fresh and owns the
+         read-modify-write of debtOutstanding (Rule 6: single read-merge-
+         write, not two phases racing the same column) — this phase only
+         ever touches treasuryBalance. */
+
       /* Update treasury balance */
       await db
         .update(governmentSettings)
@@ -5028,12 +5199,32 @@ agentTickQueue.process(async () => {
     } else {
       const citizenRevenue = dailyCitizenRevenue(rc.gdpAnnual, govSettings.taxRatePercent);
       const totalRevenue = citizenRevenue + payrollWithheldThisTick;
-      const treasuryBalance = govSettings.treasuryBalance + totalRevenue;
+      let treasuryBalance = govSettings.treasuryBalance + totalRevenue;
 
-      /* Update treasury balance */
+      /* ---- Divergence E1 slice 1: end-of-tick debt/treasury settlement --
+         Gated entirely on rc.debtEngineEnabled — flag off skips this block
+         and treasuryBalance/debtOutstanding behave exactly as pre-slice-1
+         (debtOutstanding column exists but is never read or written, stays
+         0 forever, matching the migration's stated zero-behavior-change
+         guarantee). When on: cash below 0 issues debt and floors treasury
+         at 0 (treasuryHardFloor becomes dead config per spec — the debt
+         engine floor supersedes it); cash above the operating buffer
+         retires debt with the excess, capped at the current debt stock. */
+      let debtOutstanding = govSettings.debtOutstanding;
+      let debtDelta = 0;
+      if (rc.debtEngineEnabled) {
+        const settlement = settleTreasury(treasuryBalance, rc.treasuryOperatingBufferDollars, govSettings.debtOutstanding);
+        treasuryBalance = settlement.treasury;
+        debtDelta = settlement.debtDelta;
+        debtOutstanding = govSettings.debtOutstanding + debtDelta;
+      }
+
+      /* Single read-merge-write of governmentSettings for this phase —
+         treasuryBalance always, debtOutstanding only moves when the debt
+         engine is on (debtDelta is 0 otherwise, a true no-op write). */
       await db
         .update(governmentSettings)
-        .set({ treasuryBalance, updatedAt: new Date() })
+        .set({ treasuryBalance, debtOutstanding, updatedAt: new Date() })
         .where(eq(governmentSettings.id, govSettings.id));
 
       await db.insert(activityEvents).values({
@@ -5051,10 +5242,27 @@ agentTickQueue.process(async () => {
         }),
       });
 
+      if (rc.debtEngineEnabled && debtDelta !== 0) {
+        await db.insert(activityEvents).values({
+          type: debtDelta > 0 ? 'debt_issued' : 'debt_retired',
+          agentId: null,
+          title: debtDelta > 0 ? 'Debt issued to cover shortfall' : 'Debt retired with treasury surplus',
+          description: debtDelta > 0
+            ? `Treasury shortfall covered by issuing $${debtDelta} in debt — outstanding debt now $${debtOutstanding}`
+            : `Treasury surplus above the $${rc.treasuryOperatingBufferDollars} buffer retired $${-debtDelta} of debt — outstanding debt now $${debtOutstanding}`,
+          metadata: JSON.stringify({ debtDelta, debtOutstanding, treasuryBalance, buffer: rc.treasuryOperatingBufferDollars }),
+        });
+
+        broadcast('treasury:debt_settled', { debtDelta, debtOutstanding, treasuryBalance });
+      }
+
       /* Phase 3: one fiscal summary row per tick — powers the budget
          dashboard's treasury chart. Writes regardless of the kill switch
          (revenue and treasury are real either way). Inside Phase 13's try:
-         a summary failure never kills the tick. */
+         a summary failure never kills the tick. Schema unchanged — debt
+         movement is NOT added as a new summary column (spec constraint);
+         it's fully recoverable from governmentSettings.debtOutstanding +
+         the debt_issued/debt_retired activity events above. */
       await db.insert(fiscalTickSummaries).values({
         tickId: currentTick?.id ?? undefined,
         tickNumber,
@@ -5063,7 +5271,7 @@ agentTickQueue.process(async () => {
         treasuryEnd: treasuryBalance,
       });
 
-      console.warn(`[SIMULATION] Phase 13: Revenue accrued $${totalRevenue}. Treasury: $${treasuryBalance}`);
+      console.warn(`[SIMULATION] Phase 13: Revenue accrued $${totalRevenue}. Treasury: $${treasuryBalance}${rc.debtEngineEnabled ? ` (debt $${debtOutstanding})` : ''}`);
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 13 error:', err);

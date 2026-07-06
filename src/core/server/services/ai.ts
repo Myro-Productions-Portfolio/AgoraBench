@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { db } from '@db/connection';
-import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings, agentDeals, agentStatements, activityEvents, gazetteIssues } from '@db/schema/index';
+import { agentDecisions, apiProviders, userApiKeys, agents, forumThreads, agentMessages, elections, campaigns, bills, laws, agentMemorySummaries, agentRelationships, agentPolicyPositions, governmentSettings, agentDeals, agentStatements, activityEvents, gazetteIssues, tickLog } from '@db/schema/index';
 import { eq, and, or, desc, gt, inArray, sql } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -8,6 +8,7 @@ import { HfInference } from '@huggingface/inference';
 import { decryptText } from '../lib/crypto.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { buildCongressContextBlock } from '@modules/government/server/services/congressContext.js';
+import { mandatoryEffectiveAmount, tickInterest } from '../lib/fiscalMath.js';
 
 export interface AgentRecord {
   id: string;
@@ -367,7 +368,7 @@ export async function buildEconomyContextBlock(
 ): Promise<string> {
   try {
     const [govSettings] = await db
-      .select({ treasuryBalance: governmentSettings.treasuryBalance, taxRatePercent: governmentSettings.taxRatePercent })
+      .select({ treasuryBalance: governmentSettings.treasuryBalance, taxRatePercent: governmentSettings.taxRatePercent, debtOutstanding: governmentSettings.debtOutstanding })
       .from(governmentSettings)
       .limit(1);
     const [agentRow] = await db
@@ -384,7 +385,43 @@ export async function buildEconomyContextBlock(
     const taxRate = govSettings.taxRatePercent ?? 18;
     const balance = agentRow?.balance ?? 0;
 
-    return `## Economic Context\nTreasury: $${treasury.toLocaleString()} (${healthLabel}) | Tax rate: ${taxRate}% | Your balance: $${balance.toLocaleString()}\nAll fiscal amounts are in US dollars; bills appropriate at national scale ($500M–$700B).`;
+    /* Divergence E1 slice 1: debt outstanding, daily interest, mandatory
+       total/day, and the amend-mandatory allowance — only when the debt
+       engine is on. Agents cannot govern what they cannot see (spec), but
+       this must never slow down or break the base economy block when the
+       engine is off (the common case pre-T0), so it's a fully separate
+       try/catch appended to the existing return, not a restructure. */
+    let debtLine = '';
+    const rc = getRuntimeConfig();
+    if (rc.debtEngineEnabled) {
+      try {
+        const [tickCountRow] = await db
+          .select({ completed: sql<number>`COUNT(*) FILTER (WHERE ${tickLog.completedAt} IS NOT NULL)` })
+          .from(tickLog);
+        const currentTickNumber = Number(tickCountRow?.completed ?? 0) + 1;
+
+        const mandatoryRows = await db
+          .select({ fiscalAmount: laws.fiscalAmount, enactedTick: laws.enactedTick })
+          .from(laws)
+          .where(and(eq(laws.isActive, true), eq(laws.fiscalKind, 'mandatory')));
+        const mandatoryTotal = mandatoryRows.reduce((sum, r) => {
+          if (typeof r.fiscalAmount !== 'number' || typeof r.enactedTick !== 'number') return sum;
+          return sum + mandatoryEffectiveAmount(r.fiscalAmount, r.enactedTick, currentTickNumber, rc.mandatoryGrowthPctAnnual);
+        }, 0);
+
+        const debtOutstanding = govSettings.debtOutstanding ?? 0;
+        const dailyInterest = tickInterest(debtOutstanding, rc.debtInterestRatePct);
+
+        debtLine =
+          `\nNational debt: $${debtOutstanding.toLocaleString()} outstanding, $${dailyInterest.toLocaleString()}/day interest. ` +
+          `Mandatory spending: $${mandatoryTotal.toLocaleString()}/day (automatic, never lapses). ` +
+          `You may amend an existing mandatory law's funding by up to ±${rc.fiscalMaxMandatoryDeltaPct}% — you cannot create new mandatory programs.`;
+      } catch {
+        debtLine = '';
+      }
+    }
+
+    return `## Economic Context\nTreasury: $${treasury.toLocaleString()} (${healthLabel}) | Tax rate: ${taxRate}% | Your balance: $${balance.toLocaleString()}\nAll fiscal amounts are in US dollars; bills appropriate at national scale ($500M–$700B).${debtLine}`;
   } catch {
     return '';
   }

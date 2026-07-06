@@ -51,6 +51,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
+import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -5768,6 +5769,28 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 17 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Reality reference pool — periodic pull, divergence experiment       */
+  /* (docs/DIVERGENCE_EXPERIMENT.md §2.3). Runs regardless of            */
+  /* rc.debtEngineEnabled: reality data collection is independent of the */
+  /* sim's own debt mechanics, and the pool needs depth before T0 seeds. */
+  /* Failure-isolated -- backfillHistory()/pullRealitySnapshots() never  */
+  /* throw (both wrap + log internally), but this block is still        */
+  /* try/caught so a future change to either can never take down a tick.*/
+  /* ------------------------------------------------------------------ */
+  if (tickNumber % REALITY_PULL_EVERY_N_TICKS === 0) {
+    try {
+      const backfilled = await backfillHistory();
+      const { inserted, errors } = await pullRealitySnapshots();
+      console.warn(
+        `[SIMULATION] Reality pool: backfilled ${backfilled}, pulled ${inserted} snapshot(s)` +
+        (errors.length > 0 ? ` (${errors.length} source error(s): ${errors.join('; ')})` : ''),
+      );
+    } catch (err) {
+      console.warn('[SIMULATION] Reality pool error:', err);
+    }
   }
 
   /* ------------------------------------------------------------------ */

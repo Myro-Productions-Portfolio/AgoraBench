@@ -171,6 +171,15 @@ interface RuntimeConfig {
   courtDisputeChancePerBrokenDeal: number;
   courtJusticeQuestionsPerHearing: number;
   courtDamagesAmount: number;
+  /* Debt Engine (Divergence E1 slice 1) */
+  debtEngineEnabled: boolean;
+  mandatoryGrowthPctAnnual: number;
+  debtInterestRatePct: number;
+  treasuryOperatingBufferDollars: number;
+  fiscalMaxMandatoryDeltaPct: number;
+  debtCrisisRatioPct: number;
+  divergenceT0Tick: number;
+  divergenceT0Date: string;
 }
 
 interface EconomySettings {
@@ -2685,6 +2694,116 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       />
                       <p className="text-xs text-text-muted">Transferred loser to winner in dispute rulings, clamped to the loser&apos;s balance.</p>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Debt Engine (Divergence E1 slice 1) — deployed dark */}
+            {simConfig && (
+              <CollapsibleSection
+                id="debt_engine"
+                title="Debt Engine"
+                subtitle="Mandatory spending lane + debt/interest mechanics for the Divergence Experiment. Deployed dark — see docs/DIVERGENCE_EXPERIMENT.md."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Debt Engine Enabled (kill switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.debtEngineEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, debtEngineEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ debtEngineEnabled: simConfig.debtEngineEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, mandatory-law debits, interest accrual, and treasury/debt settlement are all no-ops — Phase 12/13 behave exactly as before this engine existed. Turns on at the T0 baseline seed.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Mandatory Spending &amp; Interest</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    {([
+                      ['mandatoryGrowthPctAnnual', 'Mandatory Growth (%/yr)', 0, 15, 'Daily-compounding annual growth applied to mandatory programs (SS/Medicare-style auto-escalation).'],
+                      ['debtInterestRatePct', 'Debt Interest Rate (%/yr)', 0, 15, 'Annual rate accrued daily on debtOutstanding — an automatic outflow, not a law.'],
+                      ['fiscalMaxMandatoryDeltaPct', 'Max Mandatory Δ / Amendment (%)', 1, 25, 'Max % an amendment may move a mandatory law’s base amount, either direction.'],
+                    ] as [keyof RuntimeConfig, string, number, number, string][]).map(([key, label, min, max, desc]) => (
+                      <div key={key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">{label}</label>
+                          <span className="text-sm text-gold font-mono">{simConfig[key] as number}%</span>
+                        </div>
+                        <input type="number" min={min} max={max} step={0.1}
+                          value={simConfig[key] as number}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseFloat(e.target.value) || min } : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Treasury Buffer &amp; Crisis</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Treasury Operating Buffer ($)</label>
+                        <span className="text-sm text-gold font-mono">{formatMoney(simConfig.treasuryOperatingBufferDollars, { compact: true })}</span>
+                      </div>
+                      <input type="number" min={0} max={10_000_000_000_000} step={1_000_000_000}
+                        value={simConfig.treasuryOperatingBufferDollars}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, treasuryOperatingBufferDollars: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ treasuryOperatingBufferDollars: simConfig.treasuryOperatingBufferDollars })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Surplus above this automatically retires outstanding debt.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Debt Crisis Ratio (% of GDP)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.debtCrisisRatioPct}%</span>
+                      </div>
+                      <input type="number" min={50} max={500} step={1}
+                        value={simConfig.debtCrisisRatioPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, debtCrisisRatioPct: parseInt(e.target.value) || 50 } : c)}
+                        onBlur={() => void saveConfig({ debtCrisisRatioPct: simConfig.debtCrisisRatioPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Stress condition trips when debtOutstanding / gdpAnnual exceeds this share. Real is ≈120%.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">T0 Baseline Anchor</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Divergence T0 Tick</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.divergenceT0Tick || '—'}</span>
+                      </div>
+                      <input type="number" min={0} step={1}
+                        value={simConfig.divergenceT0Tick}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, divergenceT0Tick: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ divergenceT0Tick: simConfig.divergenceT0Tick })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Tick number of the baseline seed. 0 = not yet seeded. Set once by scripts/seed-divergence-baseline.ts (slice 2).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Divergence T0 Date</label>
+                      </div>
+                      <input type="text" placeholder="YYYY-MM-DD"
+                        value={simConfig.divergenceT0Date}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, divergenceT0Date: e.target.value } : c)}
+                        onBlur={() => void saveConfig({ divergenceT0Date: simConfig.divergenceT0Date })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">ISO date anchoring T0 — real-date ↔ tick-date mapping for the Sim vs Reality page.</p>
                     </div>
                   </div>
                 </div>

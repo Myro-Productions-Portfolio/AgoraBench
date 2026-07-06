@@ -14,7 +14,7 @@
  *   - NULL/undefined enactedTick (legacy laws) is NEVER due — legacy safety.
  */
 
-export type FiscalKind = 'spend_once' | 'spend_recurring' | 'tax_change';
+export type FiscalKind = 'spend_once' | 'spend_recurring' | 'tax_change' | 'mandatory';
 
 /** Floor + clamp to [min, max]. Non-finite input returns min (safe floor). */
 export function clampInt(v: number, min: number, max: number): number {
@@ -316,4 +316,99 @@ export function projectFiscalNote(
     projected10TickDelta,
     pctOfCurrentTreasury,
   };
+}
+
+/* ── Divergence E1 slice 1: mandatory spending + debt/interest ─────────── */
+/* All three functions are pure and gated entirely by the CALLER
+   (rc.debtEngineEnabled) — they carry no flag awareness themselves, so a
+   flag-off tick simply never calls them and behavior is byte-identical to
+   today. Ticks are days throughout (1 tick = 1 sim day). */
+
+/**
+ * The per-tick debit for a `mandatory` law, GROWN from its stored base
+ * amount by daily-compounding annual growth — computed fresh every tick,
+ * never mutating the stored fiscalAmount (growth stays auditable against
+ * the T0 baseline): floor(base * (1 + rate/100) ^ (daysSinceEnacted / 365)).
+ * Non-finite/non-positive base, or a non-finite currentTick/enactedTick,
+ * returns 0 (no debit — never invent spend from corrupt state). A
+ * currentTick before enactedTick (clock skew / re-run) clamps the exponent
+ * at 0 (no growth yet, never negative growth). growthPctAnnual <= 0 or
+ * non-finite is treated as 0% (flat, no compounding) rather than rejected —
+ * a zero-growth mandatory program is a legitimate config, not corrupt input.
+ */
+export function mandatoryEffectiveAmount(
+  baseAmount: number,
+  enactedTick: number,
+  currentTick: number,
+  growthPctAnnual: number,
+): number {
+  if (!Number.isFinite(baseAmount) || baseAmount <= 0) return 0;
+  if (!Number.isFinite(enactedTick) || !Number.isFinite(currentTick)) return 0;
+  const daysSinceEnacted = Math.max(0, currentTick - enactedTick);
+  const rate = Number.isFinite(growthPctAnnual) && growthPctAnnual > 0 ? growthPctAnnual : 0;
+  const years = daysSinceEnacted / 365;
+  const factor = Math.pow(1 + rate / 100, years);
+  if (!Number.isFinite(factor) || factor <= 0) return 0;
+  return Math.floor(baseAmount * factor);
+}
+
+/**
+ * Daily interest accrual on the outstanding debt stock:
+ * floor(debtOutstanding * ratePct / 100 / 365). Not a law, not a lapse-able
+ * provision — an automatic outflow exactly like real net interest. Zero for
+ * non-positive/non-finite debt or non-finite rate; a non-finite or negative
+ * rate is treated as 0% rather than rejected (debt itself never accrues
+ * interest on corrupt config, but existing debt must never vanish either).
+ */
+export function tickInterest(debtOutstanding: number, ratePct: number): number {
+  if (!Number.isFinite(debtOutstanding) || debtOutstanding <= 0) return 0;
+  const rate = Number.isFinite(ratePct) && ratePct > 0 ? ratePct : 0;
+  if (rate === 0) return 0;
+  return Math.floor((debtOutstanding * rate) / 100 / 365);
+}
+
+export interface TreasurySettlement {
+  /** Treasury cash after settlement — never negative. */
+  treasury: number;
+  /** Signed change to debtOutstanding this tick: positive = debt issued
+   *  (shortfall), negative = debt retired (surplus above buffer), 0 = no-op. */
+  debtDelta: number;
+}
+
+/**
+ * End-of-tick treasury/debt settlement (Phase 13, after revenue and spending
+ * have already been netted into cashAfterFlows):
+ *   - cash < 0            → treasury floors at 0; issue debt for the full
+ *                            shortfall (debtDelta = -cash, i.e. positive).
+ *   - cash > buffer        → retire debt with the excess, capped so debt
+ *                            never goes negative (debtDelta = -min(excess,
+ *                            currentDebt), i.e. non-positive); treasury keeps
+ *                            the buffer plus whatever excess wasn't needed
+ *                            for retirement.
+ *   - 0 <= cash <= buffer  → no-op (debtDelta = 0, treasury unchanged).
+ * All non-finite inputs are treated as 0 (conservative: never invent cash
+ * or debt from corrupt state). currentDebt < 0 is treated as 0 (a corrupt
+ * negative debt stock is clamped before capping retirement against it).
+ */
+export function settleTreasury(
+  cashAfterFlows: number,
+  bufferDollars: number,
+  currentDebt: number,
+): TreasurySettlement {
+  const cash = Number.isFinite(cashAfterFlows) ? cashAfterFlows : 0;
+  const buffer = Number.isFinite(bufferDollars) && bufferDollars >= 0 ? bufferDollars : 0;
+  const debt = Number.isFinite(currentDebt) && currentDebt > 0 ? currentDebt : 0;
+
+  if (cash < 0) {
+    return { treasury: 0, debtDelta: Math.floor(-cash) };
+  }
+
+  if (cash > buffer) {
+    const excess = Math.floor(cash - buffer);
+    const retirement = Math.min(excess, debt);
+    /* Avoid signed -0 when there's no debt to retire (0 * -1 === -0). */
+    return { treasury: Math.floor(cash) - retirement, debtDelta: retirement > 0 ? -retirement : 0 };
+  }
+
+  return { treasury: Math.floor(cash), debtDelta: 0 };
 }

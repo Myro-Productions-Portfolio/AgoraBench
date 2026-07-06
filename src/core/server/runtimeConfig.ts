@@ -154,6 +154,16 @@ export interface RuntimeConfig {
   courtDisputeChancePerBrokenDeal: number;   // 0.0 - 1.0 roll per broken deal
   courtJusticeQuestionsPerHearing: number;   // LLM justice questions per hearing (0-4)
   courtDamagesAmount: number;                // $ transferred loser -> winner in disputes (0-10M)
+
+  /* ---- Debt Engine (Divergence E1 slice 1) ---- */
+  debtEngineEnabled: boolean;                // kill switch: mandatory debits, interest, settlement all no-op when false (deploy dark)
+  mandatoryGrowthPctAnnual: number;          // daily-compounding annual growth on mandatory programs (0-15)
+  debtInterestRatePct: number;               // annual rate accrued daily on debtOutstanding (0-15)
+  treasuryOperatingBufferDollars: number;    // surplus above this retires debt automatically (0-1e13)
+  fiscalMaxMandatoryDeltaPct: number;        // max % an amendment may move a mandatory law's base amount (1-25)
+  debtCrisisRatioPct: number;                // debt/GDP % that trips the debt-based crisis condition (50-500)
+  divergenceT0Tick: number;                  // tick number of the T0 baseline seed (>= 0; 0 = unset)
+  divergenceT0Date: string;                  // ISO date string anchoring T0 (real-date <-> tick-date mapping); '' = unset
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -299,6 +309,16 @@ const DEFAULTS: RuntimeConfig = {
   courtDisputeChancePerBrokenDeal: 0.25,
   courtJusticeQuestionsPerHearing: 2,
   courtDamagesAmount: 25_000,
+
+  /* Debt Engine (Divergence E1 slice 1) — deployed dark */
+  debtEngineEnabled: false,
+  mandatoryGrowthPctAnnual: 5,
+  debtInterestRatePct: 2.7,
+  treasuryOperatingBufferDollars: 1_500_000_000_000,
+  fiscalMaxMandatoryDeltaPct: 10,
+  debtCrisisRatioPct: 150,
+  divergenceT0Tick: 0,
+  divergenceT0Date: '',
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

@@ -140,7 +140,7 @@ describe('normalizeDebtToPennyRow', () => {
       outlaysFytd: null,
       receiptsFytd: null,
       deficitFytd: null,
-      debtOutstanding: 36864197532086,
+      debtOutstanding: 39375989952866,
       source: 'debt_to_penny',
     });
   });

@@ -2,15 +2,29 @@
   "data": [
     {
       "record_date": "2026-07-03",
-      "debt_held_public_amt": "29876543210987.65",
-      "intragov_hold_amt": "6987654321098.76",
-      "tot_pub_debt_out_amt": "36864197532086.41"
+      "debt_held_public_amt": "31676896645959.71",
+      "intragov_hold_amt": "7699093306906.55",
+      "tot_pub_debt_out_amt": "39375989952866.26",
+      "src_line_nbr": "1",
+      "record_fiscal_year": "2026",
+      "record_fiscal_quarter": "4",
+      "record_calendar_year": "2026",
+      "record_calendar_quarter": "3",
+      "record_calendar_month": "07",
+      "record_calendar_day": "03"
     },
     {
       "record_date": "2026-07-02",
-      "debt_held_public_amt": "29870123456789.01",
-      "intragov_hold_amt": "6985432109876.54",
-      "tot_pub_debt_out_amt": "36855555566665.55"
+      "debt_held_public_amt": "31670123456789.01",
+      "intragov_hold_amt": "7695432109876.54",
+      "tot_pub_debt_out_amt": "39365555566665.55",
+      "src_line_nbr": "1",
+      "record_fiscal_year": "2026",
+      "record_fiscal_quarter": "4",
+      "record_calendar_year": "2026",
+      "record_calendar_quarter": "3",
+      "record_calendar_month": "07",
+      "record_calendar_day": "02"
     }
   ],
   "meta": {

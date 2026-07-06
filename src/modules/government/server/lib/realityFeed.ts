@@ -34,7 +34,9 @@
 //     higher src_line_nbr among same-date YTD rows (prior-FY's section is
 //     always printed first / lower line#) -- confirmed live: FY2025 section
 //     YTD at src_line_nbr 14, FY2026 section YTD at src_line_nbr 24.
-//   Debt to the Penny row: record_date, tot_pub_debt_out_amt.
+//   Debt to the Penny row: record_date, tot_pub_debt_out_amt. NOTE this
+//     dataset is served under /v2 (not /v1 like the MTS tables) -- the /v1
+//     path 404s. See API_ROOT/API_BASE below.
 //
 // All amounts arrive as decimal-string dollars-and-cents (e.g.
 // "335512183227.42"); we floor() to whole dollars and store as bigint.
@@ -46,7 +48,12 @@ import { db } from '@db/connection';
 import { realitySnapshots } from '@db/schema/index';
 import { sql } from 'drizzle-orm';
 
-const API_BASE = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1';
+// The Treasury Fiscal Data API versions datasets independently: the MTS
+// tables live under /v1, but Debt to the Penny is served under /v2 (the /v1
+// path 404s -- confirmed live 2026-07-06). Keep the version segment per
+// endpoint rather than assuming a single shared version.
+const API_ROOT = 'https://api.fiscaldata.treasury.gov/services/api/fiscal_service';
+const API_BASE = `${API_ROOT}/v1`;
 const REQUEST_TIMEOUT_MS = 15_000;
 const PAGE_DELAY_MS = 250;
 
@@ -252,7 +259,7 @@ async function pullMts1Latest(): Promise<number> {
 
 /** Pull the latest Debt to the Penny total. */
 async function pullDebtToPennyLatest(): Promise<number> {
-  const url = `${API_BASE}/accounting/od/debt_to_penny?sort=-record_date&page[size]=1`;
+  const url = `${API_ROOT}/v2/accounting/od/debt_to_penny?sort=-record_date&page[size]=1`;
   const body = await fetchJson<FiscalDataResponse<DebtToPennyRow>>(url);
   const rows = (body.data ?? [])
     .map(normalizeDebtToPennyRow)

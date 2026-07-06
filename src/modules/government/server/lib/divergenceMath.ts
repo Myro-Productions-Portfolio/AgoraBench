@@ -152,3 +152,66 @@ export function annualizedShareOfGdpPct(dailyAverage: number, gdpAnnual: number)
   const annualized = dailyAverage * 365;
   return Math.round((annualized / gdpAnnual) * 1000) / 10;
 }
+
+/* ── Fiscal-lane inclusion rule ──────────────────────────────────────────
+   Shared by /divergence's spending aggregates (spendingPerDay,
+   spendingByCategory) and its programContinuity funded/lapsed status --
+   must match agentTick.ts Phase 12, the engine's own debit logic, exactly. */
+
+/**
+ * Whether a law row currently debits the treasury every tick, keyed on its
+ * fiscalKind lane:
+ *
+ *   - mandatory:       isActive && fiscalKind === 'mandatory'. programActive
+ *     is NOT part of this lane's activation -- mandatory laws are seeded
+ *     with programActive = null (Phase 9 convention: programActive only
+ *     means something for spend_recurring) and Phase 12 debits them purely
+ *     off isActive + fiscalKind, never lapsing them (Phase 9.7). A query
+ *     that also requires programActive = true here silently excludes every
+ *     mandatory row -- this is the exact bug this helper exists to prevent
+ *     regressing on.
+ *   - spend_recurring: isActive && programActive === true && fiscalKind
+ *     === 'spend_recurring'. This lane DOES lapse via the budget-session
+ *     cycle, so programActive is the authoritative funded/lapsed flag here.
+ *   - anything else (spend_once, tax_change, null): never included -- those
+ *     kinds don't carry a standing per-tick amount.
+ */
+export function isFiscallyActive(law: {
+  isActive: boolean | null;
+  fiscalKind: string | null;
+  programActive: boolean | null;
+}): boolean {
+  if (!law.isActive) return false;
+  if (law.fiscalKind === 'mandatory') return true;
+  if (law.fiscalKind === 'spend_recurring') return law.programActive === true;
+  return false;
+}
+
+/**
+ * Program-continuity status for the /divergence "programContinuity" table.
+ * Precedence (matches divergence.ts's prior inline logic exactly, now
+ * shared so the mandatory programActive=null case is explicit rather than
+ * an accidental fallthrough):
+ *   - fiscalKind === 'spend_recurring' && programActive === false -> Lapsed
+ *     (mandatory rows can never be Lapsed -- they don't carry a lapse
+ *     mechanism at all; programActive on a mandatory row is always null,
+ *     never false, but the kind check makes the invariant explicit rather
+ *     than relying on that never happening)
+ *   - lastRenewedTick > enactedTick -> Amended (renewal or mandatory-law
+ *     amendment, both bump lastRenewedTick)
+ *   - otherwise -> Funded (includes every mandatory row with the default
+ *     programActive = null -- mandatory programs are funded by definition
+ *     while isActive, since they never lapse)
+ */
+export function programContinuityStatus(law: {
+  fiscalKind: string | null;
+  programActive: boolean | null;
+  enactedTick: number | null;
+  lastRenewedTick: number | null;
+}): 'Funded' | 'Amended' | 'Lapsed' {
+  if (law.fiscalKind === 'spend_recurring' && law.programActive === false) return 'Lapsed';
+  if (law.lastRenewedTick !== null && law.enactedTick !== null && law.lastRenewedTick > law.enactedTick) {
+    return 'Amended';
+  }
+  return 'Funded';
+}

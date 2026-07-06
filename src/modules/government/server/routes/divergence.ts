@@ -11,6 +11,8 @@ import {
   debtToGdpPct,
   annualizedShareOfGdpPct,
   PROGRAM_TO_MTS_CATEGORY,
+  isFiscallyActive,
+  programContinuityStatus,
 } from '../lib/divergenceMath.js';
 
 const router = Router();
@@ -44,12 +46,19 @@ router.get('/divergence', async (_req, res, next) => {
 
     const revenuePerDay = Math.floor((rc.gdpAnnual * taxRatePercent) / 100 / 365);
 
-    /* Active mandatory + spend_recurring programs -- both lanes debit the
-       treasury every tick (fiscalMath.ts mandatoryEffectiveAmount for the
-       former, stored fiscalAmount for the latter). Mandatory amounts are
-       computed at their GROWN effective value, matching what Phase 12
+    /* Mandatory + spend_recurring programs, fetched WITHOUT a programActive
+       filter (mandatory rows are seeded with programActive = null -- see
+       isFiscallyActive's doc comment -- so filtering on it here would drop
+       every mandatory row from the query itself, before isFiscallyActive
+       ever gets a chance to run). The per-row inclusion rule below mirrors
+       agentTick.ts Phase 12 exactly via isFiscallyActive():
+         - mandatory:       isActive && fiscalKind === 'mandatory' (never
+           gated by programActive, which mandatory rows don't carry)
+         - spend_recurring: isActive && programActive === true
+       Mandatory amounts are computed at their GROWN effective value
+       (fiscalMath.ts mandatoryEffectiveAmount), matching what Phase 12
        actually debits this tick -- never the stale stored base. */
-    const activeProgramRows = await db
+    const candidateProgramRows = await db
       .select({
         lawId: laws.id,
         title: laws.title,
@@ -59,15 +68,12 @@ router.get('/divergence', async (_req, res, next) => {
         enactedTick: laws.enactedTick,
         lastRenewedTick: laws.lastRenewedTick,
         programActive: laws.programActive,
+        isActive: laws.isActive,
       })
       .from(laws)
-      .where(
-        and(
-          eq(laws.isActive, true),
-          eq(laws.programActive, true),
-          sql`${laws.fiscalKind} IN ('mandatory', 'spend_recurring')`,
-        ),
-      );
+      .where(sql`${laws.fiscalKind} IN ('mandatory', 'spend_recurring')`);
+
+    const activeProgramRows = candidateProgramRows.filter(isFiscallyActive);
 
     const spendingByCategory: { name: string; perDay: number }[] = [];
     let spendingPerDay = 0;
@@ -234,12 +240,14 @@ router.get('/divergence', async (_req, res, next) => {
        or after T0) and their funding status. Queried independently of
        activeProgramRows above (which excludes lapsed/inactive rows) so a
        program that has lapsed since T0 still shows up as "Lapsed" rather
-       than silently disappearing from the table. Status precedence:
-         - programActive === false            -> Lapsed
-         - lastRenewedTick > enactedTick       -> Amended (renewed/adjusted
-           since enactment -- covers both a budget-session renewal and a
-           mandatory-law amendment, which also bumps lastRenewedTick)
-         - otherwise                          -> Funded */
+       than silently disappearing from the table. Status precedence is
+       programContinuityStatus() in divergenceMath.ts -- shared so the
+       mandatory programActive=null case (always "Funded" while isActive,
+       since mandatory rows never lapse -- Phase 9.7) is an explicit rule,
+       not an accidental fallthrough of the old `programActive === false ?
+       Lapsed : ...` ternary (which happened to render the right label only
+       because mandatory rows' programActive is null, never false -- by
+       design here, not luck, now that it's spelled out in one place). */
     const programContinuity = t0
       ? (
           await db
@@ -265,16 +273,11 @@ router.get('/divergence', async (_req, res, next) => {
           const perDay = p.fiscalKind === 'mandatory' && p.enactedTick !== null
             ? mandatoryEffectiveAmount(base, p.enactedTick, currentTickNumber, rc.mandatoryGrowthPctAnnual)
             : base;
-          const status: 'Funded' | 'Amended' | 'Lapsed' = p.programActive === false
-            ? 'Lapsed'
-            : (p.lastRenewedTick !== null && p.enactedTick !== null && p.lastRenewedTick > p.enactedTick)
-              ? 'Amended'
-              : 'Funded';
           return {
             lawId: p.lawId,
             name: p.programName ?? p.title,
             perDay,
-            status,
+            status: programContinuityStatus(p),
           };
         })
       : [];

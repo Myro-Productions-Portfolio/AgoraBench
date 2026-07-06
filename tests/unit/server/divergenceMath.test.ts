@@ -7,6 +7,8 @@ import {
   annualizedShareOfGdpPct,
   PROGRAM_TO_MTS_CATEGORY,
   UNMAPPED_CATEGORY_LABEL,
+  isFiscallyActive,
+  programContinuityStatus,
 } from '@modules/government/server/lib/divergenceMath';
 
 describe('categoryShares', () => {
@@ -144,5 +146,106 @@ describe('PROGRAM_TO_MTS_CATEGORY', () => {
     expect(PROGRAM_TO_MTS_CATEGORY['Social Security']).toBe('Social Security');
     expect(PROGRAM_TO_MTS_CATEGORY['Medicare']).toBe('Medicare');
     expect(PROGRAM_TO_MTS_CATEGORY['National Defense']).toBe('National Defense');
+  });
+});
+
+describe('isFiscallyActive', () => {
+  it('includes a mandatory law with programActive = null (the seeded default -- regression guard for the missing-$11.419B/day bug)', () => {
+    expect(
+      isFiscallyActive({ isActive: true, fiscalKind: 'mandatory', programActive: null }),
+    ).toBe(true);
+  });
+
+  it('includes a mandatory law even when programActive is explicitly false (mandatory never lapses)', () => {
+    expect(
+      isFiscallyActive({ isActive: true, fiscalKind: 'mandatory', programActive: false }),
+    ).toBe(true);
+  });
+
+  it('excludes a mandatory law when isActive is false', () => {
+    expect(
+      isFiscallyActive({ isActive: false, fiscalKind: 'mandatory', programActive: null }),
+    ).toBe(false);
+  });
+
+  it('includes a spend_recurring law only when programActive === true', () => {
+    expect(
+      isFiscallyActive({ isActive: true, fiscalKind: 'spend_recurring', programActive: true }),
+    ).toBe(true);
+    expect(
+      isFiscallyActive({ isActive: true, fiscalKind: 'spend_recurring', programActive: false }),
+    ).toBe(false);
+    expect(
+      isFiscallyActive({ isActive: true, fiscalKind: 'spend_recurring', programActive: null }),
+    ).toBe(false);
+  });
+
+  it('excludes a spend_recurring law when isActive is false, even with programActive true', () => {
+    expect(
+      isFiscallyActive({ isActive: false, fiscalKind: 'spend_recurring', programActive: true }),
+    ).toBe(false);
+  });
+
+  it('excludes non-spending fiscalKinds (spend_once, tax_change, null)', () => {
+    expect(isFiscallyActive({ isActive: true, fiscalKind: 'spend_once', programActive: null })).toBe(false);
+    expect(isFiscallyActive({ isActive: true, fiscalKind: 'tax_change', programActive: null })).toBe(false);
+    expect(isFiscallyActive({ isActive: true, fiscalKind: null, programActive: null })).toBe(false);
+  });
+});
+
+describe('programContinuityStatus', () => {
+  it('reports Funded for a mandatory law with programActive = null (never lapses)', () => {
+    expect(
+      programContinuityStatus({
+        fiscalKind: 'mandatory',
+        programActive: null,
+        enactedTick: 770,
+        lastRenewedTick: null,
+      }),
+    ).toBe('Funded');
+  });
+
+  it('reports Lapsed for a spend_recurring law with programActive = false', () => {
+    expect(
+      programContinuityStatus({
+        fiscalKind: 'spend_recurring',
+        programActive: false,
+        enactedTick: 770,
+        lastRenewedTick: 770,
+      }),
+    ).toBe('Lapsed');
+  });
+
+  it('never reports Lapsed for a mandatory law even if programActive were somehow false', () => {
+    expect(
+      programContinuityStatus({
+        fiscalKind: 'mandatory',
+        programActive: false,
+        enactedTick: 770,
+        lastRenewedTick: 770,
+      }),
+    ).toBe('Funded');
+  });
+
+  it('reports Amended when lastRenewedTick > enactedTick', () => {
+    expect(
+      programContinuityStatus({
+        fiscalKind: 'spend_recurring',
+        programActive: true,
+        enactedTick: 770,
+        lastRenewedTick: 800,
+      }),
+    ).toBe('Amended');
+  });
+
+  it('reports Funded for a spend_recurring law that has not been renewed or lapsed', () => {
+    expect(
+      programContinuityStatus({
+        fiscalKind: 'spend_recurring',
+        programActive: true,
+        enactedTick: 770,
+        lastRenewedTick: null,
+      }),
+    ).toBe('Funded');
   });
 });

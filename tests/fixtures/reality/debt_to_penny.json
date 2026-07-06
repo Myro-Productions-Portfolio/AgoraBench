@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "record_date": "2026-07-03",
+      "debt_held_public_amt": "29876543210987.65",
+      "intragov_hold_amt": "6987654321098.76",
+      "tot_pub_debt_out_amt": "36864197532086.41"
+    },
+    {
+      "record_date": "2026-07-02",
+      "debt_held_public_amt": "29870123456789.01",
+      "intragov_hold_amt": "6985432109876.54",
+      "tot_pub_debt_out_amt": "36855555566665.55"
+    }
+  ],
+  "meta": {
+    "count": 2,
+    "labels": {
+      "record_date": "Record Date",
+      "debt_held_public_amt": "Debt Held by the Public Amount",
+      "intragov_hold_amt": "Intragovernmental Holdings Amount",
+      "tot_pub_debt_out_amt": "Total Public Debt Outstanding Amount"
+    },
+    "dataTypes": {
+      "record_date": "DATE",
+      "debt_held_public_amt": "CURRENCY",
+      "intragov_hold_amt": "CURRENCY",
+      "tot_pub_debt_out_amt": "CURRENCY"
+    },
+    "dataFormats": {
+      "record_date": "YYYY-MM-DD",
+      "debt_held_public_amt": "$10.20",
+      "intragov_hold_amt": "$10.20",
+      "tot_pub_debt_out_amt": "$10.20"
+    },
+    "total-count": 2,
+    "total-pages": 1
+  },
+  "links": {
+    "self": "&page%5Bnumber%5D=1&page%5Bsize%5D=1"
+  }
+}

@@ -23,3 +23,4 @@ export { agentStatements } from '@modules/agents/db/schema/agentStatements';
 export { committeeMemberships } from '@modules/government/db/schema/committeeMemberships';
 export { gazetteIssues } from '@modules/press/db/schema/gazette';
 export { courtCases, courtCaseEvents, courtCaseVotes } from '@modules/government/db/schema/court';
+export { realitySnapshots } from '@modules/government/db/schema/realitySnapshots'; /* divergence experiment */

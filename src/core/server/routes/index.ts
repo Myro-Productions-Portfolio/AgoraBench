@@ -24,6 +24,7 @@ import orchestratorRouter from '@modules/admin/server/routes/orchestrator';
 import modelsRouter from '@modules/admin/server/routes/models';
 import pressRouter from '@modules/press/server/routes/press';
 import realityRouter from '@modules/admin/server/routes/reality'; // divergence experiment: reality reference pool status
+import divergenceRouter from '@modules/government/server/routes/divergence'; // divergence experiment: /divergence page API (E1 slice 4)
 
 const router = Router();
 
@@ -52,5 +53,6 @@ router.use(orchestratorRouter);
 router.use(modelsRouter);
 router.use(pressRouter);
 router.use(realityRouter); // divergence experiment: reality reference pool status
+router.use(divergenceRouter); // divergence experiment: /divergence page API (E1 slice 4)
 
 export default router;

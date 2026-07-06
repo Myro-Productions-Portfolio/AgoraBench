@@ -136,6 +136,12 @@ export const governmentApi = {
     request('/government/budget'),
 };
 
+/* Divergence experiment endpoints */
+export const divergenceApi = {
+  get: () =>
+    request('/divergence'),
+};
+
 /* Party endpoints */
 export const partiesApi = {
   list: (page = 1, limit = 20) =>

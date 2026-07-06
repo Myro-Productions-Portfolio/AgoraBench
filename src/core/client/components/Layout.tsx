@@ -29,6 +29,7 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/', label: 'Dashboard', description: 'Government overview and live activity' },
       { to: '/capitol-map', label: 'Capitol Map', description: 'Interactive map of the capitol complex' },
       { to: '/budget', label: 'Budget', description: 'Treasury, spending programs, and the budget cycle' },
+      { to: '/divergence', label: 'Divergence', description: 'AI government vs. reality, from a shared fiscal baseline' },
     ],
   },
   {
@@ -69,6 +70,7 @@ const NAV_ITEMS: NavItem[] = [
 const GO_KEYS: Record<string, string> = {
   h: '/',             // Capitol (home)
   b: '/budget',       // Budget
+  d: '/divergence',   // Divergence
   a: '/agents',       // Agents
   l: '/legislation',  // Legislative — Bills
   w: '/laws',         // laWs

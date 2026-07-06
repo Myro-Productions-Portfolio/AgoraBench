@@ -32,8 +32,8 @@ Doctrine that every future decision inherits (from `docs/DIVERGENCE_EXPERIMENT.m
 
 Dependency-ordered. Each epoch = a coherent shippable capability; slices within epochs are in the specs. **Bold** = the critical path to the first real scoreboard; the rest widen it.
 
-**E1 — Divergence Core** *(spec approved, 3 owner flags default-resolved)*
-Mandatory lane + debt engine (dark), T0 baseline seed, reality reference pool, /divergence v1 (fiscal metrics). Exit: the experiment is *running* — sim carries the real fiscal baseline and diverges measurably.
+**E1 — Divergence Core** *(**COMPLETE 2026-07-06** — PRs #20–#24; T0 seeded at tick 770, tick 771 verified exact to the dollar)*
+Mandatory lane + debt engine (dark), T0 baseline seed, reality reference pool, /divergence v1 (fiscal metrics). Exit met: the experiment is *running* — sim carries the real fiscal baseline ($39.4T debt, 12 programs, 19% tax, $4.89B/day deficit) and diverges measurably (first divergence event: one-time $649B debt retirement from the legacy treasury settling down to the $1.5T buffer).
 
 **E2 — World Events + AGGE Functions 0–1**
 Feed adapters (read-only week first), `/world` page, AGGE untangled from Bob + curating injections (prompt channel first). Exit: agents live in the same world as reality, spectators see it.

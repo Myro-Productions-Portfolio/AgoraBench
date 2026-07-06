@@ -3,16 +3,9 @@ import { Link } from 'react-router-dom';
 import { governmentApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { formatMoney } from '@core/client/lib/formatMoney';
+import { trimToCurrentEra, type SeriesPoint } from '../lib/budgetSeries';
 
 /* ── Types (mirror GET /api/government/budget) ─────────────────────────── */
-
-interface SeriesPoint {
-  tickNumber: number;
-  revenue: number;
-  spending: number;
-  treasuryEnd: number;
-  createdAt: string;
-}
 
 interface ActiveProgram {
   lawId: string;
@@ -98,10 +91,10 @@ const CHART_H = 220;
 const PAD = { top: 12, right: 12, bottom: 24, left: 64 };
 
 function TreasuryChart({ series }: { series: SeriesPoint[] }) {
-  // The series spans the currency conversion: rows written before the dollar-era
-  // rebase are in old MoltDollar units and rows after are in dollars. The chart
-  // plots raw stored values with no massaging — the post-conversion jump is real
-  // history, not a rendering artifact.
+  // Callers pass a series already trimmed to the current currency era (see
+  // trimToCurrentEra in ../lib/budgetSeries) — the pre-rebase MoltDollar
+  // points are dropped upstream so this chart never has to straddle the
+  // conversion jump itself.
   const points = series.map((p) => ({ x: p.tickNumber, y: p.treasuryEnd }));
   const innerW = CHART_W - PAD.left - PAD.right;
   const innerH = CHART_H - PAD.top - PAD.bottom;
@@ -133,7 +126,7 @@ function TreasuryChart({ series }: { series: SeriesPoint[] }) {
           <g key={i}>
             <line x1={PAD.left} x2={CHART_W - PAD.right} y1={sy(gy)} y2={sy(gy)} stroke="currentColor" className="text-border" strokeWidth={0.5} />
             <text x={PAD.left - 8} y={sy(gy) + 3} textAnchor="end" className="fill-current text-text-muted" fontSize={10}>
-              {Math.round(gy).toLocaleString()}
+              {fmtM(gy)}
             </text>
           </g>
         ))}
@@ -154,6 +147,15 @@ function TreasuryChart({ series }: { series: SeriesPoint[] }) {
 
 /* ── Revenue vs spending bars ──────────────────────────────────────────── */
 
+// Revenue (~$17.6B/tick) and spending (~$0-300K/tick) sit orders of
+// magnitude apart in the dollar-era economy. A linear scale renders spending
+// as an invisible 2%-min sliver, so bar heights use sqrt scaling to keep
+// small-but-real spending visible relative to revenue. Tooltips still show
+// exact values.
+function barHeightPct(v: number, maxVal: number): number {
+  return Math.max(2, Math.sqrt(v / maxVal) * 100);
+}
+
 function RevenueSpendingBars({ series }: { series: SeriesPoint[] }) {
   const recent = series.slice(-40);
   const maxVal = Math.max(1, ...recent.map((p) => Math.max(p.revenue, p.spending)));
@@ -165,11 +167,11 @@ function RevenueSpendingBars({ series }: { series: SeriesPoint[] }) {
           <div key={p.tickNumber} className="flex-1 flex items-end gap-px min-w-[6px]" title={`Tick ${p.tickNumber}: revenue ${fmtM(p.revenue)}, spending ${fmtM(p.spending)}`}>
             <div
               className="flex-1 bg-green-500/70 rounded-t-sm"
-              style={{ height: `${Math.max(2, (p.revenue / maxVal) * 100)}%` }}
+              style={{ height: `${barHeightPct(p.revenue, maxVal)}%` }}
             />
             <div
               className="flex-1 bg-red-500/70 rounded-t-sm"
-              style={{ height: `${Math.max(2, (p.spending / maxVal) * 100)}%` }}
+              style={{ height: `${barHeightPct(p.spending, maxVal)}%` }}
             />
           </div>
         ))}
@@ -181,6 +183,7 @@ function RevenueSpendingBars({ series }: { series: SeriesPoint[] }) {
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500/70" aria-hidden="true" /> Spending
         </span>
+        <span>(square-root scale — hover a bar for exact values)</span>
         <span className="ml-auto">Last {recent.length} tick{recent.length !== 1 ? 's' : ''}</span>
       </div>
     </div>
@@ -222,6 +225,12 @@ export function BudgetPage() {
   const netPerTick = useMemo(() => {
     if (!data) return 0;
     return data.expectedTickRevenue - data.totals.recurringPerTick;
+  }, [data]);
+
+  // Trim the pre-rebase (old-currency) prefix once, shared by both charts.
+  const currentEraSeries = useMemo(() => {
+    if (!data) return [];
+    return trimToCurrentEra(data.series);
   }, [data]);
 
   if (loading) {
@@ -288,8 +297,8 @@ export function BudgetPage() {
 
       {/* Treasury over time */}
       <Section title="Treasury Over Time" subtitle="End-of-tick treasury balance from the fiscal ledger">
-        {data.series.length >= 2 ? (
-          <TreasuryChart series={data.series} />
+        {currentEraSeries.length >= 2 ? (
+          <TreasuryChart series={currentEraSeries} />
         ) : (
           <p className="text-sm text-text-muted py-6 text-center">
             Not enough fiscal data yet — a summary row is written at the end of every tick. Check back after a couple of ticks.
@@ -299,8 +308,8 @@ export function BudgetPage() {
 
       {/* Revenue vs spending */}
       <Section title="Revenue vs Spending" subtitle="Daily tax revenue against government spending (paychecks + programs + one-time appropriations)">
-        {data.series.length > 0 ? (
-          <RevenueSpendingBars series={data.series} />
+        {currentEraSeries.length > 0 ? (
+          <RevenueSpendingBars series={currentEraSeries} />
         ) : (
           <p className="text-sm text-text-muted py-6 text-center">No fiscal data yet.</p>
         )}

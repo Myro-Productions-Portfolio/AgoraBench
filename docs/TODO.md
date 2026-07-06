@@ -1,8 +1,13 @@
 # TODO - AgoraBench
 
-Last Updated: 2026-07-04
+Last Updated: 2026-07-05
 
 ## Recently Completed
+
+- [x] 2026-07-05: First bi-weekly payday (tick 742) verified in prod TO THE DOLLAR — gross payroll $265,228 debited (Pres $15,384, Justices $11,792, Congress/chairs $6,692 = annual/26 exactly), withholding $50,377 at the 19% rate then in force remitted back as revenue (Phase 13), treasury delta = revenue − spending exact, `balance_after` reconstructs as a correct running net balance. The 4e7582e money-minting fix holds in production.
+- [x] 2026-07-05: Fiscal clamps verified holding under $-scale proposals (PR-less, read-only check) — `spend_once` max stored $85B was within the 5%-of-treasury dynamic cap at proposal time; recurring bills stored at exactly 10%-of-revenue boundary values, proving the clamp actively fires; tax deltas all within ±2.
+- [x] 2026-07-05: Judicial damages path verified on AB-723-1 (agent_dispute, 0–7 → respondent) — damages flowed loser→winner, amount = min(courtDamagesAmount, loser balance) under the config then in force ($50 pre-rebase; now $25,000 post-overhaul). The `struck` law-flip path remains unexercised — see Active Tasks.
+- [x] 2026-07-05: Budget page charts fixed for dollar scale (PR #14, `675337a`) — compact y-axis labels via formatMoney, new `trimToCurrentEra()` helper (unit-tested, 325 suite green) drops pre-rebase MoltDollar points so the treasury chart no longer flatlines against one vertical jump, Revenue vs Spending bars use disclosed square-root scaling.
 
 - [x] 2026-07-04: Economy overhaul built on branch `feat/economy-overhaul` (6 commits, 318→323 tests green, build clean). Full US scale: 330M population, $28T GDP, ~$1.5T treasury. All money columns → bigint (migration `0026_economy_bigint_rebase.sql`, idempotent-guarded data rebase `newBalance = 25000 + old×20`). New model: daily citizen tax revenue (GDP×rate/365 ≈ $13.8B/day) replaces the per-agent wealth tax; bi-weekly net-of-withholding payroll (real 2026 salaries, annual/26); election cash bonus removed; campaign filing + party fees now charged with ledger rows; currency display now plain `$`. New `formatMoney` shared formatter. Map "everyone in the Treasury" bug fixed (salary_payment unmapped). New agent Finances timeline (endpoint + tab). Budget/Dashboard/Admin UI rescaled. RuntimeConfig gained payPeriodTicks/gdpAnnual/agoraPopulation. NOT YET DEPLOYED — deploy steps: run migration, then `docs/deploy/economy-overhaul-config.sql`, then `pnpm run deploy`.
 - [x] 2026-07-04: Judicial Phase 10 VERIFIED live in production — 6 cases filed across ticks 717–729, 4 decided through the full filing → hearing → deliberation → opinion → ruling lifecycle. Task #21 closed.
@@ -36,14 +41,15 @@ Last Updated: 2026-07-04
 
 ### High Priority
 
-- [ ] One-time spot-check of judicial transaction effects on the first `struck` outcome in production. Majority-tally and damages math (law flip, `court_damages`, approval deltas) are inline in `agentTick.ts` Phase 10 and are not covered by the `judicialParsing`/`courtMath` regression suite (`0df49d3`) — verify manually against real tick logs the first time a case is actually struck down.
+- [ ] Watch for the first `struck` outcome in production and spot-check the law flip (`isActive=false` + `law_struck_down` event, `agentTick.ts:~3855`). The damages/tally half of this item was verified 2026-07-05 on AB-723-1; only the strike-down branch remains unexercised (11 decided cases so far: 8 upheld, 2 dismissed, 1 respondent).
+- [ ] **OWNER DECISION — economy has no spending side at scale.** Revenue is ~$14–17.6B/day; outflow is bi-weekly payroll (~$265k) plus nothing. Treasury grows ~$16B/tick unbounded ($1.77T and climbing), and agents are responding by *raising taxes* — ten "treasury stabilization" revenue acts ratcheted the rate 4% → 23% in 48h. Recurring spending programs exist as a mechanic (cap $8.8B/day) but none has been enacted yet; several $1.4–1.8B/day proposals are on the floor. Options when ready: let the sim discover spending on its own, seed a baseline program, or have AGGE inject a fiscal-pressure event. Related: consider whether the tax-rate ratchet needs a cooldown clamp (one revenue act per N ticks).
 - [ ] UI revamp per `docs/design-briefs/` (01 broadcast dashboard, 02 hemicycle votes, etc.) — implemented directly in code per the shelved-Claude-Design decision above. Start when owner initiates.
 
 ### Medium Priority
 
 - [ ] Reality injection phases 2+3 — Phase 2: broader real-world feeds (economic indicators, news, public opinion) as additional context block builders following the congressContext.ts pattern. Phase 3: MCP-based tool use where agents actively query external sources during decision-making. Design spec not yet written.
 - [ ] Real election vote casting — agents currently don't vote in elections at all. `finalizeElection()` picks a winner from `campaigns.contributions` as a placeholder. Needs a dedicated vote-casting phase in the tick where eligible agents make an LLM decision and write to the `votes` table, then swap the tally source in `finalizeElection()` to `SELECT candidate_id, COUNT(*) FROM votes ... GROUP BY candidate_id`.
-- [ ] Resolve double-position state — an agent can currently hold both a Congress seat and a higher office (e.g. President) simultaneously. Decide whether winning a higher office should vacate the lower one in `finalizeElection()`.
+- [ ] Resolve double-position state — an agent can currently hold both a Congress seat and a higher office (e.g. President) simultaneously. Decide whether winning a higher office should vacate the lower one in `finalizeElection()`. Now has a visible payroll consequence: on the tick-742 payday sam-ritter drew THREE salaries (president + committee chair + congress member) and desmond-park two (chair + member) — payroll pays per position held, so resolving this also fixes multi-dipping paychecks.
 - [ ] AGGE visibility — no way to see if personality adjustments are actually happening. Need intervention history visible on the Agent profile page (personalityMod history: what changed, when, why).
 - [ ] AGGE re-enable — remove the `BOB_ORCHESTRATOR_KEY` gate so AGGE runs on its own interval independent of Bob; they're separate concerns.
 - [ ] Per-orchestrator identity — migrate `BOB_ORCHESTRATOR_KEY` (single shared bearer) → an `orchestrator_keys` table with per-agent scopes (read-only vs intervene) and rate limits. Foundation for a future "Connect Your Agent" flow. Required before making the MCP server public.

@@ -23,6 +23,7 @@ import coalitionsRouter from '@modules/agents/server/routes/coalitions';
 import orchestratorRouter from '@modules/admin/server/routes/orchestrator';
 import modelsRouter from '@modules/admin/server/routes/models';
 import pressRouter from '@modules/press/server/routes/press';
+import realityRouter from '@modules/admin/server/routes/reality'; // divergence experiment: reality reference pool status
 
 const router = Router();
 
@@ -50,5 +51,6 @@ router.use(coalitionsRouter);
 router.use(orchestratorRouter);
 router.use(modelsRouter);
 router.use(pressRouter);
+router.use(realityRouter); // divergence experiment: reality reference pool status
 
 export default router;

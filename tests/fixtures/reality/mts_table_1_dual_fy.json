@@ -1,0 +1,58 @@
+{
+  "data": [
+    {
+      "record_date": "2026-05-31",
+      "parent_id": "58528532",
+      "classification_id": "58528583",
+      "classification_desc": "Year-to-Date",
+      "current_month_gross_rcpt_amt": "5234616472030.91",
+      "current_month_gross_outly_amt": "7009985661849.26",
+      "current_month_dfct_sur_amt": "1775369189818.35",
+      "table_nbr": "1",
+      "src_line_nbr": "14",
+      "print_order_nbr": "14",
+      "line_code_nbr": "140",
+      "data_type_cd": "T",
+      "record_type_cd": "SL",
+      "sequence_level_nbr": "2",
+      "sequence_number_cd": "1.13",
+      "record_fiscal_year": "2026",
+      "record_fiscal_quarter": "3",
+      "record_calendar_year": "2026",
+      "record_calendar_quarter": "2",
+      "record_calendar_month": "05",
+      "record_calendar_day": "31"
+    },
+    {
+      "record_date": "2026-05-31",
+      "parent_id": "58528591",
+      "classification_id": "58528634",
+      "classification_desc": "Year-to-Date",
+      "current_month_gross_rcpt_amt": "3655648146756.66",
+      "current_month_gross_outly_amt": "4901851413143.59",
+      "current_month_dfct_sur_amt": "1246203266386.93",
+      "table_nbr": "1",
+      "src_line_nbr": "24",
+      "print_order_nbr": "24",
+      "line_code_nbr": "240",
+      "data_type_cd": "T",
+      "record_type_cd": "SL",
+      "sequence_level_nbr": "2",
+      "sequence_number_cd": "2.9",
+      "record_fiscal_year": "2026",
+      "record_fiscal_quarter": "3",
+      "record_calendar_year": "2026",
+      "record_calendar_quarter": "2",
+      "record_calendar_month": "05",
+      "record_calendar_day": "31"
+    }
+  ],
+  "meta": {
+    "count": 2,
+    "total-count": 2,
+    "total-pages": 1
+  },
+  "links": {
+    "self": "&page%5Bnumber%5D=1&page%5Bsize%5D=5"
+  }
+}

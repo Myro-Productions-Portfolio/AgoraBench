@@ -3,7 +3,7 @@ import { eq, desc, and, inArray, gte } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { db } from '@db/connection';
-import { agents, activityEvents, aggeInterventions } from '@db/schema/index';
+import { agents, activityEvents, aggeInterventions, governmentSettings } from '@db/schema/index';
 import { broadcast } from '../websocket.js';
 import { WS_EVENTS } from '@shared/constants';
 
@@ -111,6 +111,24 @@ async function runAggeTick(count: number): Promise<void> {
   // Pick 1–N agents (excluding AGGE system row), count from runtimeConfig
   const pool = activeAgents.filter((a) => a.id !== AGGE_AGENT_ID);
   const rc = getRuntimeConfig();
+
+  /* Divergence E1 slice 1: debt-ratio stress condition, additive to the
+     existing approval/balance-based pressure notes below — a national debt
+     crisis is a distress signal every agent perceives, not just the
+     fiscally-focused ones. Computed once per AGGE tick (agent-invariant),
+     zero cost when the debt engine is off. */
+  let debtCrisisNote = '';
+  if (rc.debtEngineEnabled && rc.gdpAnnual > 0) {
+    try {
+      const [gs] = await db.select({ debtOutstanding: governmentSettings.debtOutstanding }).from(governmentSettings).limit(1);
+      const debtRatioPct = ((gs?.debtOutstanding ?? 0) / rc.gdpAnnual) * 100;
+      if (debtRatioPct > rc.debtCrisisRatioPct) {
+        debtCrisisNote = `\nNational debt crisis: debt at ${Math.round(debtRatioPct)}% of GDP, above the ${rc.debtCrisisRatioPct}% distress threshold — the political mood is anxious about the fiscal trajectory.`;
+      }
+    } catch {
+      debtCrisisNote = '';
+    }
+  }
 
   let targets: typeof pool;
 
@@ -255,7 +273,7 @@ async function runAggeTick(count: number): Promise<void> {
         `Core personality: "${agent.personality ?? 'unknown'}". ` +
         `${modStatus} ` +
         `Recent simulation activity: ${activitySummary}.` +
-        `${historyNote}${approvalNote}${balanceNote}` +
+        `${historyNote}${approvalNote}${balanceNote}${debtCrisisNote}` +
         `\n\nChoose one small, realistic personality evolution for this agent. ` +
         `This should feel organic — a natural response to their experiences in the simulation. ` +
         `Keep the modifier under 20 words. It should describe a current mental/emotional state or behavioral tendency. ` +

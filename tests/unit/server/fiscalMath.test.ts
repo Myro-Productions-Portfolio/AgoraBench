@@ -13,6 +13,9 @@ import {
   ticksUntilSunset,
   ticksUntilLapse,
   ticksUntilNextBudgetSession,
+  mandatoryEffectiveAmount,
+  tickInterest,
+  settleTreasury,
 } from '@core/server/lib/fiscalMath';
 
 describe('clampInt', () => {
@@ -356,5 +359,144 @@ describe('ticksUntilNextBudgetSession — session tick = max(current+1, last+cyc
     expect(ticksUntilNextBudgetSession(10, null, 24)).toBe(14);
     expect(ticksUntilNextBudgetSession(NaN, 0, 24)).toBeNull();
     expect(ticksUntilNextBudgetSession(10, 0, 0)).toBeNull();
+  });
+});
+
+/* ── Divergence E1 slice 1: mandatory spending + debt/interest ─────────── */
+
+describe('mandatoryEffectiveAmount — daily-compounding annual growth, computed not stored', () => {
+  it('compounds over multiple years (5%/yr on $1,000,000)', () => {
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 365, 5)).toBe(1_050_000);   // 1 year
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 730, 5)).toBe(1_102_500);   // 2 years
+  });
+
+  it('partial-year (daily) compounding, not a step function', () => {
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 182, 5)).toBe(1_024_626); // ~half year
+  });
+
+  it('zero elapsed time returns the base amount unchanged', () => {
+    expect(mandatoryEffectiveAmount(1_000_000, 100, 100, 5)).toBe(1_000_000);
+  });
+
+  it('zero growth rate never compounds (flat mandatory program)', () => {
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 365, 0)).toBe(1_000_000);
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 3650, 0)).toBe(1_000_000);
+  });
+
+  it('a currentTick before enactedTick (clock skew) clamps age at 0 — never negative growth', () => {
+    expect(mandatoryEffectiveAmount(1_000_000, 200, 100, 5)).toBe(1_000_000);
+  });
+
+  it('never mutates the stored base — same base + same ticks is deterministic and repeatable', () => {
+    const a = mandatoryEffectiveAmount(4_315_000_000, 0, 400, 5);
+    const b = mandatoryEffectiveAmount(4_315_000_000, 0, 400, 5);
+    expect(a).toBe(b);
+  });
+
+  it('non-finite/non-positive base, non-finite ticks, or negative growth guard to 0/flat', () => {
+    expect(mandatoryEffectiveAmount(0, 0, 365, 5)).toBe(0);
+    expect(mandatoryEffectiveAmount(-100, 0, 365, 5)).toBe(0);
+    expect(mandatoryEffectiveAmount(NaN, 0, 365, 5)).toBe(0);
+    expect(mandatoryEffectiveAmount(1_000_000, NaN, 365, 5)).toBe(0);
+    expect(mandatoryEffectiveAmount(1_000_000, 0, NaN, 5)).toBe(0);
+    /* Negative/non-finite growth treated as 0% — a legitimate flat program,
+       not corrupt input, so the base survives rather than zeroing out. */
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 365, -5)).toBe(1_000_000);
+    expect(mandatoryEffectiveAmount(1_000_000, 0, 365, NaN)).toBe(1_000_000);
+  });
+});
+
+describe('tickInterest — floor(debt * rate / 100 / 365)', () => {
+  it('accrues daily interest on a real-scale debt stock', () => {
+    // $36.5T at 2.7% → floor(36.5e12 * 2.7 / 100 / 365) = $2.7B/day
+    expect(tickInterest(36_500_000_000_000, 2.7)).toBe(2_700_000_000);
+  });
+
+  it('floors small amounts to 0 rather than fractional cents', () => {
+    expect(tickInterest(1_000, 10)).toBe(0);
+  });
+
+  it('zero for non-positive or non-finite debt', () => {
+    expect(tickInterest(0, 2.7)).toBe(0);
+    expect(tickInterest(-1_000, 2.7)).toBe(0);
+    expect(tickInterest(NaN, 2.7)).toBe(0);
+  });
+
+  it('zero for non-positive or non-finite rate (never invents interest)', () => {
+    expect(tickInterest(1_000_000, 0)).toBe(0);
+    expect(tickInterest(1_000_000, -1)).toBe(0);
+    expect(tickInterest(1_000_000, NaN)).toBe(0);
+  });
+});
+
+describe('settleTreasury — end-of-tick shortfall→debt / surplus→retirement', () => {
+  it('shortfall: cash goes negative → treasury floors at 0, debt issued for the full gap', () => {
+    expect(settleTreasury(-500, 1_000, 0)).toEqual({ treasury: 0, debtDelta: 500 });
+  });
+
+  it('shortfall with existing debt: issuance is still the full shortfall (existing debt untouched by this branch)', () => {
+    expect(settleTreasury(-500, 1_000, 2_000)).toEqual({ treasury: 0, debtDelta: 500 });
+  });
+
+  it('surplus above buffer with no existing debt: excess stays in treasury, no retirement', () => {
+    expect(settleTreasury(1_500, 1_000, 0)).toEqual({ treasury: 1_500, debtDelta: 0 });
+  });
+
+  it('surplus above buffer retires debt with the excess (excess < debt)', () => {
+    expect(settleTreasury(1_500, 1_000, 2_000)).toEqual({ treasury: 1_000, debtDelta: -500 });
+  });
+
+  it('retirement is capped at currentDebt — surplus never drives debt negative', () => {
+    // excess = 4000, debt = 800 → only 800 retired, remaining 3200 stays in treasury
+    expect(settleTreasury(5_000, 1_000, 800)).toEqual({ treasury: 4_200, debtDelta: -800 });
+  });
+
+  it('cash exactly at the buffer is a no-op (boundary — not a surplus)', () => {
+    expect(settleTreasury(1_000, 1_000, 500)).toEqual({ treasury: 1_000, debtDelta: 0 });
+  });
+
+  it('zero cash with a positive buffer is a no-op', () => {
+    expect(settleTreasury(0, 1_000, 500)).toEqual({ treasury: 0, debtDelta: 0 });
+  });
+
+  it('zero buffer: any positive cash is a surplus subject to retirement', () => {
+    expect(settleTreasury(100, 0, 500)).toEqual({ treasury: 0, debtDelta: -100 });
+  });
+
+  it('non-finite inputs guard to 0 rather than propagating NaN/Infinity', () => {
+    expect(settleTreasury(NaN, 1_000, 500)).toEqual({ treasury: 0, debtDelta: 0 });
+    /* Non-finite buffer → treated as 0, so any positive cash is a surplus;
+       debt=500 caps retirement at the full $100 excess. */
+    expect(settleTreasury(100, NaN, 500)).toEqual({ treasury: 0, debtDelta: -100 });
+    expect(settleTreasury(100, 1_000, NaN)).toEqual({ treasury: 100, debtDelta: 0 });
+  });
+
+  it('a corrupt negative currentDebt is clamped to 0 before capping retirement', () => {
+    expect(settleTreasury(1_500, 1_000, -999)).toEqual({ treasury: 1_500, debtDelta: 0 });
+  });
+});
+
+describe('Divergence E1 slice 1 — flag-off no-op guarantee (pure-function level)', () => {
+  /* debtEngineEnabled gates every call site in agentTick.ts/ai.ts/aggeTick.ts
+     — these three functions are never invoked at all when the flag is
+     false. What we CAN prove at the pure-function level: a debt stock that
+     never accrues (because tickInterest/settleTreasury are never called)
+     stays exactly 0 forever, and a 0 debt stock produces 0 interest and a
+     0 debtDelta on every settlement — i.e. even if a caller accidentally
+     invoked these functions against the flag-off world's permanent zero
+     debt state, they would still be silent no-ops, matching pre-slice-1
+     behavior byte-for-byte. */
+
+  it('zero debt (the eternal flag-off state) accrues zero interest regardless of rate', () => {
+    expect(tickInterest(0, 2.7)).toBe(0);
+    expect(tickInterest(0, 15)).toBe(0);
+  });
+
+  it('zero debt settles to a pure pass-through — cash in equals treasury out, never issuing debt from a healthy surplus', () => {
+    expect(settleTreasury(1_500_000_000_000, 1_500_000_000_000, 0)).toEqual({ treasury: 1_500_000_000_000, debtDelta: 0 });
+  });
+
+  it('a mandatory law that is never enacted (flag-off world has none) cannot be debited — 0 base is 0 spend at any tick', () => {
+    expect(mandatoryEffectiveAmount(0, 0, 100_000, 5)).toBe(0);
   });
 });

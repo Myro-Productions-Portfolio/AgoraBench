@@ -22,7 +22,21 @@
  *                   that share of expected revenue at approval time.
  *   tax_change      taxDelta ∈ ±fiscalMaxTaxDeltaPerLaw whole points
  *                   (taxRatePercent is an integer column); 0 is a no-op → null.
- *   sunsetTicks     optional on any kind; > 0 → clamp [8, maxSunsetTicks];
+ *   mandatory       AGENTS CANNOT CREATE THESE — seed-only (Divergence E1
+ *                   slice 2 seeds the 13 baseline programs directly via a
+ *                   script, never through this parser). The ONLY way a
+ *                   `mandatory` kind survives parsing is an AMENDMENT bill
+ *                   whose amendsLawId context (ctx.amendedLaw) points at an
+ *                   existing law with fiscalKind === 'mandatory': the
+ *                   amendment may then adjust that law's base amount,
+ *                   clamped to ±fiscalMaxMandatoryDeltaPct of the CURRENT
+ *                   base (ctx.amendedLaw.currentAmount), never an absolute
+ *                   amount the model invents. Every other context
+ *                   (original bill, no amendedLaw, amendedLaw of a
+ *                   different kind) rejects kind:'mandatory' outright.
+ *   sunsetTicks     optional on any kind EXCEPT mandatory (mandatory laws
+ *                   never sunset by spec — always null regardless of what
+ *                   the model sends); > 0 → clamp [8, maxSunsetTicks];
  *                   absent/invalid/<= 0 → null (no sunset — the legacy default).
  *
  * Zero/negative/NaN/Infinity amounts are REJECTED (null), never rounded up
@@ -37,6 +51,25 @@ export interface FiscalClampConfig {
   fiscalRecurringCapPctOfRevenue: number;
   fiscalMaxTaxDeltaPerLaw: number;
   maxSunsetTicks: number;
+  /** Divergence E1 slice 1: max % a mandatory law's base amount may move
+   *  per amendment, relative to its CURRENT base. Optional — a clamp
+   *  context built before this field existed (or one that never expects
+   *  mandatory amendments) simply can never approve a mandatory delta. */
+  fiscalMaxMandatoryDeltaPct?: number;
+}
+
+/**
+ * Divergence E1 slice 1: minimal context the Phase 9 renewal-hook pattern
+ * already establishes — the amendment target's kind + current amount — so
+ * parseFiscalField can validate a mandatory-law amendment without a DB
+ * round-trip of its own. Undefined when the bill is not an amendment, or
+ * the amendment's target law could not be resolved server-side.
+ */
+export interface AmendedLawContext {
+  kind: FiscalKind | null;
+  /** Current stored base amount (the T0/last-clamped figure, NOT the
+   *  growth-adjusted effective amount) — the anchor the ± delta clamps against. */
+  currentAmount: number | null;
 }
 
 export interface FiscalClampContext {
@@ -51,6 +84,10 @@ export interface FiscalClampContext {
   rc: FiscalClampConfig;
   /** Server-side fallback for a missing/empty programName (the bill title). */
   fallbackProgramName?: string;
+  /** Set only when this bill is a validated amendment (server resolved
+   *  amendsLawId to a real law before calling the parser) — see
+   *  AmendedLawContext. Undefined for original bills. */
+  amendedLaw?: AmendedLawContext;
 }
 
 export interface ParsedFiscalProvision {
@@ -191,6 +228,39 @@ export function parseFiscalField(data: unknown, ctx: FiscalClampContext): Parsed
       taxDelta,
       programName: null,
       sunsetTicks: readSunsetTicks(fiscal, ctx.rc.maxSunsetTicks),
+    };
+  }
+
+  if (kind === 'mandatory') {
+    /* Seed-only creation: an agent proposing kind:'mandatory' on an
+       original bill (or any bill whose amendment target isn't itself an
+       existing mandatory law) gets rejected outright — no provision, no
+       silent downgrade to another kind. */
+    const target = ctx.amendedLaw;
+    if (!target || target.kind !== 'mandatory') return null;
+    if (target.currentAmount === null || !Number.isFinite(target.currentAmount) || target.currentAmount <= 0) return null;
+    const deltaPct = ctx.rc.fiscalMaxMandatoryDeltaPct;
+    if (!Number.isFinite(deltaPct) || deltaPct === undefined || deltaPct <= 0) return null;
+
+    const rawAmount = readFiniteNumber(fiscal, 'amount');
+    if (rawAmount === null) return null;
+    const requested = Math.floor(rawAmount);
+    if (requested < 1) return null;
+
+    /* Clamp to ±deltaPct of the CURRENT base — never an absolute figure
+       the model invents, matching the reconciliation-analog in the spec. */
+    const base = target.currentAmount;
+    const swing = Math.max(1, Math.floor((base * deltaPct) / 100));
+    const amount = clampInt(requested, Math.max(1, base - swing), base + swing);
+
+    return {
+      kind: 'mandatory',
+      amount,
+      taxDelta: null,
+      programName: null,
+      /* Mandatory laws never sunset — always null regardless of any
+         sunsetTicks the model sends. */
+      sunsetTicks: null,
     };
   }
 

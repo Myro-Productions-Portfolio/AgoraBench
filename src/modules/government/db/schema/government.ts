@@ -88,6 +88,11 @@ export const governmentSettings = pgTable('government_settings', {
   /* Phase 3: tick number of the last budget session (Phase 9.7). NOT NULL
      DEFAULT 0 so the first post-deploy budget check fires and re-baselines. */
   lastBudgetSessionTick: integer('last_budget_session_tick').notNull().default(0),
+  /* Divergence E1 slice 1: national-debt stock the debt engine issues
+     against on a treasury shortfall / retires against on a surplus above
+     treasuryOperatingBufferDollars (settleTreasury() in fiscalMath.ts).
+     Dead weight until RuntimeConfig.debtEngineEnabled is true. */
+  debtOutstanding: bigint('debt_outstanding', { mode: 'number' }).notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

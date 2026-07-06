@@ -22,6 +22,7 @@ function ctx(overrides: Partial<FiscalClampContext> = {}): FiscalClampContext {
       fiscalRecurringCapPctOfRevenue: 50,
       fiscalMaxTaxDeltaPerLaw: 2,
       maxSunsetTicks: 200,
+      fiscalMaxMandatoryDeltaPct: 10,
     },
     fallbackProgramName: 'Fallback Act',
     ...overrides,
@@ -248,5 +249,86 @@ describe('parseFiscalField — clamp-context anomalies resolve to no-op', () => 
     expect(parseFiscalField(valid, { ...bad, rc: { ...bad.rc, fiscalMaxOneTimePctOfTreasury: NaN } })).toBeNull();
     expect(parseFiscalField(valid, { ...bad, rc: { ...bad.rc, fiscalMaxTaxDeltaPerLaw: 0 } })).toBeNull();
     expect(parseFiscalField(valid, { ...bad, rc: { ...bad.rc, maxSunsetTicks: -1 } })).toBeNull();
+  });
+});
+
+describe('parseFiscalField — mandatory (Divergence E1 slice 1, seed-only + amendment-only)', () => {
+  const MANDATORY_BASE = 4_315_000_000; // Social Security seed figure from the research report
+
+  it('rejects mandatory on an original bill — no amendedLaw context at all', () => {
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE }), ctx())).toBeNull();
+  });
+
+  it('rejects mandatory when the amendment target is not itself a mandatory law', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'spend_recurring', currentAmount: 1000 } });
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: 1100 }), withTarget)).toBeNull();
+  });
+
+  it('rejects mandatory when the amendment target has no resolvable current amount', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: null } });
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE }), withTarget)).toBeNull();
+    const zeroBase = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: 0 } });
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: 100 }), zeroBase)).toBeNull();
+  });
+
+  it('accepts an in-band amendment to an existing mandatory law, clamped to ±10% of current base', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const r = parseFiscalField(wrap({ kind: 'mandatory', amount: 4_400_000_000 }), withTarget);
+    expect(r).toEqual({ kind: 'mandatory', amount: 4_400_000_000, taxDelta: null, programName: null, sunsetTicks: null });
+  });
+
+  it('clamps a requested increase above +10% down to the ceiling (4,315,000,000 * 1.10)', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const r = parseFiscalField(wrap({ kind: 'mandatory', amount: 999_999_999_999 }), withTarget);
+    expect(r?.amount).toBe(4_746_500_000);
+  });
+
+  it('clamps a requested cut below -10% up to the floor (4,315,000,000 * 0.90)', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const r = parseFiscalField(wrap({ kind: 'mandatory', amount: 1 }), withTarget);
+    expect(r?.amount).toBe(3_883_500_000);
+  });
+
+  it('never carries a sunset — mandatory laws never sunset regardless of the model input', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const r = parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE, sunsetTicks: 50 }), withTarget);
+    expect(r?.sunsetTicks).toBeNull();
+  });
+
+  it('never returns taxDelta or programName for mandatory', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const r = parseFiscalField(
+      wrap({ kind: 'mandatory', amount: MANDATORY_BASE, taxDelta: 5, programName: 'Sneaky' }),
+      withTarget,
+    );
+    expect(r?.taxDelta).toBeNull();
+    expect(r?.programName).toBeNull();
+  });
+
+  it('rejects zero/negative/non-finite/missing amounts even against a valid target', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: 0 }), withTarget)).toBeNull();
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: -100 }), withTarget)).toBeNull();
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: NaN }), withTarget)).toBeNull();
+    expect(parseFiscalField(wrap({ kind: 'mandatory' }), withTarget)).toBeNull();
+  });
+
+  it('rejects when fiscalMaxMandatoryDeltaPct is missing, zero, or non-finite (no amendment path configured)', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: MANDATORY_BASE } });
+    const { fiscalMaxMandatoryDeltaPct, ...rcWithoutMandatory } = withTarget.rc;
+    void fiscalMaxMandatoryDeltaPct;
+    expect(parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE }), { ...withTarget, rc: rcWithoutMandatory })).toBeNull();
+    expect(
+      parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE }), { ...withTarget, rc: { ...withTarget.rc, fiscalMaxMandatoryDeltaPct: 0 } }),
+    ).toBeNull();
+    expect(
+      parseFiscalField(wrap({ kind: 'mandatory', amount: MANDATORY_BASE }), { ...withTarget, rc: { ...withTarget.rc, fiscalMaxMandatoryDeltaPct: NaN } }),
+    ).toBeNull();
+  });
+
+  it('a swing of at least $1 is guaranteed even on a tiny base (Math.max(1, ...) floor)', () => {
+    const withTarget = ctx({ amendedLaw: { kind: 'mandatory', currentAmount: 5 } });
+    const r = parseFiscalField(wrap({ kind: 'mandatory', amount: 4 }), withTarget);
+    expect(r?.amount).toBe(4); // within [max(1,5-1)=4, 5+1=6]
   });
 });

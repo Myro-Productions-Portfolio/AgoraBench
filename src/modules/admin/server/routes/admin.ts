@@ -416,6 +416,29 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const cda = posInt('courtDamagesAmount', 0, 10_000_000);
     if (cda !== undefined) update.courtDamagesAmount = cda;
 
+    // Debt Engine (Divergence E1 slice 1) — Rule 1: every RuntimeConfig
+    // field gets a server handler branch with type check + range clamp,
+    // same commit. debtEngineEnabled is the kill switch: false (default)
+    // means Phase 12/13 behave byte-identical to pre-slice-1 behavior.
+    if (typeof body.debtEngineEnabled === 'boolean') {
+      update.debtEngineEnabled = body.debtEngineEnabled;
+    }
+    const mgpa = num('mandatoryGrowthPctAnnual', 0, 15);
+    if (mgpa !== undefined) update.mandatoryGrowthPctAnnual = mgpa;
+    const dirp = num('debtInterestRatePct', 0, 15);
+    if (dirp !== undefined) update.debtInterestRatePct = dirp;
+    const tobd = num('treasuryOperatingBufferDollars', 0, 10_000_000_000_000);
+    if (tobd !== undefined) update.treasuryOperatingBufferDollars = Math.round(tobd);
+    const fmmd = posInt('fiscalMaxMandatoryDeltaPct', 1, 25);
+    if (fmmd !== undefined) update.fiscalMaxMandatoryDeltaPct = fmmd;
+    const dcrp = posInt('debtCrisisRatioPct', 50, 500);
+    if (dcrp !== undefined) update.debtCrisisRatioPct = dcrp;
+    const dt0t = num('divergenceT0Tick', 0, Number.MAX_SAFE_INTEGER);
+    if (dt0t !== undefined) update.divergenceT0Tick = Math.round(dt0t);
+    if (typeof body.divergenceT0Date === 'string') {
+      update.divergenceT0Date = body.divergenceT0Date.trim();
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

@@ -69,7 +69,11 @@ Last Updated: 2026-07-05
 
 _(none as of 2026-07-04 — site is live, sim is ticking on Gemma-4-31B via Spark 1, MCP server online, judicial Phase 10 verified live)_
 
-## Architecture Decisions Pending
+## Master Roadmap
+
+**`docs/ROADMAP.md` is now the authoritative plan** (2026-07-05): goal, doctrine, 10 epochs + Social Economy expansion, full spec index under `docs/specs/`. The two "Architecture Decisions Pending" below are now RESOLVED by specs — kept for history: AGGE v2 → `docs/specs/agge-v2.md`; Tick System v2 → `docs/specs/tick-engine-v2.md` (Bull job-graph hybrid chosen).
+
+## Architecture Decisions Pending (RESOLVED — see Master Roadmap above)
 
 ### AGGE v2 — Reality Injection Layer
 

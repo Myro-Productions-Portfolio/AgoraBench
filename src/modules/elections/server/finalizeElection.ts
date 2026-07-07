@@ -32,7 +32,7 @@ import {
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { broadcast } from '@core/server/websocket.js';
 import { updateApproval } from '@core/server/jobs/agentTick.js';
-import { tallyElectionVotes, getSeatsToVacate } from '@core/server/lib/electionMath.js';
+import { tallyElectionVotes, getSeatsToVacate, orderCandidates, pickContributionsFallback } from '@core/server/lib/electionMath.js';
 
 export interface FinalizeElectionResult {
   status: 'ok' | 'no_campaigns' | 'already_finalized' | 'not_found';
@@ -99,20 +99,26 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     /* winnerId set but no position row — fall through and create it */
   }
 
-  /* Campaign contributions per agent — kept as a campaign-strength signal
-     (margin scaling below) and as the zero-ballot fallback tally source. */
+  /* Contributions per candidate — kept as a campaign-strength signal (margin
+     scaling below) and as the zero-ballot fallback tally source. Filtered to
+     status = 'active', matching vote-casting eligibility in Phase 14 so a
+     withdrawn candidate can never win via the fallback path.
+     campaignId (min) is carried as a stable secondary tie-break key:
+     batch-seeded campaigns share identical defaultNow() startDate values, so
+     ordering by startDate alone would resolve ties by Postgres row order. */
   const campaignTotals = await db
     .select({
       agentId: campaigns.agentId,
       totalContributions: sql<number>`sum(${campaigns.contributions})`,
       startDate: sql<string>`min(${campaigns.startDate})`,
+      campaignId: sql<string>`min(${campaigns.id}::text)`,
     })
     .from(campaigns)
-    .where(eq(campaigns.electionId, electionId))
+    .where(and(eq(campaigns.electionId, electionId), eq(campaigns.status, 'active')))
     .groupBy(campaigns.agentId);
 
   if (campaignTotals.length === 0) {
-    console.warn(`[FINALIZE] Election ${electionId} has no campaigns — nothing to finalize.`);
+    console.warn(`[FINALIZE] Election ${electionId} has no active campaigns — nothing to finalize.`);
     return { status: 'no_campaigns', electionId };
   }
 
@@ -122,16 +128,22 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     .from(votes)
     .where(eq(votes.electionId, electionId));
 
-  /* Deterministic tie-break + fallback order: campaign registration order. */
-  const candidateOrder = [...campaignTotals]
-    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
-    .map((c) => c.agentId);
+  /* Deterministic candidate order for tie-break + fallback (pure, tested in
+     electionMath): campaign registration order, campaignId as secondary key
+     so identical batch-seeded timestamps never resolve by row order. */
+  const standings = campaignTotals.map((c) => ({
+    agentId: c.agentId,
+    totalContributions: Number(c.totalContributions ?? 0),
+    startDate: c.startDate,
+    campaignId: c.campaignId,
+  }));
+  const candidateOrder = orderCandidates(standings);
 
-  /* Zero-ballot fallback: highest campaign contributions (the old placeholder
-     tally), so a pathological zero-turnout election still resolves. */
-  const fallbackWinnerId = campaignTotals.reduce((best, curr) =>
-    Number(curr.totalContributions ?? 0) > Number(best.totalContributions ?? 0) ? curr : best,
-  ).agentId;
+  /* Zero-ballot fallback: highest campaign contributions among ACTIVE
+     candidates (campaignTotals is already status='active' filtered), so a
+     withdrawn candidate can never win via fallback and a zero-turnout
+     election still resolves deterministically. */
+  const fallbackWinnerId = pickContributionsFallback(standings);
 
   const tally = tallyElectionVotes(castBallots, candidateOrder, fallbackWinnerId);
 
@@ -192,6 +204,15 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     })
     .where(eq(elections.id, electionId));
 
+  /* Capture the winner's existing active offices BEFORE inserting the new
+     one, so the just-won seat is provably not in the vacate candidate set
+     (the invariant is explicit here rather than relying on officeRank's
+     strict inequality to happen to exclude an equal-rank new seat). */
+  const winnerPriorPositions = await db
+    .select({ id: positions.id, type: positions.type })
+    .from(positions)
+    .where(and(eq(positions.agentId, winner.agentId), eq(positions.isActive, true)));
+
   /* Insert position row for winner */
   const termDays = election.positionType === 'president'
     ? (rc.presidentTermDays ?? 90)
@@ -211,25 +232,20 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     .returning({ id: positions.id });
 
   /* Double-position fix (E3 slice A, owner-flaggable default): winning a
-     higher office vacates every lower office the winner already holds —
+     higher office vacates every lower office the winner already held —
      kills the multi-salary bug (sam-ritter drew president + chair + congress
      pay on the tick-742 payday). Vacated seats flow through Phase 14's
      existing vacancy auto-fill on the next tick (congress: reputation-rank
      fill; president: re-election trigger) — this helper only marks them
      inactive, it never appoints a replacement itself. */
-  const winnerOtherPositions = await db
-    .select({ id: positions.id, type: positions.type })
-    .from(positions)
-    .where(and(eq(positions.agentId, winner.agentId), eq(positions.isActive, true)));
-
-  const seatIdsToVacate = getSeatsToVacate(winnerOtherPositions, election.positionType);
+  const seatIdsToVacate = getSeatsToVacate(winnerPriorPositions, election.positionType);
   if (seatIdsToVacate.length > 0) {
     await db
       .update(positions)
       .set({ isActive: false, endDate: now })
       .where(inArray(positions.id, seatIdsToVacate));
 
-    const vacatedTypes = winnerOtherPositions
+    const vacatedTypes = winnerPriorPositions
       .filter((p) => seatIdsToVacate.includes(p.id))
       .map((p) => p.type);
 

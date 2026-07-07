@@ -95,6 +95,62 @@ export function tallyElectionVotes(
   return { winnerId, voteCounts, totalVotes, usedFallback: false };
 }
 
+/** Minimal per-candidate shape for deterministic ordering / fallback. */
+export interface CandidateStanding {
+  agentId: string;
+  /** Contributions raised — the campaign-strength signal + fallback tally. */
+  totalContributions: number;
+  /** Earliest campaign registration timestamp (ms or ISO string). */
+  startDate: string | number | Date;
+  /** Stable secondary key — min campaign id — breaks identical-startDate ties. */
+  campaignId: string;
+}
+
+/**
+ * Deterministic candidate order for tie-breaks and the zero-ballot fallback:
+ * campaign registration order (earliest startDate first), with campaignId as
+ * a stable secondary key. Batch-seeded campaigns share identical
+ * defaultNow() startDate values, so startDate alone would resolve ties by
+ * Postgres row order (non-deterministic); the campaignId secondary key pins
+ * it. Returns agentIds in order. Pure and non-mutating (copies the input).
+ */
+export function orderCandidates(candidates: CandidateStanding[]): string[] {
+  if (!Array.isArray(candidates)) return [];
+  return [...candidates]
+    .sort((a, b) => {
+      const t = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      if (t !== 0) return t;
+      return a.campaignId.localeCompare(b.campaignId);
+    })
+    .map((c) => c.agentId);
+}
+
+/**
+ * The zero-ballot fallback winner: the candidate with the most contributions,
+ * ties broken by orderCandidates (registration order) so the fallback is
+ * fully deterministic rather than depending on array/row order. Callers must
+ * pass ONLY eligible (active) candidates — filtering withdrawn campaigns is a
+ * DB concern done in the query, so a withdrawn candidate can never win here.
+ * Returns null for an empty set.
+ */
+export function pickContributionsFallback(candidates: CandidateStanding[]): string | null {
+  if (!Array.isArray(candidates) || candidates.length === 0) return null;
+  const order = orderCandidates(candidates);
+  const rank = new Map(order.map((id, i) => [id, i]));
+  let best: CandidateStanding | null = null;
+  for (const c of candidates) {
+    if (best === null) { best = c; continue; }
+    const cContrib = Number(c.totalContributions ?? 0);
+    const bContrib = Number(best.totalContributions ?? 0);
+    if (cContrib > bContrib) { best = c; continue; }
+    /* Tie on contributions → earlier in registration order wins. */
+    if (cContrib === bContrib && (rank.get(c.agentId) ?? Infinity) < (rank.get(best.agentId) ?? Infinity)) {
+      best = c;
+    }
+  }
+  return best?.agentId ?? null;
+}
+
 /**
  * Office rank for the double-position fix. Higher number = higher office.
  * Ordering follows the existing SALARY_TABLE in simulationCore.ts (the only

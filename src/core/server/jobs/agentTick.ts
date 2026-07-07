@@ -5454,12 +5454,25 @@ agentTickQueue.process(async () => {
         }
         const chosenCandidate = candidates.find((c) => c.agentId === rawCandidateId)!;
 
-        await db.insert(votes).values({
-          voterId: voter.id,
-          electionId: election.id,
-          candidateId: rawCandidateId,
-          choice: chosenCandidate.displayName,
-        });
+        /* DB-level one-ballot-per-voter-per-election guarantee (partial
+           unique index votes_election_voter_unique). onConflictDoNothing +
+           returning() closes the check-then-act race the in-memory
+           alreadyVoted set leaves open under Bull tick retries: a losing
+           race inserts nothing and returns [], so we skip the activity
+           event / broadcast / counter for it. */
+        const inserted = await db
+          .insert(votes)
+          .values({
+            voterId: voter.id,
+            electionId: election.id,
+            candidateId: rawCandidateId,
+            choice: chosenCandidate.displayName,
+          })
+          .onConflictDoNothing()
+          .returning({ id: votes.id });
+
+        if (inserted.length === 0) continue; // duplicate ballot — already recorded
+
         await db.insert(activityEvents).values({
           type: 'election_ballot_cast',
           agentId: voter.id,

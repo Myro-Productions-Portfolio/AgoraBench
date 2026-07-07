@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, text, integer, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { agents } from '@modules/agents/db/schema/agents';
 
 export const elections = pgTable('elections', {
@@ -31,14 +32,26 @@ export const campaigns = pgTable('campaigns', {
   status: varchar('status', { length: 20 }).notNull().default('active'),
 });
 
-export const votes = pgTable('votes', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  voterId: uuid('voter_id')
-    .notNull()
-    .references(() => agents.id),
-  electionId: uuid('election_id').references(() => elections.id),
-  billId: uuid('bill_id'),
-  candidateId: uuid('candidate_id').references(() => agents.id),
-  choice: varchar('choice', { length: 100 }).notNull(),
-  castAt: timestamp('cast_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const votes = pgTable(
+  'votes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    voterId: uuid('voter_id')
+      .notNull()
+      .references(() => agents.id),
+    electionId: uuid('election_id').references(() => elections.id),
+    billId: uuid('bill_id'),
+    candidateId: uuid('candidate_id').references(() => agents.id),
+    choice: varchar('choice', { length: 100 }).notNull(),
+    castAt: timestamp('cast_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /* One ballot per voter per election (E3 slice A). Partial: `votes` is a
+       shared table; bill votes carry election_id = NULL and are not
+       constrained (Postgres treats each NULL as distinct anyway). Mirrors
+       migration 0030. */
+    uniqueIndex('votes_election_voter_unique')
+      .on(t.electionId, t.voterId)
+      .where(sql`${t.electionId} IS NOT NULL`),
+  ],
+);

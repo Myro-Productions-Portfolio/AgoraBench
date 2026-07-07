@@ -3,9 +3,22 @@ import {
   tallyElectionVotes,
   officeRank,
   getSeatsToVacate,
+  orderCandidates,
+  pickContributionsFallback,
   type BallotRow,
   type HeldPosition,
+  type CandidateStanding,
 } from '@core/server/lib/electionMath';
+
+function standing(overrides: Partial<CandidateStanding> = {}): CandidateStanding {
+  return {
+    agentId: 'agent',
+    totalContributions: 0,
+    startDate: '2026-07-07T00:00:00.000Z',
+    campaignId: 'camp',
+    ...overrides,
+  };
+}
 
 describe('tallyElectionVotes', () => {
   it('counts ballots per candidate and picks the highest', () => {
@@ -77,6 +90,20 @@ describe('tallyElectionVotes', () => {
     expect(result.totalVotes).toBe(1);
     expect(result.winnerId).toBe('a');
   });
+
+  it('is idempotent on a deduped ballot set (the DB onConflict guarantee)', () => {
+    /* The votes_election_voter_unique index + onConflictDoNothing means the
+       persisted ballot set has at most one row per voter. This asserts that
+       a correctly-deduped set tallies stably — a second finalize pass over
+       the same rows yields the identical winner/count, so a retried tick that
+       re-inserts nothing changes no outcome. */
+    const deduped: BallotRow[] = [{ candidateId: 'a' }, { candidateId: 'b' }, { candidateId: 'a' }];
+    const first = tallyElectionVotes(deduped, ['a', 'b']);
+    const second = tallyElectionVotes(deduped, ['a', 'b']);
+    expect(first).toEqual(second);
+    expect(first.winnerId).toBe('a');
+    expect(first.totalVotes).toBe(3);
+  });
 });
 
 describe('officeRank', () => {
@@ -141,5 +168,92 @@ describe('getSeatsToVacate', () => {
     ];
     const toVacate = getSeatsToVacate(held, 'president');
     expect(toVacate.sort()).toEqual(['pos-cabinet', 'pos-chair'].sort());
+  });
+});
+
+describe('orderCandidates', () => {
+  it('orders by startDate ascending (registration order)', () => {
+    const cands: CandidateStanding[] = [
+      standing({ agentId: 'late', startDate: '2026-07-07T02:00:00.000Z', campaignId: 'c2' }),
+      standing({ agentId: 'early', startDate: '2026-07-07T01:00:00.000Z', campaignId: 'c1' }),
+    ];
+    expect(orderCandidates(cands)).toEqual(['early', 'late']);
+  });
+
+  it('breaks identical startDate ties by campaignId (the batch-seed defaultNow case)', () => {
+    /* All three share the exact same defaultNow() timestamp — without the
+       campaignId secondary key this would resolve by array/row order. */
+    const ts = '2026-07-07T00:00:00.000Z';
+    const cands: CandidateStanding[] = [
+      standing({ agentId: 'z', startDate: ts, campaignId: 'ccc' }),
+      standing({ agentId: 'x', startDate: ts, campaignId: 'aaa' }),
+      standing({ agentId: 'y', startDate: ts, campaignId: 'bbb' }),
+    ];
+    expect(orderCandidates(cands)).toEqual(['x', 'y', 'z']);
+  });
+
+  it('is stable regardless of input array order (deterministic)', () => {
+    const ts = '2026-07-07T00:00:00.000Z';
+    const a = standing({ agentId: 'a', startDate: ts, campaignId: 'aaa' });
+    const b = standing({ agentId: 'b', startDate: ts, campaignId: 'bbb' });
+    expect(orderCandidates([a, b])).toEqual(orderCandidates([b, a]));
+  });
+
+  it('does not mutate its input', () => {
+    const cands: CandidateStanding[] = [
+      standing({ agentId: 'b', campaignId: 'bbb' }),
+      standing({ agentId: 'a', campaignId: 'aaa' }),
+    ];
+    const before = cands.map((c) => c.agentId);
+    orderCandidates(cands);
+    expect(cands.map((c) => c.agentId)).toEqual(before);
+  });
+
+  it('is defensive against non-array input', () => {
+    // @ts-expect-error deliberate malformed input
+    expect(orderCandidates(null)).toEqual([]);
+  });
+});
+
+describe('pickContributionsFallback', () => {
+  it('picks the highest-contributions candidate', () => {
+    const cands: CandidateStanding[] = [
+      standing({ agentId: 'a', totalContributions: 100, campaignId: 'aaa' }),
+      standing({ agentId: 'b', totalContributions: 300, campaignId: 'bbb' }),
+      standing({ agentId: 'c', totalContributions: 200, campaignId: 'ccc' }),
+    ];
+    expect(pickContributionsFallback(cands)).toBe('b');
+  });
+
+  it('breaks contribution ties by registration order (deterministic)', () => {
+    const ts = '2026-07-07T00:00:00.000Z';
+    const cands: CandidateStanding[] = [
+      standing({ agentId: 'later', totalContributions: 50, startDate: ts, campaignId: 'bbb' }),
+      standing({ agentId: 'earlier', totalContributions: 50, startDate: ts, campaignId: 'aaa' }),
+    ];
+    // Both raised 50 — the earlier-registered (aaa) candidate wins.
+    expect(pickContributionsFallback(cands)).toBe('earlier');
+  });
+
+  it('only ever returns a candidate from the passed set (active-only filtering is the caller/DB job)', () => {
+    /* finalizeElection passes ONLY status=active campaigns, so a withdrawn
+       candidate is absent here and cannot be returned. Simulate that: the
+       withdrawn high-roller was never passed in. */
+    const activeOnly: CandidateStanding[] = [
+      standing({ agentId: 'active-a', totalContributions: 10, campaignId: 'aaa' }),
+      standing({ agentId: 'active-b', totalContributions: 20, campaignId: 'bbb' }),
+    ];
+    expect(pickContributionsFallback(activeOnly)).toBe('active-b');
+    // The withdrawn candidate 'w' with 9999 contributions is simply not in the set.
+    expect(pickContributionsFallback(activeOnly)).not.toBe('w');
+  });
+
+  it('returns null for an empty candidate set', () => {
+    expect(pickContributionsFallback([])).toBeNull();
+  });
+
+  it('is defensive against non-array input', () => {
+    // @ts-expect-error deliberate malformed input
+    expect(pickContributionsFallback(null)).toBeNull();
   });
 });

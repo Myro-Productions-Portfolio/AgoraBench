@@ -439,6 +439,28 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.divergenceT0Date = body.divergenceT0Date.trim();
     }
 
+    // World Events Feed (E2 slice 1) — Rule 1: every RuntimeConfig field
+    // gets a server handler branch with type check + range clamp, same
+    // commit. worldFeedEnabled is the master kill switch: false (default)
+    // means no polling happens at all (deploy dark).
+    if (typeof body.worldFeedEnabled === 'boolean') {
+      update.worldFeedEnabled = body.worldFeedEnabled;
+    }
+    const wfpt = posInt('worldFeedPollTicks', 1, 48);
+    if (wfpt !== undefined) update.worldFeedPollTicks = wfpt;
+    if (typeof body.worldFeedUsgsEnabled === 'boolean') {
+      update.worldFeedUsgsEnabled = body.worldFeedUsgsEnabled;
+    }
+    if (typeof body.worldFeedNwsEnabled === 'boolean') {
+      update.worldFeedNwsEnabled = body.worldFeedNwsEnabled;
+    }
+    if (typeof body.worldFeedFemaEnabled === 'boolean') {
+      update.worldFeedFemaEnabled = body.worldFeedFemaEnabled;
+    }
+    if (typeof body.worldFeedGdeltEnabled === 'boolean') {
+      update.worldFeedGdeltEnabled = body.worldFeedGdeltEnabled;
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

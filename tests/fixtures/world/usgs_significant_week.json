@@ -1,0 +1,72 @@
+{
+  "type": "FeatureCollection",
+  "metadata": {
+    "generated": 1783401363000,
+    "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_week.geojson",
+    "title": "USGS Significant Earthquakes, Past Week",
+    "status": 200,
+    "api": "2.4.0",
+    "count": 3
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "mag": 3.8,
+        "place": "2 km E of Oak Harbor, Washington",
+        "time": 1782974147600,
+        "updated": 1783393416310,
+        "url": "https://earthquake.usgs.gov/earthquakes/eventpage/uw714040221",
+        "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/uw714040221.geojson",
+        "felt": 2026,
+        "alert": null,
+        "tsunami": 0,
+        "sig": 602,
+        "net": "uw",
+        "code": "714040221",
+        "title": "M 3.8 - 2 km E of Oak Harbor, Washington"
+      },
+      "geometry": { "type": "Point", "coordinates": [-122.6065, 48.2888333333333, 25.38] },
+      "id": "uw714040221"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mag": 5.3,
+        "place": "265 km SSE of Dunhuang, China",
+        "time": 1782863094830,
+        "updated": 1783036494723,
+        "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000t9bg",
+        "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000t9bg.geojson",
+        "felt": null,
+        "alert": "yellow",
+        "tsunami": 0,
+        "sig": 650,
+        "net": "us",
+        "code": "6000t9bg",
+        "title": "M 5.3 - 265 km SSE of Dunhuang, China"
+      },
+      "geometry": { "type": "Point", "coordinates": [95.3273, 37.8295, 10] },
+      "id": "us6000t9bg"
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "mag": null,
+        "place": "Unrated region",
+        "time": 1782863094830,
+        "updated": 1783036494723,
+        "url": null,
+        "alert": null,
+        "tsunami": 0,
+        "sig": 0,
+        "net": "us",
+        "code": "unrated1",
+        "title": null
+      },
+      "geometry": null,
+      "id": "us_unrated1"
+    }
+  ],
+  "bbox": [-122.6065, 37.8295, 10, 95.3273, 48.288833333333, 25.38]
+}

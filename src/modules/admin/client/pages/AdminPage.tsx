@@ -180,6 +180,13 @@ interface RuntimeConfig {
   debtCrisisRatioPct: number;
   divergenceT0Tick: number;
   divergenceT0Date: string;
+  /* World Events Feed (E2 slice 1) */
+  worldFeedEnabled: boolean;
+  worldFeedPollTicks: number;
+  worldFeedUsgsEnabled: boolean;
+  worldFeedNwsEnabled: boolean;
+  worldFeedFemaEnabled: boolean;
+  worldFeedGdeltEnabled: boolean;
 }
 
 interface EconomySettings {
@@ -2695,6 +2702,69 @@ export function AdminPage() {
                       />
                       <p className="text-xs text-text-muted">Transferred loser to winner in dispute rulings, clamped to the loser&apos;s balance.</p>
                     </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* World Events Feed (E2 slice 1) — deployed dark, read-only */}
+            {simConfig && (
+              <CollapsibleSection
+                id="world_events_feed"
+                title="World Events Feed"
+                subtitle="Exogenous world-events feed (USGS, NWS, OpenFEMA). Read-only and deployed dark — nothing here is injected into the simulation yet. See docs/specs/exogenous-reality-feed.md."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">World Feed Enabled (master kill switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.worldFeedEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, worldFeedEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ worldFeedEnabled: simConfig.worldFeedEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, no adapters poll at all — the tick never touches world_events. The per-source flags below only matter once this is on.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Poll Cadence (ticks)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.worldFeedPollTicks}</span>
+                    </div>
+                    <input type="number" min={1} max={48} step={1}
+                      value={simConfig.worldFeedPollTicks}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, worldFeedPollTicks: parseInt(e.target.value) || 1 } : c)}
+                      onBlur={() => void saveConfig({ worldFeedPollTicks: simConfig.worldFeedPollTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">How often (in ticks) enabled adapters are polled. 1 = every tick.</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Per-Source Enable</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {([
+                      ['worldFeedUsgsEnabled', 'USGS Earthquakes', 'Significant earthquakes, past week (magnitude-normalized severity).'],
+                      ['worldFeedNwsEnabled', 'NWS Alerts', 'Active National Weather Service CAP alerts (severity from CAP field).'],
+                      ['worldFeedFemaEnabled', 'OpenFEMA Disaster Declarations', 'Underlying disaster incidents behind recent FEMA declarations.'],
+                      ['worldFeedGdeltEnabled', 'GDELT (reserved, Tier 2)', 'No adapter exists yet — enabling this flag is currently a no-op.'],
+                    ] as [keyof RuntimeConfig, string, string][]).map(([key, label, desc]) => (
+                      <label key={key} className="flex items-start justify-between gap-3 rounded border border-border/60 p-3">
+                        <span>
+                          <span className="block text-sm text-text-secondary font-medium">{label}</span>
+                          <span className="block text-xs text-text-muted mt-0.5">{desc}</span>
+                        </span>
+                        <input type="checkbox"
+                          checked={simConfig[key] as boolean}
+                          onChange={(e) => setSimConfig((c) => c ? ({ ...c, [key]: e.target.checked }) : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="mt-0.5 shrink-0"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
               </CollapsibleSection>

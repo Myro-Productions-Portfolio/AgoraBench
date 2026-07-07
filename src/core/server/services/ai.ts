@@ -51,6 +51,8 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   propose_amendment:   'propose_amendment',
   bill_withdrawal:     'bill_withdrawal',
   public_statement:    'public_statement',
+  /* E3 slice A: election ballot casting */
+  election_voting:     'election_vote',
   /* Phase 4 judicial arc */
   court_filing:        'file_case',
   oral_argument:       'present_argument',
@@ -119,6 +121,11 @@ const ACTION_ALIASES: Record<string, string[]> = {
   public_statement: [
     'statement', 'press_statement', 'press_release', 'announce',
     'address', 'public_address', 'respond', 'issue_statement',
+  ],
+  /* E3 slice A: election ballot casting */
+  election_vote: [
+    'vote', 'cast_vote', 'cast_ballot', 'ballot', 'ballot_vote', 'elect',
+    'vote_for', 'select_candidate', 'choose_candidate', 'endorse',
   ],
   /* Phase 4 judicial arc */
   file_case: [

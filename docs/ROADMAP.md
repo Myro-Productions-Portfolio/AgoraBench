@@ -40,6 +40,7 @@ Feed adapters (read-only week first), `/world` page, AGGE untangled from Bob + c
 
 **E3 — Government Completeness, small wins** *(parallel-capable with E2)*
 Real election voting + double-position fix (one PR, pre-scoped), CR/shutdown mechanic. Exit: elections are real; scoreboard metric #8 unlocked; the two most embarrassing "placeholder" facts gone.
+Slice A (real vote casting + double-position fix) shipped 2026-07-07, PR pending review — `votes` table now live, `finalizeElection.ts` tallies real ballots, double-position vacancy fixed. CR/shutdown mechanic (§B) remains open.
 
 **E4 — Scoreboard v1**
 Metric registry + tier A/B metrics (fiscal, legislative throughput, time-to-passage, approval trend), first AI-written 10-K report to the press room. Exit: the public product exists — sim vs humans, live.

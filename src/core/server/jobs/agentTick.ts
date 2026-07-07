@@ -11,6 +11,7 @@ import {
   laws,
   elections,
   campaigns,
+  votes,
   positions,
   parties,
   partyMemberships,
@@ -5316,6 +5317,170 @@ agentTickQueue.process(async () => {
       });
 
       console.warn(`[SIMULATION] Election voting started: ${election.positionType}`);
+    }
+
+    /* ---- Vote casting window (E3 slice A) --------------------------- */
+    /* Every tick an election sits in 'voting', eligible agents who have   */
+    /* not yet cast a ballot in it make one LLM ballot decision each.      */
+    /* Mirrors the Phase 2 bill-voting pattern: parallel LLM calls via     */
+    /* Promise.allSettled, failure-isolated (a rejected/idle call = that   */
+    /* agent abstains this tick, logged, never throws into the tick).     */
+    /* Eligibility: active agents, excluding the candidates on that        */
+    /* election's own ballot (no self/rival voting on your own race).     */
+    const electionsCurrentlyVoting = await db
+      .select()
+      .from(elections)
+      .where(eq(elections.status, 'voting'));
+
+    for (const election of electionsCurrentlyVoting) {
+      const candidates = await db
+        .select({
+          agentId: campaigns.agentId,
+          platform: campaigns.platform,
+          contributions: campaigns.contributions,
+          displayName: agents.displayName,
+          alignment: agents.alignment,
+          approvalRating: agents.approvalRating,
+        })
+        .from(campaigns)
+        .innerJoin(agents, eq(campaigns.agentId, agents.id))
+        .where(and(eq(campaigns.electionId, election.id), eq(campaigns.status, 'active')));
+
+      if (candidates.length === 0) continue; // no active candidates — nothing to vote on yet
+
+      const candidateIds = new Set(candidates.map((c) => c.agentId));
+
+      const existingBallots = await db
+        .select({ voterId: votes.voterId })
+        .from(votes)
+        .where(eq(votes.electionId, election.id));
+      const alreadyVoted = new Set(existingBallots.map((v) => v.voterId));
+
+      const eligibleVoters = activeAgents.filter(
+        (a) => !candidateIds.has(a.id) && !alreadyVoted.has(a.id),
+      );
+      if (eligibleVoters.length === 0) continue;
+
+      /* Candidate party affiliation, batched */
+      const partyMemberRows = candidateIds.size > 0
+        ? await db
+            .select({ agentId: partyMemberships.agentId, partyName: parties.name })
+            .from(partyMemberships)
+            .innerJoin(parties, eq(partyMemberships.partyId, parties.id))
+            .where(inArray(partyMemberships.agentId, [...candidateIds]))
+        : [];
+      const candidatePartyMap = new Map(partyMemberRows.map((p) => [p.agentId, p.partyName]));
+
+      /* Voter-candidate vote-alignment, batched (agent_relationships is
+         directional agentId -> targetAgentId; the voter's row toward each
+         candidate is the "relationship alignment" signal from the spec). */
+      const voterIds = eligibleVoters.map((v) => v.id);
+      const alignmentRows = await db
+        .select({
+          agentId: agentRelationships.agentId,
+          targetAgentId: agentRelationships.targetAgentId,
+          voteAlignment: agentRelationships.voteAlignment,
+        })
+        .from(agentRelationships)
+        .where(
+          and(
+            inArray(agentRelationships.agentId, voterIds),
+            inArray(agentRelationships.targetAgentId, [...candidateIds]),
+          ),
+        );
+      const alignmentMap = new Map<string, number>();
+      for (const r of alignmentRows) {
+        alignmentMap.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
+      }
+
+      const candidateBlock = candidates
+        .map((c) => {
+          const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
+          return `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%): ${c.platform}`;
+        })
+        .join('\n');
+
+      const results = await Promise.allSettled(
+        eligibleVoters.map((voter) => {
+          const alignmentLines = candidates
+            .map((c) => {
+              const alignment = alignmentMap.get(`${voter.id}:${c.agentId}`);
+              return alignment !== undefined
+                ? `  Your alignment with ${c.displayName}: ${Math.round(alignment * 100)}%`
+                : null;
+            })
+            .filter((l): l is string => l !== null)
+            .join('\n');
+
+          const contextMessage =
+            `You are voting in the ${election.positionType} election. Candidates:\n${candidateBlock}` +
+            (alignmentLines ? `\n\n${alignmentLines}` : '') +
+            `\n\nRespond with exactly this JSON structure: ` +
+            `{"action":"election_vote","reasoning":"one sentence","data":{"candidateId":"<the id of your chosen candidate>"}}`;
+
+          return generateAgentDecision(
+            {
+              id: voter.id,
+              displayName: voter.displayName,
+              alignment: voter.alignment,
+              modelProvider: rc.providerOverride === 'default' ? voter.modelProvider : rc.providerOverride,
+              personality: voter.personality,
+              model: voter.model,
+              ownerUserId: voter.ownerUserId,
+            },
+            contextMessage,
+            'election_voting',
+          ).then((decision) => ({ voter, decision }));
+        }),
+      );
+
+      let ballotsCastThisElection = 0;
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          console.warn('[SIMULATION] Phase 14 ballot: LLM call rejected (agent abstains):', result.reason);
+          continue;
+        }
+        const { voter, decision } = result.value;
+
+        if (decision.action === 'idle') continue; // API error fallback — agent abstains
+
+        const isVote = decision.action === 'election_vote' || decision.action === 'vote';
+        if (!isVote) continue;
+
+        const rawCandidateId = String(decision.data?.['candidateId'] ?? '');
+        if (!candidateIds.has(rawCandidateId)) {
+          console.warn(`[SIMULATION] Phase 14 ballot: ${voter.displayName} named an unrecognized candidate — abstaining.`);
+          continue;
+        }
+        const chosenCandidate = candidates.find((c) => c.agentId === rawCandidateId)!;
+
+        await db.insert(votes).values({
+          voterId: voter.id,
+          electionId: election.id,
+          candidateId: rawCandidateId,
+          choice: chosenCandidate.displayName,
+        });
+        await db.insert(activityEvents).values({
+          type: 'election_ballot_cast',
+          agentId: voter.id,
+          title: 'Ballot cast',
+          description: `${voter.displayName} voted for ${chosenCandidate.displayName} in the ${election.positionType} election`,
+          metadata: JSON.stringify({
+            electionId: election.id,
+            candidateId: rawCandidateId,
+            reasoning: (decision.reasoning ?? '').slice(0, 500),
+          }),
+        });
+        broadcast('election:ballot_cast', {
+          electionId: election.id,
+          voterId: voter.id,
+          candidateId: rawCandidateId,
+        });
+        ballotsCastThisElection += 1;
+      }
+      if (ballotsCastThisElection > 0) {
+        console.warn(`[SIMULATION] Phase 14 ballot: ${ballotsCastThisElection} ballot(s) cast in ${election.positionType} election ${election.id}`);
+      }
     }
 
     /* voting -> certified (via shared finalizeElection helper) */

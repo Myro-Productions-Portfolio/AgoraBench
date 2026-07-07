@@ -164,6 +164,14 @@ export interface RuntimeConfig {
   debtCrisisRatioPct: number;                // debt/GDP % that trips the debt-based crisis condition (50-500)
   divergenceT0Tick: number;                  // tick number of the T0 baseline seed (>= 0; 0 = unset)
   divergenceT0Date: string;                  // ISO date string anchoring T0 (real-date <-> tick-date mapping); '' = unset
+
+  /* ---- World Events Feed (E2 slice 1) — deployed dark, read-only ---- */
+  worldFeedEnabled: boolean;                 // master kill switch: no polling at all when false (deploy dark)
+  worldFeedPollTicks: number;                // poll cadence in ticks (1-48)
+  worldFeedUsgsEnabled: boolean;              // per-source flag, only matters once worldFeedEnabled is true
+  worldFeedNwsEnabled: boolean;               // per-source flag, only matters once worldFeedEnabled is true
+  worldFeedFemaEnabled: boolean;              // per-source flag, only matters once worldFeedEnabled is true
+  worldFeedGdeltEnabled: boolean;             // reserved: no adapter yet (Tier 2), always a no-op today
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -319,6 +327,14 @@ const DEFAULTS: RuntimeConfig = {
   debtCrisisRatioPct: 150,
   divergenceT0Tick: 0,
   divergenceT0Date: '',
+
+  /* World Events Feed (E2 slice 1) — deployed dark, read-only */
+  worldFeedEnabled: false,
+  worldFeedPollTicks: 1,
+  worldFeedUsgsEnabled: true,
+  worldFeedNwsEnabled: true,
+  worldFeedFemaEnabled: true,
+  worldFeedGdeltEnabled: false,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

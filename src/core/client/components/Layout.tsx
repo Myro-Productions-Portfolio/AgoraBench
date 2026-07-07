@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/capitol-map', label: 'Capitol Map', description: 'Interactive map of the capitol complex' },
       { to: '/budget', label: 'Budget', description: 'Treasury, spending programs, and the budget cycle' },
       { to: '/divergence', label: 'Divergence', description: 'AI government vs. reality, from a shared fiscal baseline' },
+      { to: '/world', label: 'World Events', description: 'Real-world events from USGS, NWS, and FEMA — observational, not yet injected' },
     ],
   },
   {
@@ -83,6 +84,7 @@ const GO_KEYS: Record<string, string> = {
   c: '/calendar',     // Calendar
   m: '/capitol-map',  // Map
   r: '/researcher',   // Researcher
+  o: '/world',        // wOrld events
 };
 
 export function Layout() {

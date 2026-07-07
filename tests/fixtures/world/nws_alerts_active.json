@@ -1,0 +1,82 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e87f5aedc6f23d0467307a7e94d9747fde133aba.001.1",
+      "type": "Feature",
+      "properties": {
+        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.e87f5aedc6f23d0467307a7e94d9747fde133aba.001.1",
+        "@type": "wx:Alert",
+        "id": "urn:oid:2.49.0.1.840.0.e87f5aedc6f23d0467307a7e94d9747fde133aba.001.1",
+        "areaDesc": "Muskogee, OK",
+        "geocode": { "SAME": ["040101"], "UGC": ["OKC101"] },
+        "sent": "2026-07-06T23:46:00-05:00",
+        "effective": "2026-07-06T23:46:00-05:00",
+        "onset": "2026-07-06T23:46:00-05:00",
+        "expires": "2026-07-07T12:00:00-05:00",
+        "ends": "2026-07-08T01:00:00-05:00",
+        "status": "Actual",
+        "messageType": "Update",
+        "category": "Met",
+        "severity": "Minor",
+        "certainty": "Observed",
+        "urgency": "Expected",
+        "event": "Flood Advisory",
+        "sender": "w-nws.webmaster@noaa.gov",
+        "senderName": "NWS Tulsa OK",
+        "headline": "Flood Advisory issued July 6 at 11:46PM CDT until July 8 at 1:00AM CDT by NWS Tulsa OK",
+        "description": "...The Flood Advisory continues for the following rivers in Oklahoma...\n\nArkansas River near Muskogee affecting Muskogee County.",
+        "instruction": null,
+        "response": "Avoid"
+      }
+    },
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.extreme-example.001.1",
+      "type": "Feature",
+      "properties": {
+        "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.extreme-example.001.1",
+        "id": "urn:oid:2.49.0.1.840.0.extreme-example.001.1",
+        "areaDesc": "Coastal Harris, TX",
+        "geocode": { "SAME": ["148201"], "UGC": ["TXC201"] },
+        "sent": "2026-07-01T10:00:00-05:00",
+        "effective": "2026-07-01T10:15:00-05:00",
+        "expires": "2026-07-02T10:00:00-05:00",
+        "status": "Actual",
+        "messageType": "Alert",
+        "category": "Met",
+        "severity": "Extreme",
+        "certainty": "Observed",
+        "urgency": "Immediate",
+        "event": "Hurricane Warning",
+        "sender": "w-nws.webmaster@noaa.gov",
+        "senderName": "NWS Houston TX",
+        "headline": "Hurricane Warning issued for Coastal Harris County",
+        "description": "Extremely dangerous hurricane approaching the coast.",
+        "response": "Shelter"
+      }
+    },
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:no-same-example.001.1",
+      "type": "Feature",
+      "properties": {
+        "@id": "https://api.weather.gov/alerts/urn:oid:no-same-example.001.1",
+        "id": "urn:oid:no-same-example.001.1",
+        "areaDesc": "Statewide",
+        "sent": "2026-07-05T08:00:00-05:00",
+        "effective": "2026-07-05T08:00:00-05:00",
+        "expires": "2026-07-06T08:00:00-05:00",
+        "status": "Actual",
+        "messageType": "Alert",
+        "category": "Met",
+        "severity": "Unknown",
+        "certainty": "Possible",
+        "urgency": "Future",
+        "event": "Special Weather Statement",
+        "sender": "w-nws.webmaster@noaa.gov",
+        "senderName": "NWS",
+        "headline": "Special Weather Statement",
+        "description": "General statement, no geocoded county."
+      }
+    }
+  ]
+}

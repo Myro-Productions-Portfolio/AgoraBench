@@ -52,6 +52,7 @@ import { ALIGNMENT_ORDER, COMMITTEE_TYPES } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
+import { pollWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -5790,6 +5791,27 @@ agentTickQueue.process(async () => {
       );
     } catch (err) {
       console.warn('[SIMULATION] Reality pool error:', err);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* World events feed — exogenous reality feed, E2 slice 1              */
+  /* (docs/specs/exogenous-reality-feed.md). READ-ONLY: writes to        */
+  /* world_events only, nothing here is consumed by prompt-building or   */
+  /* any other tick phase. Dark by default (rc.worldFeedEnabled=false).  */
+  /* Failure-isolated -- pollWorldEvents() never throws (wraps + logs    */
+  /* per source internally), but this block is still try/caught so a    */
+  /* future change there can never take down a tick.                    */
+  /* ------------------------------------------------------------------ */
+  if (rc.worldFeedEnabled && tickNumber % rc.worldFeedPollTicks === 0) {
+    try {
+      const { inserted, errors } = await pollWorldEvents();
+      console.warn(
+        `[SIMULATION] World events: pulled ${inserted} event(s)` +
+        (errors.length > 0 ? ` (${errors.length} source error(s): ${errors.join('; ')})` : ''),
+      );
+    } catch (err) {
+      console.warn('[SIMULATION] World events poll error:', err);
     }
   }
 

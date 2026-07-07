@@ -12,6 +12,7 @@ import { CapitolMapPage } from '../../modules/government/client/pages/CapitolMap
 import { BuildingInteriorPage } from '../../modules/government/client/pages/BuildingInteriorPage';
 import { BudgetPage } from '../../modules/government/client/pages/BudgetPage';
 import { DivergencePage } from '../../modules/government/client/pages/DivergencePage';
+import { WorldPage } from '../../modules/world/client/pages/WorldPage';
 import { AdminPage } from '../../modules/admin/client/pages/AdminPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ActivityPage } from './pages/ActivityPage';
@@ -66,6 +67,7 @@ export function App() {
         <Route path="/capitol-map/:buildingId" element={<BuildingInteriorPage />} />
         <Route path="/budget" element={<BudgetPage />} />
         <Route path="/divergence" element={<DivergencePage />} />
+        <Route path="/world" element={<WorldPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/press" element={<PressRoomPage />} />

@@ -55,14 +55,18 @@ The perception half of the loop exists — agents see treasury, tax rate, and (d
 
 | # | Gap | Verdict | The problem, in one line |
 |---|---|---|---|
-| 1 | **Approval is fiscally blind** | DEAD-END | All 23 approval writes are procedural (bill passed, election won); none reads treasury/debt/deficit/tax. Worse: *passing a bill is +12 approval even if it drains the treasury* — the engine actively rewards the spend ramp. |
-| 2 | **Elections don't see fiscal record** | DEAD-END | Ballot prompt shows name/party/platform/approval — no treasury-under-tenure, no deficit, no spending history. The punishment mechanism (lose your seat) has no path from fiscal outcomes. |
-| 3 | **Tax has no downside** | DEAD-END | Revenue is perfectly linear in the rate — no elasticity, no Laffer curve, no economic drag. Raising tax is strictly dominant. This *is* the explanation for the observed 4%→26% ratchet. |
-| 4 | **No macro/economy model** | DEAD-END | GDP & population are static constants. No unemployment, market, bond yield, or sentiment variable exists. There is no reactive system for fiscal recklessness to perturb — the structural ceiling on the whole experiment. |
-| 5 | **Treasury depletion near-inert** | PARTIAL | Visible + a probabilistic proposal-rate nudge, but the hard floor is −$2T and appropriations/mandatory/interest debit through it. Depletion barely constrains behavior. |
-| 6 | **Debt (the least-bad, dormant)** | PARTIAL | Genuinely compounding, genuinely in the prompt. But its only political teeth — crisis proposal-urgency + AGGE mood note — are gated behind a 150% debt/GDP ratio (live 138%, climbing) AND AGGE auto-tick is hard-disabled. Never touches approval or elections. Closest thing to a working consequence; best place to extend. |
+| # | Gap | Status | Detail |
+|---|---|---|---|
+| 1 | **Approval is fiscally blind** | **ADDRESSED — dark, tunable** | Was: 23 procedural approval writes, +12 for passing a treasury-draining bill. Now: a gated fiscal→approval tick phase penalizes/rewards officeholders on debt/treasury/deficit/tax. Zero-weight defaults = no effect until dialed. |
+| 2 | **Elections don't see fiscal record** | **ADDRESSED — dark, tunable** | Ballot prompt now appends a per-candidate fiscal-record line (avg deficit + treasury trajectory over tenure) when `ballotFiscalRecordEnabled`. Debt/tax trajectory pending the per-tick-history follow-up below. |
+| 3 | **Tax has no downside** | **ADDRESSED — dark, tunable** | `elasticCitizenRevenue` (Laffer-shaped, Trabandt–Uhlig 2011) replaces the linear curve; `taxElasticityStrength=0` default is byte-identical, dial up to make the ratchet self-limiting. |
+| 4 | **No macro/economy model** | DEAD-END (structural, = E5) | GDP & population still static. The `FiscalConsequenceState` struct is built as the attach seam for future economy/unemployment/sentiment subsystems. Not closed here by design. |
+| 5 | **Treasury depletion near-inert** | **ADVANCED — dark, tunable** | Depletion now feeds approval via the treasury signal. The −$2T floor / unblocked appropriations are unchanged — that's an agent-policy surface, not ours to wall (§1.5). |
+| 6 | **Debt (was dormant)** | **ADVANCED — dark, tunable** | Debt now feeds approval (debt/GDP health-band→crisis-band signal) independent of the still-dormant 150% crisis path. Compounding interest unchanged. |
 
-**Keystone:** #1. Approval is the only continuous "are the agents governing well" signal and the only channel into elections. Until a fiscal variable moves approval, every other gap is moot — and until then, *the engine cannot distinguish an AI that refines toward stability from one that spends infinitely, because they earn identical rewards.* That is the current state of the experiment: not yet teeth.
+**Keystone #1 is addressed** (dark). All of the above shipped via the Fiscal Consequence Loop (`docs/specs/fiscal-consequence-loop.md`, branch `feature/fiscal-consequence-loop`) at **zero-effect defaults** — the experiment gains teeth only when the owner flips `fiscalConsequenceEnabled` and dials the weights live from the admin panel. Until then, the tick is byte-identical to before. #4 (a reactive economy) remains E5, structurally out of scope; the consequence-state struct is its attach point.
+
+**Follow-up (observability, not policy):** debt & tax rate have no per-tick history (single mutable `government_settings` row); only revenue/spending/treasury log to `fiscal_tick_summaries`. Adding `debtOutstanding` + `taxRatePercent` there (one additive migration) unlocks the full `debt→`/`tax→` story for ballots AND the `/divergence` charts. Deferred, owner's call.
 
 Note on what is NOT a gap: **sunset expiry works correctly** (verified same day) — do not "fix" it. The agents' permanent-program behavior is the designed auto-renew / NULL-sunset seam, which is a faithful loophole, not a missing consequence.
 

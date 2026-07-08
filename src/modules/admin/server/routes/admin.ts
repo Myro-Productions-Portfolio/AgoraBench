@@ -461,6 +461,41 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.worldFeedGdeltEnabled = body.worldFeedGdeltEnabled;
     }
 
+    // Fiscal Consequence Loop — Rule 1: every RuntimeConfig field gets a
+    // server handler branch with type check + range clamp, same commit.
+    // fiscalConsequenceEnabled is the master kill switch: false (default)
+    // means the fiscal->approval phase is a no-op (deploy dark).
+    if (typeof body.fiscalConsequenceEnabled === 'boolean') {
+      update.fiscalConsequenceEnabled = body.fiscalConsequenceEnabled;
+    }
+    const fadw = num('fiscalApprovalDebtWeight', 0, 50);
+    if (fadw !== undefined) update.fiscalApprovalDebtWeight = fadw;
+    const fatw = num('fiscalApprovalTreasuryWeight', 0, 50);
+    if (fatw !== undefined) update.fiscalApprovalTreasuryWeight = fatw;
+    const fadfw = num('fiscalApprovalDeficitWeight', 0, 50);
+    if (fadfw !== undefined) update.fiscalApprovalDeficitWeight = fadfw;
+    const fatxw = num('fiscalApprovalTaxWeight', 0, 50);
+    if (fatxw !== undefined) update.fiscalApprovalTaxWeight = fatxw;
+    const fcpw = prob('fiscalConsequencePartyWeight');
+    if (fcpw !== undefined) update.fiscalConsequencePartyWeight = fcpw;
+    const famd = num('fiscalApprovalMaxDeltaPerTick', 1, 20);
+    if (famd !== undefined) update.fiscalApprovalMaxDeltaPerTick = famd;
+    const fadhb = num('fiscalApprovalDebtHealthBand', 0, 5);
+    if (fadhb !== undefined) update.fiscalApprovalDebtHealthBand = fadhb;
+    const fadcb = num('fiscalApprovalDebtCrisisBand', 0, 10);
+    if (fadcb !== undefined) update.fiscalApprovalDebtCrisisBand = fadcb;
+    const fadcr = num('fiscalApprovalDeficitCrisisRatio', 0, 2);
+    if (fadcr !== undefined) update.fiscalApprovalDeficitCrisisRatio = fadcr;
+    if (typeof body.ballotFiscalRecordEnabled === 'boolean') {
+      update.ballotFiscalRecordEnabled = body.ballotFiscalRecordEnabled;
+    }
+    const tes = prob('taxElasticityStrength');
+    if (tes !== undefined) update.taxElasticityStrength = tes;
+    const tnrp = num('taxNeutralRatePercent', 0, 40);
+    if (tnrp !== undefined) update.taxNeutralRatePercent = tnrp;
+    const trpp = num('taxRevenuePeakPercent', 20, 60);
+    if (trpp !== undefined) update.taxRevenuePeakPercent = trpp;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

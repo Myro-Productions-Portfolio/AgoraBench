@@ -187,6 +187,21 @@ interface RuntimeConfig {
   worldFeedNwsEnabled: boolean;
   worldFeedFemaEnabled: boolean;
   worldFeedGdeltEnabled: boolean;
+  /* Fiscal Consequence Loop */
+  fiscalConsequenceEnabled: boolean;
+  fiscalApprovalDebtWeight: number;
+  fiscalApprovalTreasuryWeight: number;
+  fiscalApprovalDeficitWeight: number;
+  fiscalApprovalTaxWeight: number;
+  fiscalConsequencePartyWeight: number;
+  fiscalApprovalMaxDeltaPerTick: number;
+  fiscalApprovalDebtHealthBand: number;
+  fiscalApprovalDebtCrisisBand: number;
+  fiscalApprovalDeficitCrisisRatio: number;
+  ballotFiscalRecordEnabled: boolean;
+  taxElasticityStrength: number;
+  taxNeutralRatePercent: number;
+  taxRevenuePeakPercent: number;
 }
 
 interface EconomySettings {
@@ -2874,6 +2889,179 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       />
                       <p className="text-xs text-text-muted">ISO date anchoring T0 — real-date ↔ tick-date mapping for the Sim vs Reality page.</p>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Fiscal Consequences (Fiscal Consequence Loop) — deployed dark, zero-effect defaults */}
+            {simConfig && (
+              <CollapsibleSection
+                id="fiscal_consequences"
+                title="Fiscal Consequences"
+                subtitle="Makes fiscal reality bite: treasury/debt/deficit/tax move incumbent approval, ballots surface fiscal records, tax revenue goes elastic. Deployed dark with zero-effect weights — see docs/specs/fiscal-consequence-loop.md."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Fiscal Consequence Enabled (master kill switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.fiscalConsequenceEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, fiscalConsequenceEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ fiscalConsequenceEnabled: simConfig.fiscalConsequenceEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, the fiscal→approval phase is a no-op — the tick behaves byte-identically to before this loop existed. Each weight below defaults to 0 (zero-effect) even once this is on.</p>
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Ballot Fiscal Record Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.ballotFiscalRecordEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, ballotFiscalRecordEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ ballotFiscalRecordEnabled: simConfig.ballotFiscalRecordEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When on, each candidate&apos;s tenure fiscal record (deficit/day, debt Δ, tax Δ) is injected into the Phase 14 ballot prompt. Off = ballot prompt unchanged.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Approval Signal Weights (0 = signal disabled)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {([
+                      ['fiscalApprovalDebtWeight', 'Debt/GDP Weight', 0, 50, 'Strength of the debt/GDP-ratio penalty on incumbent approval.'],
+                      ['fiscalApprovalTreasuryWeight', 'Treasury Depletion Weight', 0, 50, 'Strength of the penalty as treasury falls below the operating buffer toward zero.'],
+                      ['fiscalApprovalDeficitWeight', 'Deficit Weight', 0, 50, 'Strength of the penalty proportional to deficit as a share of revenue.'],
+                      ['fiscalApprovalTaxWeight', 'Tax Burden Weight', 0, 50, 'Strength of the penalty as the tax rate rises above the neutral point.'],
+                    ] as [keyof RuntimeConfig, string, number, number, string][]).map(([key, label, min, max, desc]) => (
+                      <div key={key} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">{label}</label>
+                          <span className="text-sm text-gold font-mono">{simConfig[key] as number}</span>
+                        </div>
+                        <input type="number" min={min} max={max} step={0.5}
+                          value={simConfig[key] as number}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, [key]: parseFloat(e.target.value) || min } : c)}
+                          onBlur={() => void saveConfig({ [key]: simConfig[key] })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                        <p className="text-xs text-text-muted">{desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Shaping &amp; Guards</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Party Weighting</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.fiscalConsequencePartyWeight}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.05}
+                        value={simConfig.fiscalConsequencePartyWeight}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalConsequencePartyWeight: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ fiscalConsequencePartyWeight: simConfig.fiscalConsequencePartyWeight })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">0 = party-blind; 1 = full constituency weighting (hawks take larger tax/debt penalties).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Max Δ / Tick</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.fiscalApprovalMaxDeltaPerTick}</span>
+                      </div>
+                      <input type="number" min={1} max={20} step={0.5}
+                        value={simConfig.fiscalApprovalMaxDeltaPerTick}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalApprovalMaxDeltaPerTick: parseFloat(e.target.value) || 1 } : c)}
+                        onBlur={() => void saveConfig({ fiscalApprovalMaxDeltaPerTick: simConfig.fiscalApprovalMaxDeltaPerTick })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Clamp on the total fiscal approval move per incumbent per tick (stability guard).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Debt Health Band (ratio)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.fiscalApprovalDebtHealthBand}</span>
+                      </div>
+                      <input type="number" min={0} max={5} step={0.05}
+                        value={simConfig.fiscalApprovalDebtHealthBand}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalApprovalDebtHealthBand: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ fiscalApprovalDebtHealthBand: simConfig.fiscalApprovalDebtHealthBand })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Debt/GDP ratio where drag begins. 1.0 = mild drag from 100% of GDP.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Debt Crisis Band (ratio)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.fiscalApprovalDebtCrisisBand}</span>
+                      </div>
+                      <input type="number" min={0} max={10} step={0.05}
+                        value={simConfig.fiscalApprovalDebtCrisisBand}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalApprovalDebtCrisisBand: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ fiscalApprovalDebtCrisisBand: simConfig.fiscalApprovalDebtCrisisBand })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Debt/GDP ratio treated as full crisis — the debt signal saturates to −1 here.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Deficit Crisis Ratio</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.fiscalApprovalDeficitCrisisRatio}</span>
+                      </div>
+                      <input type="number" min={0} max={2} step={0.05}
+                        value={simConfig.fiscalApprovalDeficitCrisisRatio}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, fiscalApprovalDeficitCrisisRatio: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ fiscalApprovalDeficitCrisisRatio: simConfig.fiscalApprovalDeficitCrisisRatio })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Deficit/revenue share at which the deficit signal saturates to −1.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Tax Elasticity (Laffer response)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Elasticity Strength</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.taxElasticityStrength}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.05}
+                        value={simConfig.taxElasticityStrength}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, taxElasticityStrength: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ taxElasticityStrength: simConfig.taxElasticityStrength })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">0 = today&apos;s linear revenue; 1 = full Laffer response (diminishing returns, revenue can fall past the peak).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Neutral Rate (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.taxNeutralRatePercent}%</span>
+                      </div>
+                      <input type="number" min={0} max={40} step={0.5}
+                        value={simConfig.taxNeutralRatePercent}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, taxNeutralRatePercent: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ taxNeutralRatePercent: simConfig.taxNeutralRatePercent })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Rate below which elasticity is ~inert and the tax-burden signal is neutral.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Revenue Peak (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.taxRevenuePeakPercent}%</span>
+                      </div>
+                      <input type="number" min={20} max={60} step={0.5}
+                        value={simConfig.taxRevenuePeakPercent}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, taxRevenuePeakPercent: parseFloat(e.target.value) || 20 } : c)}
+                        onBlur={() => void saveConfig({ taxRevenuePeakPercent: simConfig.taxRevenuePeakPercent })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Tax rate of maximum revenue on the elastic curve — revenue declines above this.</p>
                     </div>
                   </div>
                 </div>

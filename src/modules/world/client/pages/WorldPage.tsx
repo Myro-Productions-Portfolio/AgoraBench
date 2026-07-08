@@ -314,8 +314,8 @@ export function WorldPage() {
       )}
 
       {summary && (summary.states.length > 0 || summary.coastal.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-6">
-          <div className="space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
+          <div className="space-y-4 min-w-0">
             <div className="rounded-lg border border-border bg-surface p-4">
               <ChoroplethMap states={statesByFips} selectedFips={selectedFips} onSelect={selectState} />
             </div>
@@ -350,7 +350,7 @@ export function WorldPage() {
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             <div className="rounded-lg border border-border bg-surface p-4">
               <p className="text-xs text-text-muted uppercase tracking-widest">Nationwide now</p>
               <p className="font-serif text-4xl font-semibold text-stone mt-1">{summary.nationwide.totalAlerts}</p>

@@ -314,125 +314,130 @@ export function WorldPage() {
       )}
 
       {summary && (summary.states.length > 0 || summary.coastal.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
-          <div className="space-y-4 min-w-0">
-            <div className="rounded-lg border border-border bg-surface p-4">
-              <ChoroplethMap states={statesByFips} selectedFips={selectedFips} onSelect={selectState} />
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
-              {(['severe', 'warning', 'advisory', 'calm', 'none'] as SeverityTier[]).map((tier) => (
-                <span key={tier} className="flex items-center gap-1.5">
-                  <SeverityDot tier={tier} />
-                  {SEVERITY_LABELS[tier]}
-                </span>
-              ))}
-            </div>
-
-            {summary.coastal.length > 0 && (
+        <div className="space-y-6">
+          {/* Top row: map (2/3) + compact summary (1/3) */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
+            <div className="space-y-4 min-w-0">
               <div className="rounded-lg border border-border bg-surface p-4">
-                <h3 className="font-serif text-sm font-semibold text-stone mb-2">Coastal & territories</h3>
-                <ul className="flex flex-wrap gap-2">
-                  {summary.coastal.map((c) => {
-                    const tier = severityTier(c.maxSeverity);
-                    return (
-                      <li
-                        key={c.fips}
-                        className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] text-text-secondary"
-                      >
-                        <SeverityDot tier={tier} />
-                        Zone {c.fips} &middot; {c.count}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <ChoroplethMap states={statesByFips} selectedFips={selectedFips} onSelect={selectState} />
               </div>
-            )}
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
+                {(['severe', 'warning', 'advisory', 'calm', 'none'] as SeverityTier[]).map((tier) => (
+                  <span key={tier} className="flex items-center gap-1.5">
+                    <SeverityDot tier={tier} />
+                    {SEVERITY_LABELS[tier]}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4 min-w-0">
+              <div className="rounded-lg border border-border bg-surface p-4">
+                <p className="text-xs text-text-muted uppercase tracking-widest">Nationwide now</p>
+                <p className="font-serif text-4xl font-semibold text-stone mt-1">{summary.nationwide.totalAlerts}</p>
+                <p className="text-xs text-text-muted mt-1">
+                  active alert{summary.nationwide.totalAlerts === 1 ? '' : 's'} across {summary.nationwide.statesWithAlerts} state{summary.nationwide.statesWithAlerts === 1 ? '' : 's'}
+                </p>
+              </div>
+
+              {hotspots.length > 0 && (
+                <div className="rounded-lg border border-border bg-surface p-4">
+                  <h3 className="font-serif text-sm font-semibold text-stone mb-3">Top hotspots</h3>
+                  <ul className="space-y-1.5">
+                    {hotspots.map((h) => {
+                      const tier = severityTier(h.maxSeverity);
+                      const meta = FIPS_TO_STATE[h.fips];
+                      return (
+                        <li key={h.fips}>
+                          <button
+                            type="button"
+                            onClick={() => selectState(h.fips)}
+                            aria-pressed={selectedFips === h.fips}
+                            className="w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
+                          >
+                            <span className="flex items-center gap-2 min-w-0">
+                              <SeverityDot tier={tier} />
+                              <span className="text-text-secondary truncate">{meta?.name ?? h.fips}</span>
+                            </span>
+                            <span className="text-xs font-mono text-text-muted shrink-0">{h.count}</span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-4 min-w-0">
+          {/* Full-width: Coastal & territories */}
+          {summary.coastal.length > 0 && (
             <div className="rounded-lg border border-border bg-surface p-4">
-              <p className="text-xs text-text-muted uppercase tracking-widest">Nationwide now</p>
-              <p className="font-serif text-4xl font-semibold text-stone mt-1">{summary.nationwide.totalAlerts}</p>
-              <p className="text-xs text-text-muted mt-1">
-                active alert{summary.nationwide.totalAlerts === 1 ? '' : 's'} across {summary.nationwide.statesWithAlerts} state{summary.nationwide.statesWithAlerts === 1 ? '' : 's'}
-              </p>
+              <h3 className="font-serif text-sm font-semibold text-stone mb-2">Coastal &amp; territories</h3>
+              <ul className="flex flex-wrap gap-2">
+                {summary.coastal.map((c) => {
+                  const tier = severityTier(c.maxSeverity);
+                  return (
+                    <li
+                      key={c.fips}
+                      className="flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] text-text-secondary"
+                    >
+                      <SeverityDot tier={tier} />
+                      Zone {c.fips} &middot; {c.count}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
+          )}
 
-            {hotspots.length > 0 && (
-              <div className="rounded-lg border border-border bg-surface p-4">
-                <h3 className="font-serif text-sm font-semibold text-stone mb-3">Top hotspots</h3>
-                <ul className="space-y-1.5">
-                  {hotspots.map((h) => {
-                    const tier = severityTier(h.maxSeverity);
-                    const meta = FIPS_TO_STATE[h.fips];
-                    return (
-                      <li key={h.fips}>
-                        <button
-                          type="button"
-                          onClick={() => selectState(h.fips)}
-                          aria-pressed={selectedFips === h.fips}
-                          className="w-full flex items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold"
-                        >
-                          <span className="flex items-center gap-2 min-w-0">
-                            <SeverityDot tier={tier} />
-                            <span className="text-text-secondary truncate">{meta?.name ?? h.fips}</span>
-                          </span>
-                          <span className="text-xs font-mono text-text-muted shrink-0">{h.count}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+          {/* Full-width: selected-state detail */}
+          <div className="rounded-lg border border-border bg-surface p-4">
+            {!selectedFips && (
+              <p className="text-sm text-text-muted">Select a state on the map or a hotspot to see its active alerts.</p>
             )}
 
-            <div className="rounded-lg border border-border bg-surface p-4">
-              {!selectedFips && (
-                <p className="text-sm text-text-muted">Select a state on the map or a hotspot to see its active alerts.</p>
-              )}
-
-              {selectedFips && (
-                <>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <SeverityDot tier={selectedTier} />
-                      <h3 className="font-serif text-base font-semibold text-stone truncate">
-                        {selectedMeta?.name ?? selectedFips}
-                      </h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFips(null)}
-                      className="text-xs text-text-muted hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold shrink-0"
-                      aria-label="Clear selected state"
-                    >
-                      Clear
-                    </button>
+            {selectedFips && (
+              <>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <SeverityDot tier={selectedTier} />
+                    <h3 className="font-serif text-base font-semibold text-stone truncate">
+                      {selectedMeta?.name ?? selectedFips}
+                    </h3>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFips(null)}
+                    className="text-xs text-text-muted hover:text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold shrink-0"
+                    aria-label="Clear selected state"
+                  >
+                    Clear
+                  </button>
+                </div>
 
-                  {stateEventsLoading && !stateEvents && (
-                    <p className="text-sm text-text-muted py-4 text-center">Loading...</p>
-                  )}
+                {stateEventsLoading && !stateEvents && (
+                  <p className="text-sm text-text-muted py-4 text-center">Loading...</p>
+                )}
 
-                  {stateEventsError && (
-                    <p className="text-sm text-danger">Could not load alerts for this state.</p>
-                  )}
+                {stateEventsError && (
+                  <p className="text-sm text-danger">Could not load alerts for this state.</p>
+                )}
 
-                  {stateEvents && stateEvents.events.length === 0 && (
-                    <EmptyState compact title="No active alerts for this state." />
-                  )}
+                {stateEvents && stateEvents.events.length === 0 && (
+                  <EmptyState compact title="No active alerts for this state." />
+                )}
 
-                  {stateEvents && stateEvents.events.length > 0 && (
-                    <ul className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                      {stateEvents.events.map((event) => (
-                        <EventRow key={event.id} event={event} />
-                      ))}
-                    </ul>
-                  )}
-                </>
-              )}
-            </div>
+                {stateEvents && stateEvents.events.length > 0 && (
+                  <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[520px] overflow-y-auto pr-1">
+                    {stateEvents.events.map((event) => (
+                      <EventRow key={event.id} event={event} />
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}

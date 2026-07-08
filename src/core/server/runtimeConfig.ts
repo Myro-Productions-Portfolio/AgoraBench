@@ -172,6 +172,22 @@ export interface RuntimeConfig {
   worldFeedNwsEnabled: boolean;               // per-source flag, only matters once worldFeedEnabled is true
   worldFeedFemaEnabled: boolean;              // per-source flag, only matters once worldFeedEnabled is true
   worldFeedGdeltEnabled: boolean;             // reserved: no adapter yet (Tier 2), always a no-op today
+
+  /* ---- Fiscal Consequence Loop — deployed dark, zero-effect defaults ---- */
+  fiscalConsequenceEnabled: boolean;         // master kill switch: fiscal->approval phase is a no-op when false (deploy dark)
+  fiscalApprovalDebtWeight: number;          // debt/GDP -> approval strength (0-50)
+  fiscalApprovalTreasuryWeight: number;      // treasury depletion -> approval strength (0-50)
+  fiscalApprovalDeficitWeight: number;       // deficit -> approval strength (0-50)
+  fiscalApprovalTaxWeight: number;           // tax burden -> approval strength (0-50)
+  fiscalConsequencePartyWeight: number;      // party/constituency weighting (0 = blind .. 1)
+  fiscalApprovalMaxDeltaPerTick: number;     // clamp on total fiscal approval move per tick (1-20)
+  fiscalApprovalDebtHealthBand: number;      // debt/GDP ratio where drag begins (1.0 = mild drag from 100%)
+  fiscalApprovalDebtCrisisBand: number;      // debt/GDP ratio treated as full crisis (signal saturates to -1)
+  fiscalApprovalDeficitCrisisRatio: number;  // deficit/revenue share at which the deficit signal saturates to -1
+  ballotFiscalRecordEnabled: boolean;        // show each candidate's tenure fiscal record on ballots (deploy dark)
+  taxElasticityStrength: number;             // 0 = linear revenue (today); 1 = full Laffer response
+  taxNeutralRatePercent: number;             // tax rate below which elasticity ~inert AND tax-burden signal is neutral (0-40)
+  taxRevenuePeakPercent: number;             // tax rate of max revenue on the elastic curve (20-60)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -335,6 +351,22 @@ const DEFAULTS: RuntimeConfig = {
   worldFeedNwsEnabled: true,
   worldFeedFemaEnabled: true,
   worldFeedGdeltEnabled: false,
+
+  /* Fiscal Consequence Loop — deployed dark, zero-effect defaults */
+  fiscalConsequenceEnabled: false,
+  fiscalApprovalDebtWeight: 0,
+  fiscalApprovalTreasuryWeight: 0,
+  fiscalApprovalDeficitWeight: 0,
+  fiscalApprovalTaxWeight: 0,
+  fiscalConsequencePartyWeight: 0,
+  fiscalApprovalMaxDeltaPerTick: 5,
+  fiscalApprovalDebtHealthBand: 1.0,
+  fiscalApprovalDebtCrisisBand: 2.0,
+  fiscalApprovalDeficitCrisisRatio: 0.5,
+  ballotFiscalRecordEnabled: false,
+  taxElasticityStrength: 0,
+  taxNeutralRatePercent: 19,
+  taxRevenuePeakPercent: 45,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

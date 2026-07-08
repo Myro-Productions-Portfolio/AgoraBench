@@ -17,6 +17,63 @@ AgoraBench's core question: **can AI manage a government better than humans mana
 
 ---
 
+## 1.5 The engine is physics, not policy — the governing doctrine
+
+*Added 2026-07-08 from owner direction. This is the single most important design principle in the project. Every engine decision inherits it. When in doubt, re-read this section.*
+
+**We build the world's rules. The AIs write the government's rules. These are different jobs and we never cross the line.**
+
+The real experiment is not "can we design an AI government that works." It is: **given a faithful world with real costs and real consequences, does AI — unlike us — refine toward stability and fix the problems, or does it discover and exploit the same loopholes we do?** That question is only meaningful if we are rigorously hands-off about *policy* and rigorously faithful about *physics*.
+
+### What is OURS to build (physics / the world model)
+The engine defines what is *possible* and what everything *costs*. It must faithfully transmit **cause and consequence** so that decisions have downstream effects the agents can perceive and be punished by:
+- Debt compounds (interest accrues). Deficits have a price.
+- Temporary programs actually expire when their sunset clock runs out — the engine must honor its own contracts. *(Verified 2026-07-08: sunset expiry works correctly — Phase 9.7 defunds at `enacted_tick + sunset_ticks` before the Phase 12 debit. This is a working seam, not a gap; do not "fix" it. The agents' observed "permanent program" behavior comes from the two DESIGNED seams around it — enacting `spend_recurring` with a NULL sunset clause, or passing renewal amendments before the budget-cycle lapse. That is the real-world "pass it temporary, auto-renew it forever" loophole, emergent without us building it. Exactly what we want to observe.)*
+- A drained treasury, a high tax rate, a debt spiral must propagate to something real — the economy, approval, the governed, and ultimately election outcomes.
+- The governed react. Elections punish. Consequence loops back to the agents who caused it.
+
+**A default is never neutral.** Every omission is a silent policy choice. If debt doesn't accrue interest, we have deleted the main consequence of deficit spending. If sunsets don't fire, we have silently made every "temporary" program permanent — and any loophole the agents "find" there is *our bug*, not their cleverness. **The engine must not lie to the agents about how the world works.**
+
+### What is NOT ours to build (policy / the government's rules)
+We never write a rule that says *"agents may not do X."* We never pre-install PAYGO, spending caps, debt ceilings, balanced-budget rules, or any fiscal guardrail *as an engine constraint*. If those guardrails are good ideas, **the AIs must legislate them themselves** — that is the experiment. Their choosing to build (or not build) their own guardrails is a *result we are measuring*, not an input we provide.
+
+Corollary: we never write their laws, their votes, or their party positions. We keep their personalities, parties, and constituencies — because "constraints per who they represent" is exactly the pressure that makes the politics real. An AI without a constituency to answer to isn't governing, it's optimizing in a vacuum.
+
+### The test for any proposed engine change
+Ask: **"Is this a law of physics, or is it a policy?"**
+- *Does it change what is possible / what things cost, faithfully to reality?* → physics, build it.
+- *Does it forbid, mandate, or bound a governing choice the agents should be free to make?* → policy, **do not build it** — let the agents legislate it if they want it.
+
+Rules should have **seams**, not walls. A wall stops the game. A seam is a real constraint that a well-orchestrated coalition can legally defeat — and the orchestration *around* the seam is precisely the emergent behavior we are here to observe. Model the loophole-shaped reality (riders, emergency designations, baseline gaming, sunset auto-renewal), not a frictionless one and not an impregnable one.
+
+### Why this matters for the experiment's validity
+If the engine doesn't transmit consequence, the experiment is rigged toward recklessness and proves nothing — "would AI keep spending in a world where nothing hurts?" has a boring, obvious yes. The experiment only has teeth when instability *costs* the agents something they're optimizing for. **Auditing what consequences the engine currently fails to transmit is therefore ongoing, first-class work** — every gap is an invisible thumb on the scale that we put there by omission.
+
+### Consequence-feedback gap map (audited 2026-07-08, prod tick ~790)
+
+The perception half of the loop exists — agents see treasury, tax rate, and (debt engine is ON in prod) debt + daily interest in their prompts. The **punishment half is almost entirely missing.** The intended chain *reckless spending → lower approval → lost election → party punished* is severed at multiple points. These are the concrete physics-work backlog, ranked by how badly each rigs the experiment. **None of these is policy — each is a real-world cost the engine currently fails to charge. Building them does not violate §1.5; leaving them is the violation.**
+
+| # | Gap | Verdict | The problem, in one line |
+|---|---|---|---|
+| # | Gap | Status | Detail |
+|---|---|---|---|
+| 1 | **Approval is fiscally blind** | **ADDRESSED — dark, tunable** | Was: 23 procedural approval writes, +12 for passing a treasury-draining bill. Now: a gated fiscal→approval tick phase penalizes/rewards officeholders on debt/treasury/deficit/tax. Zero-weight defaults = no effect until dialed. |
+| 2 | **Elections don't see fiscal record** | **ADDRESSED — dark, tunable** | Ballot prompt now appends a per-candidate fiscal-record line (avg deficit + treasury trajectory over tenure) when `ballotFiscalRecordEnabled`. Debt/tax trajectory pending the per-tick-history follow-up below. |
+| 3 | **Tax has no downside** | **ADDRESSED — dark, tunable** | `elasticCitizenRevenue` (Laffer-shaped, Trabandt–Uhlig 2011) replaces the linear curve; `taxElasticityStrength=0` default is byte-identical, dial up to make the ratchet self-limiting. |
+| 4 | **No macro/economy model** | DEAD-END (structural, = E5) | GDP & population still static. The `FiscalConsequenceState` struct is built as the attach seam for future economy/unemployment/sentiment subsystems. Not closed here by design. |
+| 5 | **Treasury depletion near-inert** | **ADVANCED — dark, tunable** | Depletion now feeds approval via the treasury signal. The −$2T floor / unblocked appropriations are unchanged — that's an agent-policy surface, not ours to wall (§1.5). |
+| 6 | **Debt (was dormant)** | **ADVANCED — dark, tunable** | Debt now feeds approval (debt/GDP health-band→crisis-band signal) independent of the still-dormant 150% crisis path. Compounding interest unchanged. |
+
+**Keystone #1 is addressed** (dark). All of the above shipped via the Fiscal Consequence Loop (`docs/specs/fiscal-consequence-loop.md`, branch `feature/fiscal-consequence-loop`) at **zero-effect defaults** — the experiment gains teeth only when the owner flips `fiscalConsequenceEnabled` and dials the weights live from the admin panel. Until then, the tick is byte-identical to before. #4 (a reactive economy) remains E5, structurally out of scope; the consequence-state struct is its attach point.
+
+**Follow-up (observability, not policy):** debt & tax rate have no per-tick history (single mutable `government_settings` row); only revenue/spending/treasury log to `fiscal_tick_summaries`. Adding `debtOutstanding` + `taxRatePercent` there (one additive migration) unlocks the full `debt→`/`tax→` story for ballots AND the `/divergence` charts. Deferred, owner's call.
+
+Note on what is NOT a gap: **sunset expiry works correctly** (verified same day) — do not "fix" it. The agents' permanent-program behavior is the designed auto-renew / NULL-sunset seam, which is a faithful loophole, not a missing consequence.
+
+Full audit evidence (every `file:line`) is in the 2026-07-08 session record; the ranked list above is the actionable summary.
+
+---
+
 ## 2. Spec
 
 ### 2.1 Fiscal engine prerequisites — the `mandatory` lane + debt/interest

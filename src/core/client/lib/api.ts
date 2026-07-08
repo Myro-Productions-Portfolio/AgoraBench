@@ -142,10 +142,12 @@ export const divergenceApi = {
     request('/divergence'),
 };
 
-/* Exogenous world-events feed endpoints (E2 slice 1) */
+/* Exogenous world-events feed endpoints (E2 slice 1) + state-summary aggregate */
 export const worldApi = {
-  events: (page = 1, limit = 25) =>
-    request(`/world/events?page=${page}&limit=${limit}`),
+  events: (page = 1, limit = 25, state?: string) =>
+    request(`/world/events?page=${page}&limit=${limit}${state ? `&state=${state}` : ''}`),
+  stateSummary: (category: string) =>
+    request(`/world/state-summary?category=${category}`),
 };
 
 /* Party endpoints */

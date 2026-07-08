@@ -237,6 +237,7 @@ export interface GovernmentOverview {
   judicial: {
     supremeCourtJustices: number;
     activeCases: number;
+    chiefJustice: Agent | null;
   };
   stats: {
     totalAgents: number;

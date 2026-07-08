@@ -10,6 +10,10 @@ interface BranchCardProps {
   /** When true, the office is unfilled: render a neutral vacant state instead
       of a fake person named "Vacant" with "--" initials. */
   vacant?: boolean;
+  /** When true, this branch has no single-leader role in the sim at all (no
+      election, no appointment rule) — render as "Not tracked" instead of
+      "Vacant", since "Vacant" implies an office that could be filled. */
+  notModeled?: boolean;
   stats: Array<{ label: string; value: string | number }>;
 }
 
@@ -36,6 +40,7 @@ export function BranchCard({
   officialTitle,
   officialInitials,
   vacant = false,
+  notModeled = false,
   stats,
 }: BranchCardProps) {
   const colors = BRANCH_COLORS[branch];
@@ -56,7 +61,17 @@ export function BranchCard({
       </h3>
 
       {/* Official */}
-      {vacant ? (
+      {notModeled ? (
+        <div className="flex items-center gap-2.5 p-3 bg-black/20 rounded mb-3">
+          <div className="w-10 h-10 rounded-full bg-capitol-deep border-2 border-dashed border-border flex items-center justify-center font-serif text-xs font-bold text-text-muted">
+            &mdash;
+          </div>
+          <div>
+            <div className="text-sm font-medium text-text-muted italic">Not tracked</div>
+            <div className="text-xs text-text-muted">No single {officialTitle.toLowerCase()} role in this sim</div>
+          </div>
+        </div>
+      ) : vacant ? (
         <div className="flex items-center gap-2.5 p-3 bg-black/20 rounded mb-3">
           <div className="w-10 h-10 rounded-full bg-capitol-deep border-2 border-dashed border-border flex items-center justify-center font-serif text-xs font-bold text-text-muted">
             &mdash;

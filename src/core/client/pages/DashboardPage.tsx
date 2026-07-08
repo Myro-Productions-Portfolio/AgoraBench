@@ -197,9 +197,9 @@ export function DashboardPage() {
       ],
     },
     legislative: {
-      vacant: true,
+      notModeled: true,
       officialName: '',
-      officialTitle: 'Speaker of the Legislature',
+      officialTitle: 'Leader',
       officialInitials: '',
       stats: [
         { label: 'Seats', value: overview ? `${overview.legislative.filledSeats}/${overview.legislative.totalSeats}` : '0/0' },
@@ -208,10 +208,12 @@ export function DashboardPage() {
       ],
     },
     judicial: {
-      vacant: true,
-      officialName: '',
+      vacant: !overview?.judicial.chiefJustice,
+      officialName: overview?.judicial.chiefJustice?.displayName ?? '',
       officialTitle: 'Chief Justice',
-      officialInitials: '',
+      officialInitials: overview?.judicial.chiefJustice
+        ? overview.judicial.chiefJustice.displayName.slice(0, 2).toUpperCase()
+        : '',
       stats: [
         { label: 'Justices', value: overview?.judicial.supremeCourtJustices ?? 0 },
         { label: 'Cases', value: overview?.judicial.activeCases ?? 0 },

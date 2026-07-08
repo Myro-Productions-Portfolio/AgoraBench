@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   clampInt,
   dailyCitizenRevenue,
+  elasticCitizenRevenue,
   paydayDue,
   computePaycheck,
   applyTaxDelta,
@@ -49,6 +50,60 @@ describe('dailyCitizenRevenue', () => {
     expect(dailyCitizenRevenue(28_000_000_000_000, -2)).toBe(0);
     expect(dailyCitizenRevenue(NaN, 18)).toBe(0);
     expect(dailyCitizenRevenue(Infinity, 18)).toBe(0);
+  });
+});
+
+describe('elasticCitizenRevenue', () => {
+  const cfg = { elasticityStrength: 0, neutralRatePercent: 19, peakRatePercent: 45 };
+  const GDP = 28_000_000_000_000;
+
+  it('strength=0 is byte-identical to dailyCitizenRevenue across a rate sweep', () => {
+    for (const rate of [0, 10, 19, 26, 40, 60]) {
+      expect(elasticCitizenRevenue(GDP, rate, { ...cfg, elasticityStrength: 0 })).toBe(
+        dailyCitizenRevenue(GDP, rate),
+      );
+    }
+  });
+
+  it('strength=0 also matches on the zero/negative/non-finite guards', () => {
+    expect(elasticCitizenRevenue(0, 18, cfg)).toBe(dailyCitizenRevenue(0, 18));
+    expect(elasticCitizenRevenue(GDP, 0, cfg)).toBe(dailyCitizenRevenue(GDP, 0));
+    expect(elasticCitizenRevenue(-1, 18, cfg)).toBe(0);
+    expect(elasticCitizenRevenue(NaN, 18, cfg)).toBe(0);
+    expect(elasticCitizenRevenue(GDP, Infinity, cfg)).toBe(0);
+  });
+
+  it('strength=1: revenue at the peak rate exceeds revenue at the ceiling (curve bends down)', () => {
+    const full = { ...cfg, elasticityStrength: 1 };
+    const atPeak = elasticCitizenRevenue(GDP, 45, full);
+    const atCeiling = elasticCitizenRevenue(GDP, 90, full); // 2 * peak → ~0
+    expect(atPeak).toBeGreaterThan(atCeiling);
+  });
+
+  it('strength=1 is monotonic-increasing below the neutral rate', () => {
+    const full = { ...cfg, elasticityStrength: 1 };
+    let prev = -1;
+    for (const rate of [2, 5, 10, 15, 19]) {
+      const rev = elasticCitizenRevenue(GDP, rate, full);
+      expect(rev).toBeGreaterThan(prev);
+      prev = rev;
+    }
+  });
+
+  it('blends monotonically between linear and full Laffer as strength rises (above the peak, where Laffer < linear)', () => {
+    const rate = 55; // above peak 45 → Laffer result is below linear
+    const linear = elasticCitizenRevenue(GDP, rate, { ...cfg, elasticityStrength: 0 });
+    const half = elasticCitizenRevenue(GDP, rate, { ...cfg, elasticityStrength: 0.5 });
+    const full = elasticCitizenRevenue(GDP, rate, { ...cfg, elasticityStrength: 1 });
+    expect(half).toBeLessThan(linear);
+    expect(full).toBeLessThan(half);
+  });
+
+  it('elasticity clamps strength to [0,1] and never returns negative revenue', () => {
+    expect(elasticCitizenRevenue(GDP, 40, { ...cfg, elasticityStrength: 2 })).toBe(
+      elasticCitizenRevenue(GDP, 40, { ...cfg, elasticityStrength: 1 }),
+    );
+    expect(elasticCitizenRevenue(GDP, 100, { ...cfg, elasticityStrength: 1 })).toBeGreaterThanOrEqual(0);
   });
 });
 

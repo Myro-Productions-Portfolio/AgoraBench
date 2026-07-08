@@ -37,6 +37,36 @@ export function dailyCitizenRevenue(gdpAnnual: number, taxRatePercent: number): 
   return Math.floor((gdpAnnual * taxRatePercent) / 100 / 365);
 }
 
+/**
+ * Elastic generalization of dailyCitizenRevenue. strength=0 returns the exact
+ * linear result (strict superset). strength>0 blends toward a quadratic Laffer
+ * curve R(r) ∝ r·(1 − r/(2·peak)) — the standard closed form that peaks at
+ * `peakRatePercent` and falls beyond (Trabandt & Uhlig 2011, "The Laffer curve
+ * revisited"). The Laffer branch is scaled to match the linear branch at
+ * `neutralRatePercent`, so below neutral the two coincide (no kink) and the
+ * curve only bends above it. Non-finite/non-positive gdp or rate → 0.
+ */
+export function elasticCitizenRevenue(
+  gdpAnnual: number,
+  taxRatePercent: number,
+  cfg: { elasticityStrength: number; neutralRatePercent: number; peakRatePercent: number },
+): number {
+  if (!Number.isFinite(gdpAnnual) || !Number.isFinite(taxRatePercent)) return 0;
+  if (gdpAnnual <= 0 || taxRatePercent <= 0) return 0;
+  const strength = Number.isFinite(cfg.elasticityStrength) ? Math.min(1, Math.max(0, cfg.elasticityStrength)) : 0;
+  if (strength === 0) return dailyCitizenRevenue(gdpAnnual, taxRatePercent);
+
+  const linear = (gdpAnnual * taxRatePercent) / 100 / 365;
+  const peak = Number.isFinite(cfg.peakRatePercent) && cfg.peakRatePercent > 0 ? cfg.peakRatePercent : taxRatePercent;
+  const neutral = Number.isFinite(cfg.neutralRatePercent) && cfg.neutralRatePercent > 0 ? cfg.neutralRatePercent : 0;
+  const eff = (r: number): number => 1 - r / (2 * peak);
+  const neutralEff = eff(neutral);
+  const norm = neutralEff > 0 ? eff(taxRatePercent) / neutralEff : eff(taxRatePercent);
+  const laffer = linear * norm;
+  const blended = linear * (1 - strength) + laffer * strength;
+  return Math.floor(Math.max(0, blended));
+}
+
 /** True when a payday is due this tick: tickNumber is a positive multiple of
  *  payPeriodTicks. Non-finite / non-positive inputs are never due. */
 export function paydayDue(tickNumber: number, payPeriodTicks: number): boolean {

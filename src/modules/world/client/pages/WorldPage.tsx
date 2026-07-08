@@ -160,9 +160,9 @@ function ChoroplethMap({ states, selectedFips, onSelect }: ChoroplethMapProps) {
             aria-label={meta ? `${meta.name}: ${SEVERITY_LABELS[tier]}${agg ? `, ${agg.count} alert${agg.count === 1 ? '' : 's'}` : ''}` : fips}
             aria-pressed={isSelected}
             fill={SEVERITY_COLORS[tier]}
-            stroke={isSelected ? '#D4AF6A' : '#15161A'}
-            strokeWidth={isSelected ? 2 : 0.6}
-            className="cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:outline-offset-1"
+            stroke="#15161A"
+            strokeWidth={0.6}
+            className="cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:opacity-80 [&:focus]:outline-none [&:focus-visible]:stroke-gold-bright [&:focus-visible]:[stroke-width:2px]"
             onClick={() => onSelect(fips)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -173,6 +173,19 @@ function ChoroplethMap({ states, selectedFips, onSelect }: ChoroplethMapProps) {
           />
         );
       })}
+      {/* Selected state re-drawn last so its border sits above every neighbor
+          (SVG has no z-index — paint order is DOM order). Non-interactive
+          overlay; the base path underneath keeps click/keyboard handling. */}
+      {selectedFips && US_STATE_PATHS[selectedFips] && (
+        <path
+          d={US_STATE_PATHS[selectedFips]}
+          fill="none"
+          stroke="#D4AF6A"
+          strokeWidth={2}
+          className="pointer-events-none"
+          style={{ paintOrder: 'stroke', filter: 'drop-shadow(0 0 4px rgba(212,175,106,0.65))' }}
+        />
+      )}
       {Object.entries(US_STATE_CENTROIDS).map(([fips, [x, y]]) => {
         const agg = states[fips];
         if (!agg) return null;

@@ -104,6 +104,7 @@ export function DashboardPage() {
   const [allAgents, setAllAgents] = useState<DashboardAgent[]>([]);
   const [budget30d, setBudget30d] = useState<{ revenue30d: number; spending30d: number } | null>(null);
   const [termDay, setTermDay] = useState<number | null>(null);
+  const [courtRulings, setCourtRulings] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const { subscribe } = useWebSocket();
   const { bannerTargetDate, bannerTitle, bannerDescription } = useActiveElection();
@@ -154,10 +155,18 @@ export function DashboardPage() {
         setAllAgents(agentsRes.value.data as DashboardAgent[]);
       }
 
-      /* Term Day — authoritative sim day (completed tick count) from court stats */
+      /* Term Day (authoritative sim day) + decided-ruling count, both from
+         the same /court/stats payload the page already fetches. */
       if (courtStatsRes.status === 'fulfilled' && courtStatsRes.value.data) {
-        const courtStats = courtStatsRes.value.data as { currentTick?: number };
+        const courtStats = courtStatsRes.value.data as {
+          currentTick?: number;
+          struckDown?: number;
+          upheld?: number;
+        };
         if (typeof courtStats.currentTick === 'number') setTermDay(courtStats.currentTick);
+        if (typeof courtStats.struckDown === 'number' && typeof courtStats.upheld === 'number') {
+          setCourtRulings(courtStats.struckDown + courtStats.upheld);
+        }
       }
     } catch {
       /* API unavailable */
@@ -192,7 +201,7 @@ export function DashboardPage() {
       officialInitials: president ? president.displayName.slice(0, 2).toUpperCase() : '',
       stats: [
         { label: 'Term Day', value: termDay !== null ? String(termDay) : '--' },
-        { label: 'Approval', value: '--' },
+        { label: 'Approval', value: president ? `${president.approvalRating}%` : '--' },
         { label: 'Orders', value: 0 },
       ],
     },
@@ -217,7 +226,7 @@ export function DashboardPage() {
       stats: [
         { label: 'Justices', value: overview?.judicial.supremeCourtJustices ?? 0 },
         { label: 'Cases', value: overview?.judicial.activeCases ?? 0 },
-        { label: 'Rulings', value: 0 },
+        { label: 'Rulings', value: courtRulings ?? 0 },
       ],
     },
   };

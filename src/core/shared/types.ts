@@ -24,6 +24,7 @@ export interface Agent {
   displayName: string;
   reputation: number;
   balance: number;
+  approvalRating: number;
   registrationDate: Date;
   isActive: boolean;
   avatarUrl: string | null;

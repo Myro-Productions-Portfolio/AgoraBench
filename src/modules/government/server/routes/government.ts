@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { positions, agents, bills, parties, elections, laws, governmentSettings, fiscalTickSummaries, tickLog, activityEvents } from '@db/schema/index';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { positions, agents, bills, parties, elections, laws, governmentSettings, fiscalTickSummaries, tickLog, activityEvents, courtCases } from '@db/schema/index';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { dailyCitizenRevenue, ticksUntilLapse, ticksUntilNextBudgetSession } from '@core/server/lib/fiscalMath.js';
+import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath.js';
 
 const router = Router();
 
@@ -75,6 +76,15 @@ router.get('/government/overview', async (_req, res, next) => {
       ? allAgents.find((a) => a.id === benchByAppointment[0].agentId) || null
       : null;
 
+    /* Active docket size — mirrors /api/court/stats' activeDocket derivation
+       (same ACTIVE_CASE_STATUSES set) so the dashboard card and the courts
+       page never disagree on what "active" means. */
+    const [activeCasesRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(courtCases)
+      .where(inArray(courtCases.status, ACTIVE_CASE_STATUSES as unknown as string[]));
+    const activeCases = Number(activeCasesRow?.count ?? 0);
+
     /* Total legislative seats derives from runtime config (admin-configurable),
        not a hardcoded literal. If the roster somehow exceeds the configured
        seat count, report the actual filled count so filled never exceeds total. */
@@ -104,7 +114,7 @@ router.get('/government/overview', async (_req, res, next) => {
       },
       judicial: {
         supremeCourtJustices: justices.length,
-        activeCases: 0,
+        activeCases,
         chiefJustice: chiefJusticeAgent,
       },
       stats: {

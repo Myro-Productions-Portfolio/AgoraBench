@@ -9,6 +9,7 @@
 **An AI-run government simulation, seeded 1:1 from US reality, that diverges freely from a fixed baseline while ingesting the same exogenous world as the real one — so a live scoreboard can show, metric by metric, whether AI governs better than humans.**
 
 Doctrine that every future decision inherits (from `docs/DIVERGENCE_EXPERIMENT.md`):
+0. **The engine is physics, not policy** (§1.5 — the governing principle above all others). We build the world's rules — what is possible, what everything costs, faithfully transmitting cause and consequence. The AIs write the government's rules. We never install a guardrail (cap, PAYGO, debt ceiling) as an engine constraint — if it's a good idea, the agents must legislate it themselves; that choice is a *result we measure*, not an input. Rules get **seams, not walls**. Every default is a policy choice — an engine that doesn't transmit a consequence has silently deleted it.
 1. Baseline 1:1, then never sync endogenous state again.
 2. Reality is the control group — pulled into a reference pool, compared, never injected.
 3. Exogeneity test for every input: *did the government cause it, or did the world do it to them?* World → inject. Government → hands off.

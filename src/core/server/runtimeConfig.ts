@@ -184,6 +184,7 @@ export interface RuntimeConfig {
   fiscalApprovalDebtHealthBand: number;      // debt/GDP ratio where drag begins (1.0 = mild drag from 100%)
   fiscalApprovalDebtCrisisBand: number;      // debt/GDP ratio treated as full crisis (signal saturates to -1)
   fiscalApprovalDeficitCrisisRatio: number;  // deficit/revenue share at which the deficit signal saturates to -1
+  ballotFiscalRecordEnabled: boolean;        // show each candidate's tenure fiscal record on ballots (deploy dark)
   taxElasticityStrength: number;             // 0 = linear revenue (today); 1 = full Laffer response
   taxNeutralRatePercent: number;             // tax rate below which elasticity ~inert AND tax-burden signal is neutral (0-40)
   taxRevenuePeakPercent: number;             // tax rate of max revenue on the elastic curve (20-60)
@@ -362,6 +363,7 @@ const DEFAULTS: RuntimeConfig = {
   fiscalApprovalDebtHealthBand: 1.0,
   fiscalApprovalDebtCrisisBand: 2.0,
   fiscalApprovalDeficitCrisisRatio: 0.5,
+  ballotFiscalRecordEnabled: false,
   taxElasticityStrength: 0,
   taxNeutralRatePercent: 19,
   taxRevenuePeakPercent: 45,

@@ -3,10 +3,15 @@ import {
   fiscalApprovalDelta,
   partyLeanFromAlignment,
   computeFiscalApprovalMoves,
+  buildTenureFiscalRecord,
   type FiscalConsequenceState,
   type FiscalApprovalConfig,
   type Officeholder,
+  type TenureFiscalRow,
 } from '@core/server/lib/consequenceMath';
+
+/** Plain formatter for deterministic assertions (contract-equal to compactDollars: signed, prefixed). */
+const fmtPlain = (n: number): string => `${n < 0 ? '-' : ''}$${Math.abs(n)}`;
 
 const ZERO_CFG: FiscalApprovalConfig = {
   debtWeight: 0,
@@ -233,5 +238,66 @@ describe('computeFiscalApprovalMoves — the tick-phase helper (gate + filter + 
   it('non-officeholders are simply absent — only the passed set is scored', () => {
     const moves = computeFiscalApprovalMoves(true, DISTRESSED, HOT_CFG, [OFFICEHOLDERS[0]]);
     expect(moves.map((m) => m.agentId)).toEqual(['a1']);
+  });
+});
+
+describe('buildTenureFiscalRecord — ballot fiscal record (Slice 3)', () => {
+  it('multi-tick tenure: avg deficit + treasury trajectory + tick count', () => {
+    const rows: TenureFiscalRow[] = [
+      { deficit: 4_000_000_000, treasuryEnd: 2_000_000_000_000 },
+      { deficit: 6_000_000_000, treasuryEnd: 1_900_000_000_000 },
+      { deficit: 5_000_000_000, treasuryEnd: 1_800_000_000_000 },
+    ];
+    expect(buildTenureFiscalRecord(rows, fmtPlain)).toBe(
+      'fiscal record: avg deficit $5000000000/day, treasury $2000000000000→$1800000000000 over 3 ticks in office',
+    );
+  });
+
+  it('single-tick tenure: singular "tick", start=end treasury', () => {
+    const rows: TenureFiscalRow[] = [{ deficit: -3_000_000_000, treasuryEnd: 1_500_000_000_000 }];
+    expect(buildTenureFiscalRecord(rows, fmtPlain)).toBe(
+      'fiscal record: avg deficit -$3000000000/day, treasury $1500000000000→$1500000000000 over 1 tick in office',
+    );
+  });
+
+  it('no tenure rows → null (caller emits no line; never fabricates)', () => {
+    expect(buildTenureFiscalRecord([], fmtPlain)).toBeNull();
+  });
+
+  it('surplus tenure shows a negative average deficit', () => {
+    const rows: TenureFiscalRow[] = [
+      { deficit: -1_000_000_000, treasuryEnd: 1_000_000_000_000 },
+      { deficit: -3_000_000_000, treasuryEnd: 1_050_000_000_000 },
+    ];
+    expect(buildTenureFiscalRecord(rows, fmtPlain)).toBe(
+      'fiscal record: avg deficit -$2000000000/day, treasury $1000000000000→$1050000000000 over 2 ticks in office',
+    );
+  });
+
+  it('non-finite fields degrade to 0 rather than emitting NaN', () => {
+    const rows: TenureFiscalRow[] = [
+      { deficit: NaN, treasuryEnd: Infinity },
+      { deficit: 2_000_000_000, treasuryEnd: 900_000_000_000 },
+    ];
+    // deficit avg = (0 + 2e9)/2 = 1e9; first treasury coerces to 0.
+    expect(buildTenureFiscalRecord(rows, fmtPlain)).toBe(
+      'fiscal record: avg deficit $1000000000/day, treasury $0→$900000000000 over 2 ticks in office',
+    );
+  });
+
+  it('formatting is delegated to the injected formatter (compactDollars-style)', () => {
+    const compactStyle = (n: number): string => {
+      const abs = Math.abs(n);
+      if (abs >= 1e12) return `${n < 0 ? '-' : ''}$${abs / 1e12}T`;
+      if (abs >= 1e9) return `${n < 0 ? '-' : ''}$${abs / 1e9}B`;
+      return `${n < 0 ? '-' : ''}$${abs}`;
+    };
+    const rows: TenureFiscalRow[] = [
+      { deficit: 5_000_000_000, treasuryEnd: 2_000_000_000_000 },
+      { deficit: 5_000_000_000, treasuryEnd: 1_500_000_000_000 },
+    ];
+    expect(buildTenureFiscalRecord(rows, compactStyle)).toBe(
+      'fiscal record: avg deficit $5B/day, treasury $2T→$1.5T over 2 ticks in office',
+    );
   });
 });

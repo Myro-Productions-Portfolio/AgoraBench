@@ -43,7 +43,7 @@ import { pickTopCommittees, selectChair, tallyWeightedRatification, type Canonic
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
 import { elasticCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote, mandatoryEffectiveAmount, tickInterest, settleTreasury, type FiscalKind } from '../lib/fiscalMath.js';
-import { computeFiscalApprovalMoves, type FiscalConsequenceState, type FiscalApprovalConfig } from '../lib/consequenceMath.js';
+import { computeFiscalApprovalMoves, buildTenureFiscalRecord, type FiscalConsequenceState, type FiscalApprovalConfig, type TenureFiscalRow } from '../lib/consequenceMath.js';
 import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
@@ -5395,10 +5395,50 @@ agentTickQueue.process(async () => {
         alignmentMap.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
       }
 
+      /* Slice 3: per-candidate tenure fiscal record, computed once per election
+         (identical for all voters), gated on ballotFiscalRecordEnabled. Tenure
+         window comes from positions (timestamps) mapped onto fiscal_tick_summaries
+         by createdAt; debt/tax have no per-tick history so the record shows the
+         deficit + treasury trajectory only. Failure never breaks the election. */
+      const fiscalRecordMap = new Map<string, string>();
+      if (rc.ballotFiscalRecordEnabled) {
+        try {
+          const tenureRows = await db
+            .select({ agentId: positions.agentId, startDate: positions.startDate, endDate: positions.endDate })
+            .from(positions)
+            .where(inArray(positions.agentId, [...candidateIds]));
+          const tenureByAgent = new Map<string, { start: Date; end: Date }>();
+          for (const t of tenureRows) {
+            const start = t.startDate;
+            const end = t.endDate ?? new Date();
+            const existing = tenureByAgent.get(t.agentId);
+            if (!existing) tenureByAgent.set(t.agentId, { start, end });
+            else tenureByAgent.set(t.agentId, {
+              start: start < existing.start ? start : existing.start,
+              end: end > existing.end ? end : existing.end,
+            });
+          }
+          for (const [agentId, window] of tenureByAgent) {
+            const summaries = await db
+              .select({ revenue: fiscalTickSummaries.revenue, spending: fiscalTickSummaries.spending, treasuryEnd: fiscalTickSummaries.treasuryEnd })
+              .from(fiscalTickSummaries)
+              .where(and(gte(fiscalTickSummaries.createdAt, window.start), lte(fiscalTickSummaries.createdAt, window.end)))
+              .orderBy(asc(fiscalTickSummaries.createdAt));
+            const rows: TenureFiscalRow[] = summaries.map((s) => ({ deficit: s.spending - s.revenue, treasuryEnd: s.treasuryEnd }));
+            const record = buildTenureFiscalRecord(rows, compactDollars);
+            if (record) fiscalRecordMap.set(agentId, record);
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 14 ballot: fiscal-record aggregation failed (ballots proceed without it):', err);
+        }
+      }
+
       const candidateBlock = candidates
         .map((c) => {
           const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
-          return `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%): ${c.platform}`;
+          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%): ${c.platform}`;
+          const record = fiscalRecordMap.get(c.agentId);
+          return record ? `${base}\n    ${record}` : base;
         })
         .join('\n');
 

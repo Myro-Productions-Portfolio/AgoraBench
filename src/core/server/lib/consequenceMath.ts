@@ -153,3 +153,31 @@ export function computeFiscalApprovalMoves(
   }
   return moves;
 }
+
+/* ── Slice 3: ballot fiscal-record aggregation (pure) ── */
+
+/** One `fiscal_tick_summaries` row within a candidate's tenure, tick-ascending. */
+export interface TenureFiscalRow {
+  deficit: number;      // spending - revenue for that tick
+  treasuryEnd: number;  // treasury balance at tick close
+}
+
+/**
+ * One-line fiscal record over an officeholder's tenure, from the only per-tick
+ * history that exists (fiscal_tick_summaries: deficit + treasury). Debt/tax are
+ * NOT stored per-tick — only the current governmentSettings row — so those
+ * legs of the spec's ideal string are omitted rather than fabricated. `fmt` is
+ * the caller's money formatter (compactDollars) so formatting stays single-sourced.
+ * Empty rows → null (no tenure / never held office → caller emits no line).
+ */
+export function buildTenureFiscalRecord(
+  rows: TenureFiscalRow[],
+  fmt: (n: number) => string,
+): string | null {
+  if (rows.length === 0) return null;
+  const n = rows.length;
+  const avgDeficit = Math.round(rows.reduce((s, r) => s + num(r.deficit), 0) / n);
+  const treasuryStart = num(rows[0].treasuryEnd);
+  const treasuryEnd = num(rows[n - 1].treasuryEnd);
+  return `fiscal record: avg deficit ${fmt(avgDeficit)}/day, treasury ${fmt(treasuryStart)}→${fmt(treasuryEnd)} over ${n} tick${n === 1 ? '' : 's'} in office`;
+}

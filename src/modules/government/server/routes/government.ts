@@ -66,6 +66,15 @@ router.get('/government/overview', async (_req, res, next) => {
     const congressMembers = allPositions.filter((p) => p.type === 'congress_member');
     const justices = allPositions.filter((p) => p.type === 'supreme_justice');
 
+    /* Chief justice = earliest-appointed sitting justice (matches agentTick.ts
+       Phase 10's bench-ordering convention — same rule, no election for it). */
+    const benchByAppointment = [...justices].sort(
+      (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+    );
+    const chiefJusticeAgent = benchByAppointment.length > 0
+      ? allAgents.find((a) => a.id === benchByAppointment[0].agentId) || null
+      : null;
+
     /* Total legislative seats derives from runtime config (admin-configurable),
        not a hardcoded literal. If the roster somehow exceeds the configured
        seat count, report the actual filled count so filled never exceeds total. */
@@ -96,6 +105,7 @@ router.get('/government/overview', async (_req, res, next) => {
       judicial: {
         supremeCourtJustices: justices.length,
         activeCases: 0,
+        chiefJustice: chiefJusticeAgent,
       },
       stats: {
         totalAgents: allAgents.length,

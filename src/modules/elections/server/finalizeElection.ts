@@ -204,6 +204,14 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     })
     .where(eq(elections.id, electionId));
 
+  /* Close out this election's campaigns — otherwise they linger as 'active'
+     forever (campaigns has no writer that ever advances status past its
+     initial value) and keep showing on /elections after the seat is decided. */
+  await db
+    .update(campaigns)
+    .set({ status: 'concluded', endDate: now })
+    .where(eq(campaigns.electionId, electionId));
+
   /* Capture the winner's existing active offices BEFORE inserting the new
      one, so the just-won seat is provably not in the vacate candidate set
      (the invariant is explicit here rather than relying on officeRank's

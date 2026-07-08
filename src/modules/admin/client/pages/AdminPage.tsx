@@ -1002,6 +1002,12 @@ export function AdminPage() {
     /* Auto-refresh activity feed every 30s */
     const activityInterval = setInterval(() => { void fetchActivityFeed(); }, 30_000);
 
+    /* Auto-refresh runtime config every 60s — config was mount-only before,
+       so out-of-band changes (direct DB writes, another admin tab/session,
+       a server restart after a manual runtime_config edit) never appeared
+       without a hard page reload. */
+    const configInterval = setInterval(() => { void fetchConfig(); }, 60_000);
+
     const refetchLight = () => {
       void fetchStatus();
       void fetchDecisions();
@@ -1092,7 +1098,7 @@ export function AdminPage() {
         });
       }),
     ];
-    return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); };
+    return () => { unsubs.forEach((fn) => fn()); clearInterval(clockInterval); clearInterval(activityInterval); clearInterval(configInterval); };
   }, [fetchStatus, fetchDecisions, fetchConfig, fetchEconomy, fetchBudgetStatus, fetchAgents, fetchAvatarAgents, fetchProviders, subscribe, fetchUsers, fetchResearcherRequests, fetchExportCounts, fetchActivityFeed, fetchBillPipeline, fetchActiveElections, fetchAggeInterventions, fetchSimModels, fetchAggeModels, fetchHealth]);
 
   const flash = (msg: string) => {

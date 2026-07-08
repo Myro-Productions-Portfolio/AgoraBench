@@ -42,7 +42,8 @@ import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
-import { dailyCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote, mandatoryEffectiveAmount, tickInterest, settleTreasury, type FiscalKind } from '../lib/fiscalMath.js';
+import { elasticCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote, mandatoryEffectiveAmount, tickInterest, settleTreasury, type FiscalKind } from '../lib/fiscalMath.js';
+import { computeFiscalApprovalMoves, type FiscalConsequenceState, type FiscalApprovalConfig } from '../lib/consequenceMath.js';
 import { ACTIVE_CASE_STATUSES, STALL_GRACE_TICKS, docketDue, hearingDue, deliberationDue, decisionDue, isStalled, distillHolding, buildPrecedentInjection, type PrecedentSummary } from '../lib/courtMath.js';
 import { parseJudicialVoteData, parseJudicialOpinionData, parseJudicialFilingData } from '../lib/judicialParsing.js';
 import { formatConstitutionForPrompt } from '@shared/constitution';
@@ -4577,7 +4578,7 @@ agentTickQueue.process(async () => {
        activeRecurringSpend11 is a RUNNING total — every provision approved in
        this loop adds to it, so multiple same-tick programs cannot jointly
        bust the aggregate recurring cap. */
-    const expectedRevenue11 = dailyCitizenRevenue(rc.gdpAnnual, govSettings11?.taxRatePercent ?? 0);
+    const expectedRevenue11 = elasticCitizenRevenue(rc.gdpAnnual, govSettings11?.taxRatePercent ?? 0, { elasticityStrength: rc.taxElasticityStrength, neutralRatePercent: rc.taxNeutralRatePercent, peakRatePercent: rc.taxRevenuePeakPercent });
     let activeRecurringSpend11 = 0;
     try {
       const [spendRow] = await db
@@ -5200,7 +5201,7 @@ agentTickQueue.process(async () => {
     if (!govSettings) {
       console.warn('[SIMULATION] Phase 13: No government settings found — skipping revenue accrual.');
     } else {
-      const citizenRevenue = dailyCitizenRevenue(rc.gdpAnnual, govSettings.taxRatePercent);
+      const citizenRevenue = elasticCitizenRevenue(rc.gdpAnnual, govSettings.taxRatePercent, { elasticityStrength: rc.taxElasticityStrength, neutralRatePercent: rc.taxNeutralRatePercent, peakRatePercent: rc.taxRevenuePeakPercent });
       const totalRevenue = citizenRevenue + payrollWithheldThisTick;
       let treasuryBalance = govSettings.treasuryBalance + totalRevenue;
 
@@ -6010,6 +6011,66 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[APPROVAL] Inactivity decay error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Fiscal Consequence — settled fiscal state -> officeholder approval  */
+  /* (Fiscal Consequence Loop §3.1). Runs AFTER all procedural approval  */
+  /* moves + decay so it reads settled fiscal state. Gated on            */
+  /* rc.fiscalConsequenceEnabled; off = no reads, no writes (dark-safe). */
+  /* Failure-isolated: a fault here never fails the tick.                */
+  /* ------------------------------------------------------------------ */
+  if (rc.fiscalConsequenceEnabled) {
+    try {
+      const [gsFisc] = await db.select().from(governmentSettings).limit(1);
+      /* This tick's fiscal-summary row (written in Phase 13): non-divergent
+         revenue/spending source. createdAt DESC — id is a random uuid. */
+      const [summaryFisc] = await db
+        .select({ revenue: fiscalTickSummaries.revenue, spending: fiscalTickSummaries.spending })
+        .from(fiscalTickSummaries)
+        .where(eq(fiscalTickSummaries.tickNumber, tickNumber))
+        .orderBy(desc(fiscalTickSummaries.createdAt))
+        .limit(1);
+
+      if (gsFisc && summaryFisc) {
+        const state: FiscalConsequenceState = {
+          treasuryBalance: gsFisc.treasuryBalance,
+          debtOutstanding: gsFisc.debtOutstanding,
+          gdpAnnual: rc.gdpAnnual,
+          taxRatePercent: gsFisc.taxRatePercent,
+          deficitPerTick: summaryFisc.spending - summaryFisc.revenue,
+          treasuryBufferDollars: rc.treasuryOperatingBufferDollars,
+        };
+        const cfg: FiscalApprovalConfig = {
+          debtWeight: rc.fiscalApprovalDebtWeight,
+          treasuryWeight: rc.fiscalApprovalTreasuryWeight,
+          deficitWeight: rc.fiscalApprovalDeficitWeight,
+          taxWeight: rc.fiscalApprovalTaxWeight,
+          partyWeight: rc.fiscalConsequencePartyWeight,
+          maxDeltaPerTick: rc.fiscalApprovalMaxDeltaPerTick,
+          debtHealthBand: rc.fiscalApprovalDebtHealthBand,
+          debtCrisisBand: rc.fiscalApprovalDebtCrisisBand,
+          taxNeutralRatePercent: rc.taxNeutralRatePercent,
+          deficitCrisisRatio: rc.fiscalApprovalDeficitCrisisRatio,
+        };
+
+        const officeholderRows = await db
+          .select({ agentId: positions.agentId })
+          .from(positions)
+          .where(and(eq(positions.isActive, true), inArray(positions.type, ['president', 'committee_chair', 'leader'] as string[])));
+        const alignByAgent = new Map(activeAgents.map((a) => [a.id, a.alignment]));
+        const officeholders = [...new Set(officeholderRows.map((r) => r.agentId))]
+          .map((agentId) => ({ agentId, alignment: alignByAgent.get(agentId) ?? null }));
+
+        const moves = computeFiscalApprovalMoves(true, state, cfg, officeholders);
+        for (const m of moves) {
+          await updateApproval(m.agentId, m.delta, 'fiscal_consequence', 'Approval response to fiscal state');
+        }
+        console.warn(`[SIMULATION] Fiscal consequence: applied ${moves.length} officeholder approval move(s)`);
+      }
+    } catch (err) {
+      console.warn('[APPROVAL] Fiscal consequence error:', err);
+    }
   }
 
   /* ------------------------------------------------------------------ */

@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   fiscalApprovalDelta,
+  partyLeanFromAlignment,
+  computeFiscalApprovalMoves,
   type FiscalConsequenceState,
   type FiscalApprovalConfig,
+  type Officeholder,
 } from '@core/server/lib/consequenceMath';
 
 const ZERO_CFG: FiscalApprovalConfig = {
@@ -169,5 +172,66 @@ describe('fiscalApprovalDelta — corrupt state never poisons the delta', () => 
     };
     const cfg = { ...ZERO_CFG, debtWeight: 10, treasuryWeight: 10, deficitWeight: 10, taxWeight: 10 };
     expect(Number.isFinite(fiscalApprovalDelta(corrupt, cfg))).toBe(true);
+  });
+});
+
+describe('partyLeanFromAlignment', () => {
+  it('maps the spectrum from spender (-1) to hawk (+1)', () => {
+    expect(partyLeanFromAlignment('progressive')).toBe(-1);
+    expect(partyLeanFromAlignment('moderate')).toBe(0);
+    expect(partyLeanFromAlignment('conservative')).toBe(1);
+    expect(partyLeanFromAlignment('libertarian')).toBeGreaterThan(0);
+    expect(partyLeanFromAlignment('technocrat')).toBeLessThan(0);
+  });
+
+  it('null / unknown alignment is party-blind (0)', () => {
+    expect(partyLeanFromAlignment(null)).toBe(0);
+    expect(partyLeanFromAlignment(undefined)).toBe(0);
+    expect(partyLeanFromAlignment('gibberish')).toBe(0);
+  });
+});
+
+describe('computeFiscalApprovalMoves — the tick-phase helper (gate + filter + rounding)', () => {
+  const OFFICEHOLDERS: Officeholder[] = [
+    { agentId: 'a1', alignment: 'conservative' },
+    { agentId: 'a2', alignment: 'progressive' },
+    { agentId: 'a3', alignment: null },
+  ];
+  const HOT_CFG: FiscalApprovalConfig = {
+    ...ZERO_CFG,
+    debtWeight: 50,
+    treasuryWeight: 50,
+    deficitWeight: 50,
+    taxWeight: 50,
+    maxDeltaPerTick: 5,
+  };
+
+  it('DARK-SAFE: disabled → no moves regardless of state/weights', () => {
+    expect(computeFiscalApprovalMoves(false, DISTRESSED, HOT_CFG, OFFICEHOLDERS)).toEqual([]);
+    expect(computeFiscalApprovalMoves(false, HEALTHY, HOT_CFG, OFFICEHOLDERS)).toEqual([]);
+  });
+
+  it('enabled but all-zero weights → no moves (delta rounds to 0)', () => {
+    expect(computeFiscalApprovalMoves(true, DISTRESSED, ZERO_CFG, OFFICEHOLDERS)).toEqual([]);
+  });
+
+  it('enabled + weights → one integer move per officeholder, clamped to ±max', () => {
+    const moves = computeFiscalApprovalMoves(true, DISTRESSED, HOT_CFG, OFFICEHOLDERS);
+    expect(moves).toHaveLength(3);
+    for (const m of moves) {
+      expect(Number.isInteger(m.delta)).toBe(true);
+      expect(m.delta).toBeGreaterThanOrEqual(-5);
+      expect(m.delta).toBeLessThanOrEqual(5);
+      expect(m.delta).toBeLessThan(0); // distressed → penalty
+    }
+  });
+
+  it('empty officeholder set → no moves even when enabled and distressed', () => {
+    expect(computeFiscalApprovalMoves(true, DISTRESSED, HOT_CFG, [])).toEqual([]);
+  });
+
+  it('non-officeholders are simply absent — only the passed set is scored', () => {
+    const moves = computeFiscalApprovalMoves(true, DISTRESSED, HOT_CFG, [OFFICEHOLDERS[0]]);
+    expect(moves.map((m) => m.agentId)).toEqual(['a1']);
   });
 });

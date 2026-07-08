@@ -108,3 +108,48 @@ export function fiscalApprovalDelta(
   const bound = max > 0 ? max : 0;
   return total < -bound ? -bound : total > bound ? bound : total;
 }
+
+/* ── Slice 2: tick-phase pure helpers (state-build + officeholder filter) ── */
+
+const ALIGNMENT_LEAN: Record<string, number> = {
+  progressive: -1,   // spending-oriented
+  technocrat: -0.5,
+  moderate: 0,
+  libertarian: 0.5,
+  conservative: 1,   // hawk-oriented
+};
+
+/** alignment → partyLean in [-1 spender .. +1 hawk]; unknown/null → 0 (party-blind). */
+export function partyLeanFromAlignment(alignment: string | null | undefined): number {
+  if (!alignment) return 0;
+  const lean = ALIGNMENT_LEAN[alignment];
+  return Number.isFinite(lean) ? lean : 0;
+}
+
+export interface Officeholder {
+  agentId: string;
+  alignment: string | null;
+}
+
+/**
+ * Per-officeholder integer approval moves from settled fiscal state. Returns []
+ * when disabled (dark-safe short-circuit) or when no move rounds nonzero, so the
+ * tick applies nothing. Round-to-0 deltas are dropped (matches the decay loop's
+ * integer approvalRating semantics).
+ */
+export function computeFiscalApprovalMoves(
+  enabled: boolean,
+  state: FiscalConsequenceState,
+  cfg: FiscalApprovalConfig,
+  officeholders: Officeholder[],
+): Array<{ agentId: string; delta: number }> {
+  if (!enabled) return [];
+  const moves: Array<{ agentId: string; delta: number }> = [];
+  for (const o of officeholders) {
+    const lean = partyLeanFromAlignment(o.alignment);
+    const delta = Math.round(fiscalApprovalDelta(state, cfg, lean));
+    if (delta === 0) continue;
+    moves.push({ agentId: o.agentId, delta });
+  }
+  return moves;
+}

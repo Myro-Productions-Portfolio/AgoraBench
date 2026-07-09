@@ -69,6 +69,10 @@ export const POSITION_TYPES = [
   'committee_chair',
   'supreme_justice',
   'lower_justice',
+  /* Speaker of the Legislature — a sitting congress member elected presiding
+     officer by an internal roll-call vote (office-selection fidelity Slice 2).
+     Only created when RuntimeConfig.speakerElectionEnabled is true. */
+  'speaker',
 ] as const;
 
 /* Committee types */

@@ -67,6 +67,15 @@ router.get('/government/overview', async (_req, res, next) => {
     const congressMembers = allPositions.filter((p) => p.type === 'congress_member');
     const justices = allPositions.filter((p) => p.type === 'supreme_justice');
 
+    /* Speaker of the Legislature (office-selection Slice 2) — null until one is
+       actually seated, which only happens when speakerElectionEnabled is on.
+       Dark-safe: at default config no speaker position exists, so this is
+       always null and the dashboard keeps showing "Not tracked". */
+    const speakerPos = allPositions.find((p) => p.type === 'speaker');
+    const speakerAgent = speakerPos
+      ? allAgents.find((a) => a.id === speakerPos.agentId) || null
+      : null;
+
     /* Chief justice = earliest-appointed sitting justice (matches agentTick.ts
        Phase 10's bench-ordering convention — same rule, no election for it). */
     const benchByAppointment = [...justices].sort(
@@ -111,6 +120,7 @@ router.get('/government/overview', async (_req, res, next) => {
         filledSeats: congressMembers.length,
         activeBills: activeBills.length,
         pendingVotes: 0,
+        speaker: speakerAgent,
       },
       judicial: {
         supremeCourtJustices: justices.length,

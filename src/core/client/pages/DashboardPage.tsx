@@ -206,10 +206,15 @@ export function DashboardPage() {
       ],
     },
     legislative: {
-      notModeled: true,
-      officialName: '',
-      officialTitle: 'Leader',
-      officialInitials: '',
+      /* Speaker of the Legislature is surfaced only when one is actually
+         seated (office-selection Slice 2). Until then — the default at dark
+         config — there is no single legislative leader, so keep "Not tracked". */
+      notModeled: !overview?.legislative.speaker,
+      officialName: overview?.legislative.speaker?.displayName ?? '',
+      officialTitle: 'Speaker of the Legislature',
+      officialInitials: overview?.legislative.speaker
+        ? overview.legislative.speaker.displayName.slice(0, 2).toUpperCase()
+        : '',
       stats: [
         { label: 'Seats', value: overview ? `${overview.legislative.filledSeats}/${overview.legislative.totalSeats}` : '0/0' },
         { label: 'Bills', value: overview?.legislative.activeBills ?? 0 },

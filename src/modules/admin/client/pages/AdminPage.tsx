@@ -202,6 +202,12 @@ interface RuntimeConfig {
   taxElasticityStrength: number;
   taxNeutralRatePercent: number;
   taxRevenuePeakPercent: number;
+  /* Office-Selection Fidelity */
+  speakerElectionEnabled: boolean;
+  speakerReballotCap: number;
+  appointmentConfirmationEnabled: boolean;
+  appointmentConfirmationThreshold: number;
+  electoralCollegeEnabled: boolean;
 }
 
 interface EconomySettings {
@@ -3070,6 +3076,76 @@ export function AdminPage() {
                       <p className="text-xs text-text-muted">Tax rate of maximum revenue on the elastic curve — revenue declines above this.</p>
                     </div>
                   </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Office Selection (Office-Selection Fidelity) — deployed dark, off by default */}
+            {simConfig && (
+              <CollapsibleSection
+                id="office_selection"
+                title="Office Selection"
+                subtitle="Replicates how each seat is really filled: the Legislature elects its own Speaker; justices + cabinet are president-nominated and Legislature-confirmed; the president is decided by the Electoral College. All off by default — off = today's engine-decided seating, byte-identical. See docs/specs/office-selection-fidelity.md."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Speaker Election Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.speakerElectionEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, speakerElectionEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ speakerElectionEnabled: simConfig.speakerElectionEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When on, sitting congress members elect a Speaker of the Legislature by internal roll-call vote (majority of votes cast). Off = no Speaker seat exists, exactly as today.</p>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Speaker Re-ballot Cap</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.speakerReballotCap}</span>
+                    </div>
+                    <input type="number" min={1} max={10} step={1}
+                      value={simConfig.speakerReballotCap}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, speakerReballotCap: parseInt(e.target.value) || 1 } : c)}
+                      onBlur={() => void saveConfig({ speakerReballotCap: simConfig.speakerReballotCap })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Re-ballots per tick before a deadlocked Speaker race carries to the next tick (a Legislature that cannot organize).</p>
+                  </div>
+
+                  <label className="flex items-center justify-between border-t border-border pt-4">
+                    <span className="text-sm text-text-secondary font-medium">Appointment Confirmation Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.appointmentConfirmationEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, appointmentConfirmationEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ appointmentConfirmationEnabled: simConfig.appointmentConfirmationEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When on, justices and cabinet secretaries are filled by president-nominate → Legislature-confirm. Off = today's reputation-rank justice auto-fill and no cabinet at all.</p>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Confirmation Threshold</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.appointmentConfirmationThreshold}</span>
+                    </div>
+                    <input type="number" min={0} max={1} step={0.05}
+                      value={simConfig.appointmentConfirmationThreshold}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, appointmentConfirmationThreshold: parseFloat(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ appointmentConfirmationThreshold: simConfig.appointmentConfirmationThreshold })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Share of weighted Legislature alignment needed to confirm a nominee. 0.5 = simple majority (advice and consent).</p>
+                  </div>
+
+                  <label className="flex items-center justify-between border-t border-border pt-4">
+                    <span className="text-sm text-text-secondary font-medium">Electoral College Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.electoralCollegeEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, electoralCollegeEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ electoralCollegeEnabled: simConfig.electoralCollegeEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When on, presidential ballots are tallied per state and the Electoral College (538 EVs, 270 to win, winner-take-all) decides the winner. Off = today's single honest national popular-vote count.</p>
                 </div>
               </CollapsibleSection>
             )}

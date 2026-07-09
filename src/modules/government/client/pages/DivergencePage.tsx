@@ -348,9 +348,9 @@ export function DivergencePage() {
       {/* Program continuity */}
       <Section title="Program Continuity" subtitle="Seeded programs and their funding status since T0 — has the AI government kept them funded?">
         {data.programContinuity.length > 0 ? (
-          <div className="rounded border border-border overflow-x-auto">
+          <div className="rounded border border-border overflow-x-auto overflow-y-auto max-h-[760px]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10">
                 <tr className="border-b border-border bg-capitol-deep/60">
                   <th className="text-left px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Program</th>
                   <th className="text-right px-4 py-2 text-badge text-text-muted font-medium uppercase tracking-wider">Cost / Day</th>

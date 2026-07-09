@@ -58,7 +58,10 @@ Design rule for all of it: **reuse the two honest-count primitives already in th
 
 The build order is by **fidelity gain per unit of infrastructure**, cheapest and most doctrine-critical first. Chairs and Speaker are pure internal votes over the *existing* agent set — no new districts, no EC geography, no new tables in the minimal form — so they come first. President-EC and per-district congress need a geography layer (state/district seeding) that overlaps the World Model's cohort layer (E5) and the Government Vertical's state tier — so they're specified but sequenced later, and flagged where they genuinely depend on unbuilt infrastructure.
 
-### 2.1 Committee chairs → majority-caucus vote (SLICE 1, do first)
+### 2.1 Committee chairs → majority-caucus vote (SLICE 1 — DEFERRED / OWNER-DECLINED, not built)
+
+> **Status (2026-07-08): NOT BUILT.** The owner declined this slice — committee-chair selection is left as-is (`committeeAssignment.selectChair`'s existing engine scoring is unchanged; `runChairElection` was never written and `committeeChairElectionEnabled` was never added to `RuntimeConfig`). Slices 2–4 shipped without it. The design below is retained for a future reader who may pick it up, but nothing in it is live. When a `committeeChairElectionEnabled` flag or `runChairElection` function is referenced elsewhere in this doc, read it as *proposed*, not shipped.
+
 
 **Replace** `selectChair`'s engine scoring with an internal vote of the committee's members.
 
@@ -123,19 +126,19 @@ Faithful target: congress members elected **per constituency**, not reputation-a
 
 | Slice | Office | New infra needed | Dependency | Priority |
 |---|---|---|---|---|
-| 1 | Committee chairs | none (votes over existing members) | — | **First** — pure fidelity win, zero new geography |
+| 1 | Committee chairs | none (votes over existing members) | — | **DEFERRED / owner-declined — not built** (see §2.1) |
 | 2 | Speaker | `speaker` position type | — | Second — internal vote, no geography |
 | 3 | Cabinet + justices | nomination prompt + confirm vote | sitting president exists | Third — aligns with E6 |
 | 4 | President (EC) | state dimension + EV table | World Model geography (E5) / vertical | After geography exists |
 | 5 | Congress (districts) | district dimension | same as Slice 4 | Last — shares Slice 4's geography |
 
-Slices 1–3 are buildable now and remove the three engine-decides-winner violations that are pure internal-agent politics (chairs, Speaker, appointments). Slices 4–5 are the two that genuinely need a geography layer the roadmap is already building — specified here so they're not re-derived, sequenced so they share that layer instead of duplicating it.
+Slices 2–3 were built (Speaker, appointments); Slice 1 (chairs) was owner-declined and left as-is. Slices 4–5 are the two that genuinely need a geography layer the roadmap is already building — specified here so they're not re-derived, sequenced so they share that layer instead of duplicating it. (Slice 4's `electoralCollegeEnabled` scaffolding shipped dark; Slice 5 remains unbuilt.)
 
 ---
 
 ## 4. Non-negotiables carried from project doctrine
 
-- **Every new `RuntimeConfig` field** (`committeeChairElectionEnabled`, `speakerElectionEnabled`, `appointmentConfirmationEnabled`, `electoralCollegeEnabled`, any caps) gets the **four things in the same commit** (server whitelist branch + clamp, AdminPage control, client interface, persistence verify) — CLAUDE.md rule #1.
+- **Every new `RuntimeConfig` field** actually shipped (`speakerElectionEnabled`, `appointmentConfirmationEnabled`, `electoralCollegeEnabled`, any caps) gets the **four things in the same commit** (server whitelist branch + clamp, AdminPage control, client interface, persistence verify) — CLAUDE.md rule #1. (`committeeChairElectionEnabled` is listed in §2.1 but was **never built** — Slice 1 is owner-declined; the field does not exist.)
 - **All flags default off; each slice ships dark** and cuts over via admin toggle — matches the fiscal-consequence-loop pattern.
 - **No `ANY(jsArray)` raw SQL; use `inArray`** (rule #2). Vote tallies group in-DB or in pure functions.
 - **Pure vote/tally logic lives in `electionMath.ts` / `committeeAssignment.ts`**, unit-tested, DB-free — mirroring `courtMath`/`fiscalMath`. The tick calls the pure function; it never scores an outcome inline.

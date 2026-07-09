@@ -234,6 +234,9 @@ export interface GovernmentOverview {
     filledSeats: number;
     activeBills: number;
     pendingVotes: number;
+    /* Speaker of the Legislature — null until one is seated (office-selection
+       Slice 2, dark by default), in which case the dashboard shows "Not tracked". */
+    speaker?: Agent | null;
   };
   judicial: {
     supremeCourtJustices: number;

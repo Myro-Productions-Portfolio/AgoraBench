@@ -59,6 +59,8 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   oral_argument:       'present_argument',
   justice_question:    'ask_question',
   court_opinion:       'write_opinion',
+  /* Appointment flow: president nominates a candidate for a vacant seat */
+  nominate:            'nominate',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action

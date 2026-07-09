@@ -32,7 +32,8 @@ import {
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { broadcast } from '@core/server/websocket.js';
 import { updateApproval } from '@core/server/jobs/agentTick.js';
-import { tallyElectionVotes, getSeatsToVacate, orderCandidates, pickContributionsFallback } from '@core/server/lib/electionMath.js';
+import { tallyElectionVotes, getSeatsToVacate, orderCandidates, pickContributionsFallback, tallyElectoralCollege, assignVoterState, type StateResult } from '@core/server/lib/electionMath.js';
+import { ELECTORAL_VOTES, STATE_ORDER, EC_MAJORITY } from '@core/server/lib/electoralCollege.js';
 
 export interface FinalizeElectionResult {
   status: 'ok' | 'no_campaigns' | 'already_finalized' | 'not_found';
@@ -51,6 +52,7 @@ const POSITION_TITLE_BY_TYPE: Record<string, string> = {
   committee_chair: 'Committee Chair',
   supreme_justice: 'Supreme Court Justice',
   lower_justice: 'Court Justice',
+  speaker: 'Speaker of the Legislature',
 };
 
 /**
@@ -122,9 +124,11 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     return { status: 'no_campaigns', electionId };
   }
 
-  /* Real ballots cast for this election (E3 slice A). */
+  /* Real ballots cast for this election (E3 slice A). voterId is carried so
+     the Electoral College path (Slice 4) can bucket ballots by the voter's
+     assigned state; the national path ignores it. */
   const castBallots = await db
-    .select({ candidateId: votes.candidateId })
+    .select({ candidateId: votes.candidateId, voterId: votes.voterId })
     .from(votes)
     .where(eq(votes.electionId, electionId));
 
@@ -154,6 +158,49 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
 
   if (tally.usedFallback) {
     console.warn(`[FINALIZE] Election ${electionId} had zero ballots cast — falling back to highest campaign contributions.`);
+  }
+
+  /* Electoral College (Slice 4, dark by default): for a presidential election
+     with electoralCollegeEnabled, the winner is decided per-state → EC, not by
+     the national popular count above. Ballots are bucketed by each voter's
+     deterministically-assigned state; each state's plurality (reusing the same
+     honest tallyElectionVotes) takes its EVs winner-take-all; 270 wins. The
+     national `tally` above still supplies voteCounts/totalVotes for the margin
+     calc and the roll call — only the WINNER is replaced. This can diverge from
+     the popular winner; that is the faithful mechanic, not a bug. */
+  let electoralResultNote: { winnerId: string | null; totalEvAllocated: number; evByCandidate: Record<string, number>; reachedMajority: boolean } | null = null;
+  if (rc.electoralCollegeEnabled && election.positionType === 'president' && !tally.usedFallback && tally.totalVotes > 0) {
+    const ballotsByState = new Map<string, { candidateId: string | null }[]>();
+    for (const b of castBallots) {
+      const st = assignVoterState(b.voterId, ELECTORAL_VOTES, [...STATE_ORDER]);
+      if (!st) continue;
+      if (!ballotsByState.has(st)) ballotsByState.set(st, []);
+      ballotsByState.get(st)!.push({ candidateId: b.candidateId });
+    }
+    const stateResults: StateResult[] = [];
+    for (const [state, stateBallots] of ballotsByState) {
+      const stateTally = tallyElectionVotes(stateBallots, candidateOrder, null);
+      stateResults.push({ state, winnerId: stateTally.winnerId });
+    }
+    const ec = tallyElectoralCollege(stateResults, ELECTORAL_VOTES, candidateOrder, EC_MAJORITY);
+    electoralResultNote = {
+      winnerId: ec.winnerId,
+      totalEvAllocated: ec.totalEvAllocated,
+      evByCandidate: ec.evByCandidate,
+      reachedMajority: ec.winnerId !== null,
+    };
+    if (ec.winnerId) {
+      if (ec.winnerId !== tally.winnerId) {
+        console.warn(`[FINALIZE] EC: ${ec.winnerId} won the Electoral College (${ec.evByCandidate[ec.winnerId]} EV) — diverges from the popular-vote leader ${tally.winnerId}.`);
+      }
+      tally.winnerId = ec.winnerId;
+    } else {
+      /* No candidate reached 270 (contingent-election territory). Minimal
+         documented deadlock resolution: fall back to the national plurality
+         leader already in tally.winnerId, and log it. A full one-vote-per-state
+         House contingent election is a later refinement (spec §2.4). */
+      console.warn(`[FINALIZE] EC: no candidate reached ${EC_MAJORITY} of ${ec.totalEvAllocated} EV allocated — contingent-election deadlock; seating the national plurality leader ${tally.winnerId} as the documented fallback.`);
+    }
   }
 
   const winnerCandidateTotal = campaignTotals.find((c) => c.agentId === tally.winnerId);
@@ -298,6 +345,7 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
       totalVotes: tally.totalVotes,
       usedFallback: tally.usedFallback,
       winnerContributions: Number(winner.totalContributions ?? 0),
+      electoralCollege: electoralResultNote ?? undefined,
     }),
   });
 

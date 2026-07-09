@@ -169,6 +169,11 @@ const OFFICE_RANK: Record<string, number> = {
   lower_justice: 60,
   committee_chair: 50,
   congress_member: 50,
+  /* Speaker is a sitting congress member elevated by an internal vote — same
+     legislative-branch rank as congress_member (50). Deliberate: a Speaker who
+     wins the Speakership keeps their congress seat (equal rank never vacates),
+     and winning a HIGHER office (president) vacates the speaker seat too. */
+  speaker: 50,
 };
 
 /** Numeric rank of a position type. Unknown types rank 0 (lowest, never vacates anything). */
@@ -201,4 +206,197 @@ export function getSeatsToVacate(heldPositions: HeldPosition[], newPositionType:
   return heldPositions
     .filter((p) => p && typeof p.id === 'string' && officeRank(p.type) < newRank)
     .map((p) => p.id);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Speaker election (office-selection fidelity, Slice 2)
+ *
+ * The Legislature elects its own presiding officer by roll-call vote of its
+ * sitting members — a real cast-ballot election over a CLOSED electorate
+ * (seated congress members), not a citizen vote and not an appointment. The
+ * ballot count reuses tallyElectionVotes; the only addition is the
+ * "majority of votes cast" win condition (abstentions lower the bar,
+ * faithfully — the real Speaker vote resolves on votes "for a person by
+ * name," so present/absent members reduce the threshold rather than block).
+ * Nothing here scores or biases a winner; nominees come from tenure only as
+ * a presentation order, and the vote decides.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** A seated legislator eligible to be nominated for / vote in a Speaker race. */
+export interface SeatedMember {
+  agentId: string;
+  /** Party bloc — agents.alignment; null groups together as an unaligned bloc. */
+  alignment: string | null;
+  /** Seat tenure key — positions.startDate (earliest = most senior). */
+  startDate: string | number | Date;
+}
+
+/**
+ * The Speaker nominees: one nominee per party bloc, the most-senior seated
+ * member of that bloc (earliest startDate; agentId as a stable secondary
+ * key so identical timestamps never resolve by array order). Seniority is
+ * the real-world presentation default; it is NOT a winner-decider — the vote
+ * below decides. Returns nominee agentIds in a deterministic order (by bloc's
+ * nominee tenure, then agentId) suitable as the tallyElectionVotes tie-break
+ * order. Pure and non-mutating.
+ */
+export function pickSpeakerNominees(members: SeatedMember[]): string[] {
+  if (!Array.isArray(members) || members.length === 0) return [];
+  const byBloc = new Map<string, SeatedMember>();
+  for (const m of members) {
+    if (!m || typeof m.agentId !== 'string' || m.agentId.length === 0) continue;
+    const bloc = m.alignment ?? '__unaligned__';
+    const current = byBloc.get(bloc);
+    if (!current || isMoreSenior(m, current)) byBloc.set(bloc, m);
+  }
+  return [...byBloc.values()]
+    .sort((a, b) => (isMoreSenior(a, b) ? -1 : isMoreSenior(b, a) ? 1 : 0))
+    .map((m) => m.agentId);
+}
+
+/** True if a is strictly more senior than b (earlier startDate, agentId tiebreak). */
+function isMoreSenior(a: SeatedMember, b: SeatedMember): boolean {
+  const ta = new Date(a.startDate).getTime();
+  const tb = new Date(b.startDate).getTime();
+  if (ta !== tb) return ta < tb;
+  return a.agentId.localeCompare(b.agentId) < 0;
+}
+
+export interface MajorityBallotResult extends TallyResult {
+  /** True when the winner cleared a strict majority (> 50%) of votes cast. */
+  hasMajority: boolean;
+}
+
+/**
+ * Tally a closed-electorate ballot (Speaker race) and report whether the
+ * leader cleared a strict majority of the votes actually cast. Reuses
+ * tallyElectionVotes for the honest count; adds only the majority test.
+ * No majority → hasMajority false, and the caller re-ballots (or carries the
+ * deadlock to the next tick), mirroring a Legislature that cannot organize.
+ * No fallback winner: a Speaker race with zero ballots has no winner (unlike
+ * a public election, there is no contributions signal to fall back on).
+ */
+export function tallyMajorityBallot(
+  ballots: BallotRow[],
+  candidateOrder: string[],
+): MajorityBallotResult {
+  const tally = tallyElectionVotes(ballots, candidateOrder, null);
+  const leaderVotes = tally.winnerId ? (tally.voteCounts[tally.winnerId] ?? 0) : 0;
+  const hasMajority = tally.totalVotes > 0 && leaderVotes * 2 > tally.totalVotes;
+  return { ...tally, hasMajority };
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Electoral College (office-selection fidelity, Slice 4)
+ *
+ * The president is chosen by popular vote WITHIN each state → each state casts
+ * its electoral votes winner-take-all to its plurality winner → 270 of 538
+ * wins. The national popular-vote total does not decide the winner. This is
+ * the faithful mechanic replicated flaws and all (the owner's explicit call);
+ * the engine still only counts honestly and never biases who wins. Per-state
+ * plurality reuses tallyElectionVotes (one call per state); this function only
+ * sums the electoral votes each state awards.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/** One state's decided plurality winner (from a per-state tallyElectionVotes). */
+export interface StateResult {
+  /** Two-letter state code (must key into evByState). */
+  state: string;
+  /** The state's plurality winner, or null if no ballots were cast there. */
+  winnerId: string | null;
+}
+
+export interface ElectoralCollegeResult {
+  /** agentId → electoral votes won. Only candidates with ≥ 1 EV appear. */
+  evByCandidate: Record<string, number>;
+  /** The candidate with ≥ threshold EVs, or null if nobody reached it. */
+  winnerId: string | null;
+  /** Total EVs allocated across states that had a winner. */
+  totalEvAllocated: number;
+  /** EVs needed to win (270 for the standard 538-EV map). */
+  threshold: number;
+}
+
+/**
+ * Sum each state's winner-take-all electoral votes and decide the presidency.
+ * winnerId is the candidate reaching `threshold` (default 270) EVs; a
+ * candidate order breaks the pathological exact-EV-tie deterministically (same
+ * registration-order convention as tallyElectionVotes). Nobody reaching the
+ * threshold → winnerId null (a contingent-election / deadlock state the caller
+ * documents; it does not invent a winner). Pure and defensive.
+ */
+export function tallyElectoralCollege(
+  stateResults: StateResult[],
+  evByState: Record<string, number>,
+  candidateOrder: string[] = [],
+  threshold = 270,
+): ElectoralCollegeResult {
+  const evByCandidate: Record<string, number> = {};
+  let totalEvAllocated = 0;
+
+  if (Array.isArray(stateResults)) {
+    for (const s of stateResults) {
+      if (!s || typeof s.winnerId !== 'string' || s.winnerId.length === 0) continue;
+      const ev = evByState[s.state];
+      if (typeof ev !== 'number' || ev <= 0) continue;
+      evByCandidate[s.winnerId] = (evByCandidate[s.winnerId] ?? 0) + ev;
+      totalEvAllocated += ev;
+    }
+  }
+
+  /* Winner = first candidate (in registration order, then by EV desc as a
+     fallback for candidates missing from the order) to reach the threshold. */
+  const order = Array.isArray(candidateOrder) ? candidateOrder : [];
+  const ranked = [
+    ...order.filter((id) => id in evByCandidate),
+    ...Object.keys(evByCandidate).filter((id) => !order.includes(id)),
+  ];
+  let winnerId: string | null = null;
+  let bestEv = -1;
+  for (const id of ranked) {
+    const ev = evByCandidate[id] ?? 0;
+    if (ev > bestEv) {
+      bestEv = ev;
+      winnerId = id;
+    }
+  }
+  if (winnerId === null || (evByCandidate[winnerId] ?? 0) < threshold) winnerId = null;
+
+  return { evByCandidate, winnerId, totalEvAllocated, threshold };
+}
+
+/**
+ * Deterministically assign a voter agent to a state via FNV-1a hash of its id,
+ * distributing proportionally to each state's electoral-vote weight (a state
+ * with more EVs — i.e. more people — gets proportionally more voters). This is
+ * the minimal geography seed for the EC layer: no state column is required on
+ * agents; assignment is a pure, stable function of agentId, so re-running a
+ * tally is idempotent and no migration/backfill is needed. Returns a state
+ * code from evByState. `stateOrder` fixes iteration order (Object.keys order is
+ * insertion order in practice, but pass an explicit sorted order for safety).
+ */
+export function assignVoterState(
+  agentId: string,
+  evByState: Record<string, number>,
+  stateOrder: string[],
+): string | null {
+  if (!stateOrder || stateOrder.length === 0) return null;
+  let totalWeight = 0;
+  for (const st of stateOrder) totalWeight += Math.max(0, evByState[st] ?? 0);
+  if (totalWeight <= 0) return stateOrder[0] ?? null;
+
+  /* FNV-1a 32-bit over the agentId → a stable [0,1) fraction of totalWeight. */
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < agentId.length; i++) {
+    hash ^= agentId.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  const point = ((hash >>> 0) / 0x100000000) * totalWeight;
+
+  let acc = 0;
+  for (const st of stateOrder) {
+    acc += Math.max(0, evByState[st] ?? 0);
+    if (point < acc) return st;
+  }
+  return stateOrder[stateOrder.length - 1] ?? null;
 }

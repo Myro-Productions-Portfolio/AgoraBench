@@ -193,6 +193,13 @@ export interface RuntimeConfig {
   taxElasticityStrength: number;             // 0 = linear revenue (today); 1 = full Laffer response
   taxNeutralRatePercent: number;             // tax rate below which elasticity ~inert AND tax-burden signal is neutral (0-40)
   taxRevenuePeakPercent: number;             // tax rate of max revenue on the elastic curve (20-60)
+
+  /* ---- Office-Selection Fidelity — deployed dark, off by default ---- */
+  speakerElectionEnabled: boolean;           // Slice 2: Legislature elects its own Speaker by internal roll-call. Off = no speaker seat exists (byte-identical to today).
+  speakerReballotCap: number;                // re-ballots per tick before a deadlocked Speaker race carries to the next tick (1-10)
+  appointmentConfirmationEnabled: boolean;   // Slice 3: justices + cabinet filled by president-nominate → Legislature-confirm. Off = today's reputation-rank justice auto-fill, no cabinet.
+  appointmentConfirmationThreshold: number;  // confirmation vote pass threshold, share of weighted alignment (0-1; 0.5 = simple majority)
+  electoralCollegeEnabled: boolean;          // Slice 4: president tallied per-state → Electoral College (270 to win). Off = today's single honest national popular-vote count.
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -377,6 +384,13 @@ const DEFAULTS: RuntimeConfig = {
   taxElasticityStrength: 0,
   taxNeutralRatePercent: 19,
   taxRevenuePeakPercent: 45,
+
+  /* Office-Selection Fidelity — deployed dark, off by default */
+  speakerElectionEnabled: false,
+  speakerReballotCap: 3,
+  appointmentConfirmationEnabled: false,
+  appointmentConfirmationThreshold: 0.5,
+  electoralCollegeEnabled: false,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

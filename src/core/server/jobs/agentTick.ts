@@ -50,9 +50,11 @@ import { formatConstitutionForPrompt } from '@shared/constitution';
 import { buildGazetteDigest } from '../lib/gazetteDigest.js';
 import { computeForumRouting, type RoutingDecision } from '../services/forumRouter.js';
 import { broadcast } from '../websocket.js';
-import { ALIGNMENT_ORDER, COMMITTEE_TYPES } from '@shared/constants';
+import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember } from '../lib/electionMath.js';
+import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pollWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 
@@ -3212,7 +3214,13 @@ agentTickQueue.process(async () => {
           ),
         );
 
-      /* Auto-fill justice vacancies up to supremeCourtJustices config */
+      /* Fill justice vacancies up to supremeCourtJustices config. Two paths:
+         - appointmentConfirmationEnabled (Slice 3, dark by default): the
+           sitting president nominates and the Legislature confirms — ONE seat
+           per tick to bound LLM load; if no president or the nominee is
+           rejected, the seat stays vacant (faithful).
+         - default (byte-identical to before Slice 3): reputation-rank auto-fill
+           of all vacancies. */
       if (justicePositions.length < rc.supremeCourtJustices) {
         const vacancyCount = rc.supremeCourtJustices - justicePositions.length;
         console.warn(`[SIMULATION] Phase 10: ${vacancyCount} justice vacancies — filling...`);
@@ -3224,28 +3232,55 @@ agentTickQueue.process(async () => {
           .where(eq(positions.isActive, true));
         const heldAgentIds = new Set(currentPositionHolders.map((p) => p.agentId));
 
-        const eligibleAgents = activeAgents
-          .filter((a) => !heldAgentIds.has(a.id))
-          .sort((a, b) => b.reputation - a.reputation)
-          .slice(0, vacancyCount);
+        if (rc.appointmentConfirmationEnabled) {
+          const president10 = await getSittingPresident(rc.providerOverride);
+          if (!president10) {
+            console.warn('[SIMULATION] Phase 10: appointmentConfirmationEnabled but no sitting president — justice seat(s) stay vacant (faithful).');
+          } else {
+            const candidates10 = activeAgents
+              .filter((a) => !heldAgentIds.has(a.id))
+              .sort((a, b) => b.reputation - a.reputation)
+              .slice(0, 20)
+              .map((a) => ({ id: a.id, displayName: a.displayName, alignment: a.alignment }));
+            const seatedCongress10 = await db
+              .select({ agentId: positions.agentId })
+              .from(positions)
+              .where(and(eq(positions.isActive, true), eq(positions.type, 'congress_member')));
+            const result10 = await runAppointment({
+              positionType: 'supreme_justice',
+              title: 'Supreme Court Justice',
+              officeLabel: 'Supreme Court Justice',
+              president: president10,
+              candidates: candidates10,
+              confirmVoterIds: seatedCongress10.map((c) => c.agentId),
+              confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
+            });
+            console.warn(`[SIMULATION] Phase 10: justice appointment cycle — ${result10.status}.`);
+          }
+        } else {
+          const eligibleAgents = activeAgents
+            .filter((a) => !heldAgentIds.has(a.id))
+            .sort((a, b) => b.reputation - a.reputation)
+            .slice(0, vacancyCount);
 
-        for (const agent of eligibleAgents) {
-          await db.insert(positions).values({
-            agentId: agent.id,
-            type: 'supreme_justice',
-            title: 'Supreme Court Justice',
-            startDate: new Date(),
-            isActive: true,
-          });
+          for (const agent of eligibleAgents) {
+            await db.insert(positions).values({
+              agentId: agent.id,
+              type: 'supreme_justice',
+              title: 'Supreme Court Justice',
+              startDate: new Date(),
+              isActive: true,
+            });
 
-          await db.insert(activityEvents).values({
-            type: 'appointment',
-            agentId: agent.id,
-            title: `${agent.displayName} appointed to Supreme Court`,
-            description: `Appointed as Supreme Court Justice to fill vacancy`,
-          });
+            await db.insert(activityEvents).values({
+              type: 'appointment',
+              agentId: agent.id,
+              title: `${agent.displayName} appointed to Supreme Court`,
+              description: `Appointed as Supreme Court Justice to fill vacancy`,
+            });
 
-          console.warn(`[SIMULATION] Phase 10: Appointed ${agent.displayName} as Supreme Court Justice`);
+            console.warn(`[SIMULATION] Phase 10: Appointed ${agent.displayName} as Supreme Court Justice`);
+          }
         }
 
         /* Re-fetch justice positions after filling vacancies */
@@ -5655,6 +5690,197 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 14 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 14.5: Speaker of the Legislature (office-selection Slice 2)     */
+  /* The Legislature elects its own presiding officer by internal          */
+  /* roll-call vote of sitting members — one nominee per party bloc        */
+  /* (most-senior seated member), winner is the majority of votes cast.    */
+  /* Each member's ballot is derived from their own relationship-alignment */
+  /* toward the nominees (the same unaltered signal Phase 1.7 uses — deals,*/
+  /* lobbying and bloc dynamics all shape it; the engine only counts). No  */
+  /* majority → the seat stays vacant this tick and the race re-runs next  */
+  /* tick (a Legislature that cannot organize). Byte-identical no-op when   */
+  /* speakerElectionEnabled is false (default).                            */
+  /* ------------------------------------------------------------------ */
+  if (rc.speakerElectionEnabled) {
+    try {
+      const [sittingSpeaker] = await db
+        .select({ id: positions.id })
+        .from(positions)
+        .where(and(eq(positions.isActive, true), eq(positions.type, 'speaker')))
+        .limit(1);
+
+      if (!sittingSpeaker) {
+        const seatedCongress = await db
+          .select({ agentId: positions.agentId, startDate: positions.startDate })
+          .from(positions)
+          .where(and(eq(positions.isActive, true), eq(positions.type, 'congress_member')));
+
+        const quorum = Math.ceil(rc.congressSeats * (rc.quorumPercentage ?? 0.5));
+        if (seatedCongress.length >= quorum && seatedCongress.length > 0) {
+          const alignmentByAgent = new Map(activeAgents.map((a) => [a.id, a.alignment]));
+          const members: SeatedMember[] = seatedCongress.map((m) => ({
+            agentId: m.agentId,
+            alignment: alignmentByAgent.get(m.agentId) ?? null,
+            startDate: m.startDate,
+          }));
+          const nominees = pickSpeakerNominees(members);
+
+          if (nominees.length > 0) {
+            /* Each seated member's vote-alignment toward every nominee. */
+            const memberIds = seatedCongress.map((m) => m.agentId);
+            const relRows = await db
+              .select({
+                agentId: agentRelationships.agentId,
+                targetAgentId: agentRelationships.targetAgentId,
+                voteAlignment: agentRelationships.voteAlignment,
+              })
+              .from(agentRelationships)
+              .where(and(
+                inArray(agentRelationships.agentId, memberIds),
+                inArray(agentRelationships.targetAgentId, nominees),
+              ));
+            const alignByMember = new Map<string, Map<string, number>>();
+            for (const r of relRows) {
+              if (!alignByMember.has(r.agentId)) alignByMember.set(r.agentId, new Map());
+              alignByMember.get(r.agentId)!.set(r.targetAgentId, r.voteAlignment);
+            }
+
+            /* Cast one round of ballots over the given nominee slate. Each
+               member votes for the nominee they are most aligned with (a member
+               who IS a nominee votes for themselves; ties / no relationship data
+               fall to the first nominee in deterministic order). Purely reads
+               relationship state — no engine rule dictates the vote. */
+            const castRound = (slate: string[]): { candidateId: string }[] => {
+              const slateSet = new Set(slate);
+              const round: { candidateId: string }[] = [];
+              for (const memberId of memberIds) {
+                if (slateSet.has(memberId)) { round.push({ candidateId: memberId }); continue; }
+                const aligns = alignByMember.get(memberId);
+                let choice = slate[0]!;
+                let best = -1;
+                for (const nomineeId of slate) {
+                  const a = aligns?.get(nomineeId) ?? -1;
+                  if (a > best) { best = a; choice = nomineeId; }
+                }
+                round.push({ candidateId: choice });
+              }
+              return round;
+            };
+
+            /* Multi-ballot runoff (mirrors a real multiple-ballot Speaker race):
+               no majority → the weakest nominee drops and members re-vote among
+               the rest, up to speakerReballotCap rounds. Still deadlocked → the
+               seat stays vacant and the race re-runs next tick (a Legislature
+               that cannot organize — this really happened in 2023). */
+            let slate = [...nominees];
+            let result = tallyMajorityBallot(castRound(slate), slate);
+            let round = 1;
+            const cap = Math.max(1, rc.speakerReballotCap ?? 3);
+            while (!result.hasMajority && slate.length > 2 && round < cap) {
+              /* Drop the lowest-vote nominee (last in deterministic order breaks
+                 ties, keeping the runoff deterministic). */
+              let weakest = slate[slate.length - 1]!;
+              let weakestVotes = Infinity;
+              for (const id of slate) {
+                const v = result.voteCounts[id] ?? 0;
+                if (v <= weakestVotes) { weakestVotes = v; weakest = id; }
+              }
+              slate = slate.filter((id) => id !== weakest);
+              result = tallyMajorityBallot(castRound(slate), slate);
+              round += 1;
+            }
+
+            if (result.hasMajority && result.winnerId) {
+              const winnerAgent = activeAgents.find((a) => a.id === result.winnerId);
+              const winnerName = winnerAgent?.displayName ?? 'Unknown';
+              await db.insert(positions).values({
+                agentId: result.winnerId,
+                type: 'speaker',
+                title: 'Speaker of the Legislature',
+                startDate: new Date(),
+                /* No endDate — the Speaker serves until they lose their congress
+                   seat (which cascades to the speaker seat via getSeatsToVacate
+                   ranking) or a new term forces a re-vote. Deliberately NOT
+                   added to the payday salary map: the Speaker draws their single
+                   congress salary via their retained congress_member seat, so no
+                   double pay. */
+                isActive: true,
+              });
+              await db.insert(activityEvents).values({
+                type: 'speaker_elected',
+                agentId: result.winnerId,
+                title: `${winnerName} elected Speaker of the Legislature`,
+                description: `Elected Speaker by internal roll-call vote (${result.voteCounts[result.winnerId] ?? 0} of ${result.totalVotes} votes cast, ${nominees.length} nominee(s))`,
+                metadata: JSON.stringify({ winnerId: result.winnerId, votesFor: result.voteCounts[result.winnerId] ?? 0, totalVotes: result.totalVotes, nominees }),
+              });
+              broadcast('government:speaker_elected', { agentId: result.winnerId, agentName: winnerName });
+              console.warn(`[SIMULATION] Phase 14.5: ${winnerName} elected Speaker (${result.voteCounts[result.winnerId] ?? 0}/${result.totalVotes})`);
+            } else {
+              console.warn(`[SIMULATION] Phase 14.5: Speaker race deadlocked after ${round} ballot(s) — no majority (${slate.length} nominee(s) remaining); re-runs next tick.`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] Phase 14.5 (Speaker) error:', err);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 14.6: Cabinet secretaries (office-selection Slice 3)            */
+  /* The 4 cabinet seats — never created before this slice — are filled by */
+  /* president-nominate → Legislature-confirm, ONE vacant seat per tick to */
+  /* bound LLM load. No president → no cabinet (faithful). Byte-identical  */
+  /* no-op when appointmentConfirmationEnabled is false (default): the     */
+  /* cabinet simply never exists, exactly as today.                       */
+  /* ------------------------------------------------------------------ */
+  if (rc.appointmentConfirmationEnabled) {
+    try {
+      const seatedCabinet = await db
+        .select({ agentId: positions.agentId, title: positions.title })
+        .from(positions)
+        .where(and(eq(positions.isActive, true), eq(positions.type, 'cabinet_secretary')));
+
+      const filledRoles = new Set(seatedCabinet.map((c) => c.title));
+      const vacantRole = GOVERNMENT.EXECUTIVE.CABINET_POSITIONS.find((r) => !filledRoles.has(r));
+
+      if (vacantRole) {
+        const president146 = await getSittingPresident(rc.providerOverride);
+        if (!president146) {
+          console.warn('[SIMULATION] Phase 14.6: appointmentConfirmationEnabled but no sitting president — cabinet stays vacant (faithful).');
+        } else {
+          const heldAgentIds146 = new Set(
+            (await db.select({ agentId: positions.agentId }).from(positions).where(eq(positions.isActive, true)))
+              .map((p) => p.agentId),
+          );
+          const candidates146 = activeAgents
+            .filter((a) => !heldAgentIds146.has(a.id))
+            .sort((a, b) => b.reputation - a.reputation)
+            .slice(0, 20)
+            .map((a) => ({ id: a.id, displayName: a.displayName, alignment: a.alignment }));
+          const seatedCongress146 = await db
+            .select({ agentId: positions.agentId })
+            .from(positions)
+            .where(and(eq(positions.isActive, true), eq(positions.type, 'congress_member')));
+          const result146 = await runAppointment({
+            positionType: 'cabinet_secretary',
+            title: vacantRole,
+            officeLabel: vacantRole,
+            president: president146,
+            candidates: candidates146,
+            confirmVoterIds: seatedCongress146.map((c) => c.agentId),
+            confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
+            seatDescriptor: `The role is ${vacantRole}.`,
+          });
+          console.warn(`[SIMULATION] Phase 14.6: cabinet (${vacantRole}) appointment cycle — ${result146.status}.`);
+        }
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] Phase 14.6 (Cabinet) error:', err);
+    }
   }
 
   /* ------------------------------------------------------------------ */

@@ -509,6 +509,24 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const trpp = num('taxRevenuePeakPercent', 20, 60);
     if (trpp !== undefined) update.taxRevenuePeakPercent = trpp;
 
+    // Office-Selection Fidelity — Rule 1: every RuntimeConfig field gets a
+    // server handler branch with type check + range clamp, same commit. All
+    // three master switches default false (deploy dark): off = byte-identical
+    // to today's engine-decided seating.
+    if (typeof body.speakerElectionEnabled === 'boolean') {
+      update.speakerElectionEnabled = body.speakerElectionEnabled;
+    }
+    const srbc = posInt('speakerReballotCap', 1, 10);
+    if (srbc !== undefined) update.speakerReballotCap = srbc;
+    if (typeof body.appointmentConfirmationEnabled === 'boolean') {
+      update.appointmentConfirmationEnabled = body.appointmentConfirmationEnabled;
+    }
+    const act = num('appointmentConfirmationThreshold', 0, 1);
+    if (act !== undefined) update.appointmentConfirmationThreshold = act;
+    if (typeof body.electoralCollegeEnabled === 'boolean') {
+      update.electoralCollegeEnabled = body.electoralCollegeEnabled;
+    }
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

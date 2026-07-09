@@ -8,6 +8,7 @@ import { HfInference } from '@huggingface/inference';
 import { decryptText } from '../lib/crypto.js';
 import { getRuntimeConfig } from '../runtimeConfig.js';
 import { buildCongressContextBlock } from '@modules/government/server/services/congressContext.js';
+import { buildWorldEventsBlock } from '@modules/world/server/services/worldEventsContext.js';
 import { mandatoryEffectiveAmount, tickInterest } from '../lib/fiscalMath.js';
 
 export interface AgentRecord {
@@ -690,6 +691,7 @@ function buildSystemPrompt(
   economyContext?: string,
   dealsContext?: string,
   recentNewsContext?: string,
+  worldEventsContext?: string,
 ): string {
   const rc = getRuntimeConfig();
   const alignment = agent.alignment ?? 'centrist';
@@ -728,6 +730,9 @@ function buildSystemPrompt(
       : '') +
     (congressContext
       ? `\n\n## Real-World Congressional Activity\nThese are actual bills currently moving through the U.S. Congress. Use this to ground your positions in real-world political context:\n${congressContext}`
+      : '') +
+    (worldEventsContext
+      ? `\n\n## Recent World Events\nThese are real events happening in the world right now — natural disasters, severe weather, and emergencies. They are context for your work as a legislator; how (or whether) to respond is entirely your judgment:\n${worldEventsContext}`
       : '') +
     (recentNewsContext
       ? `\n\n## Recent News\nThe latest headlines and public statements inside Agora Bench:\n${recentNewsContext}`
@@ -916,7 +921,7 @@ export async function generateAgentDecision(
 ): Promise<AgentDecision> {
   const rc = getRuntimeConfig();
   const provider = agent.modelProvider ?? 'ollama';
-  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext, economyContext, recentNewsContext] = await Promise.all([
+  const [memory, forumContext, congressContext, relationshipContext, policyContext, electionContext, economyContext, recentNewsContext, worldEventsContext] = await Promise.all([
     buildMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildForumContextBlock().catch((err) => { console.warn('[AI] Forum context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildCongressContextBlock().catch((err) => { console.warn('[AI] Congress context failed:', err instanceof Error ? err.message : err); return ''; }),
@@ -925,6 +930,7 @@ export async function generateAgentDecision(
     buildElectionMemoryBlock(agent.id).catch((err) => { console.warn('[AI] Election memory block failed:', err instanceof Error ? err.message : err); return ''; }),
     buildEconomyContextBlock(agent.id).catch((err) => { console.warn('[AI] Economy context failed:', err instanceof Error ? err.message : err); return ''; }),
     buildRecentNewsBlock().catch((err) => { console.warn('[AI] Recent news block failed:', err instanceof Error ? err.message : err); return ''; }),
+    buildWorldEventsBlock().catch((err) => { console.warn('[AI] World events block failed:', err instanceof Error ? err.message : err); return ''; }),
   ]);
   // Only fetch deals context for phases where vote commitments are relevant
   const dealPhases = ['vote', 'bill_voting', 'lobby', 'propose_amendment', 'override_vote'];
@@ -942,6 +948,7 @@ export async function generateAgentDecision(
     economyContext || undefined,
     dealsContext || undefined,
     recentNewsContext || undefined,
+    worldEventsContext || undefined,
   );
   const start = Date.now();
 

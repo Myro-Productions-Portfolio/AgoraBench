@@ -187,6 +187,9 @@ interface RuntimeConfig {
   worldFeedNwsEnabled: boolean;
   worldFeedFemaEnabled: boolean;
   worldFeedGdeltEnabled: boolean;
+  worldEventsInjectionEnabled: boolean;
+  worldEventsRecencyHours: number;
+  worldEventsMinSeverity: number;
   /* Fiscal Consequence Loop */
   fiscalConsequenceEnabled: boolean;
   fiscalApprovalDebtWeight: number;
@@ -2786,6 +2789,49 @@ export function AdminPage() {
                         />
                       </label>
                     ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Prompt Injection (E2 slice 2)</p>
+                  <div className="space-y-3">
+                    <label className="flex items-center justify-between">
+                      <span className="text-sm text-text-secondary font-medium">Inject Into Agent Prompts (channel gate)</span>
+                      <input type="checkbox"
+                        checked={simConfig.worldEventsInjectionEnabled}
+                        onChange={e => setSimConfig(c => c ? ({ ...c, worldEventsInjectionEnabled: e.target.checked }) : c)}
+                        onBlur={() => void saveConfig({ worldEventsInjectionEnabled: simConfig.worldEventsInjectionEnabled })}
+                      />
+                    </label>
+                    <p className="text-xs text-text-muted">When off, no world event ever reaches an agent — prompts are byte-identical to today. Independent of the master feed switch above: you can collect events (poll) without injecting them. Flipping this on is the deliberate, dated go-live for the injection channel.</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Recency Window (hours)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.worldEventsRecencyHours}</span>
+                      </div>
+                      <input type="number" min={1} max={168} step={1}
+                        value={simConfig.worldEventsRecencyHours}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, worldEventsRecencyHours: parseInt(e.target.value) || 1 } : c)}
+                        onBlur={() => void saveConfig({ worldEventsRecencyHours: simConfig.worldEventsRecencyHours })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Only events within this many hours are eligible. 72h ≈ how long a disaster stays current news.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Min Severity (0–1)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.worldEventsMinSeverity}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.05}
+                        value={simConfig.worldEventsMinSeverity}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, worldEventsMinSeverity: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ worldEventsMinSeverity: simConfig.worldEventsMinSeverity })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Severity floor. 0.35 = advisory tier; 0.55 = warning; 0.75 = severe-only. Below the floor, an event is noise a national legislature would not register.</p>
+                    </div>
                   </div>
                 </div>
               </CollapsibleSection>

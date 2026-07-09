@@ -461,6 +461,19 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.worldFeedGdeltEnabled = body.worldFeedGdeltEnabled;
     }
 
+    // World Events Injection (E2 slice 2) — Rule 1: server handler branch
+    // with type check + range clamp, same commit. worldEventsInjectionEnabled
+    // is the prompt-injection channel gate: false (default) means
+    // buildWorldEventsBlock() returns '' and prompts are byte-identical to
+    // today (deploy dark, independent of worldFeedEnabled which gates polling).
+    if (typeof body.worldEventsInjectionEnabled === 'boolean') {
+      update.worldEventsInjectionEnabled = body.worldEventsInjectionEnabled;
+    }
+    const werh = posInt('worldEventsRecencyHours', 1, 168);
+    if (werh !== undefined) update.worldEventsRecencyHours = werh;
+    const wems = prob('worldEventsMinSeverity');
+    if (wems !== undefined) update.worldEventsMinSeverity = wems;
+
     // Fiscal Consequence Loop — Rule 1: every RuntimeConfig field gets a
     // server handler branch with type check + range clamp, same commit.
     // fiscalConsequenceEnabled is the master kill switch: false (default)

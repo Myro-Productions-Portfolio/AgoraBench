@@ -173,6 +173,11 @@ export interface RuntimeConfig {
   worldFeedFemaEnabled: boolean;              // per-source flag, only matters once worldFeedEnabled is true
   worldFeedGdeltEnabled: boolean;             // reserved: no adapter yet (Tier 2), always a no-op today
 
+  /* ---- World Events Injection (E2 slice 2) — deployed dark, read-only ---- */
+  worldEventsInjectionEnabled: boolean;      // master gate for the prompt-injection channel; false = buildWorldEventsBlock() returns '' (deploy dark, independent of worldFeedEnabled)
+  worldEventsRecencyHours: number;           // only events within this many hours are eligible (1-168)
+  worldEventsMinSeverity: number;            // severity floor 0-1; 0.35 = advisory-tier boundary
+
   /* ---- Fiscal Consequence Loop — deployed dark, zero-effect defaults ---- */
   fiscalConsequenceEnabled: boolean;         // master kill switch: fiscal->approval phase is a no-op when false (deploy dark)
   fiscalApprovalDebtWeight: number;          // debt/GDP -> approval strength (0-50)
@@ -351,6 +356,11 @@ const DEFAULTS: RuntimeConfig = {
   worldFeedNwsEnabled: true,
   worldFeedFemaEnabled: true,
   worldFeedGdeltEnabled: false,
+
+  /* World Events Injection (E2 slice 2) — deployed dark */
+  worldEventsInjectionEnabled: false,
+  worldEventsRecencyHours: 72,
+  worldEventsMinSeverity: 0.35,
 
   /* Fiscal Consequence Loop — deployed dark, zero-effect defaults */
   fiscalConsequenceEnabled: false,

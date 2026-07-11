@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { pressApi } from '@core/client/lib/api';
 import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
-import { CALIBRATED_PRESS, PODIUM_POSITION } from '../briefingSeats';
+import { CALIBRATED_MARKERS, ROLE_STYLE, PODIUM_POSITION } from '../briefingSeats';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -320,8 +320,39 @@ function BriefingRoomTab({ statements }: { statements: PressStatement[] }) {
   }, [statements]);
 
   const podium = occupants[0] ?? null;
-  // Seat the remaining agents into the front seats.
-  const seated = occupants.slice(1, CALIBRATED_PRESS.length + 1);
+
+  // Markers split by role — order in the array is preserved for stable seating.
+  const speakerMarkers = useMemo(() => CALIBRATED_MARKERS.filter((m) => m.role === 'speaker'), []);
+  const guestMarkers = useMemo(() => CALIBRATED_MARKERS.filter((m) => m.role === 'guest'), []);
+  const pressMarkers = useMemo(() => CALIBRATED_MARKERS.filter((m) => m.role === 'press'), []);
+
+  // Everyone after the podium fills the featured on-stage speaker spots first,
+  // then the flanking guest spots, then the press seats. Never invent agents —
+  // markers beyond the available authors stay empty.
+  const rest = occupants.slice(1);
+  const speakerCount = Math.min(speakerMarkers.length, rest.length);
+  const guestCount = Math.min(guestMarkers.length, Math.max(rest.length - speakerCount, 0));
+  const pressCount = Math.min(
+    pressMarkers.length,
+    Math.max(rest.length - speakerCount - guestCount, 0),
+  );
+
+  // Fill guests left/right alternating so partial occupancy stays balanced across
+  // both flanks instead of clustering on one side.
+  const guestOccupied = useMemo(() => {
+    const order = [...guestMarkers]
+      .map((m, idx) => ({ m, idx }))
+      .sort((a, b) => (a.m.role === 'guest' && b.m.role === 'guest' ? a.m.i - b.m.i : 0));
+    // Interleave: right0, left0, right1, left1, ... then take guestCount from the front.
+    const rights = order.filter((o) => o.m.role === 'guest' && o.m.side === 'right');
+    const lefts = order.filter((o) => o.m.role === 'guest' && o.m.side === 'left');
+    const interleaved: number[] = [];
+    for (let k = 0; k < Math.max(rights.length, lefts.length); k++) {
+      if (rights[k]) interleaved.push(rights[k].idx);
+      if (lefts[k]) interleaved.push(lefts[k].idx);
+    }
+    return new Set(interleaved.slice(0, guestCount));
+  }, [guestMarkers, guestCount]);
 
   const [captionIdx, setCaptionIdx] = useState(0);
   useEffect(() => {
@@ -346,30 +377,46 @@ function BriefingRoomTab({ statements }: { statements: PressStatement[] }) {
           className="absolute inset-0 w-full h-full object-cover"
         />
 
-        {/* Seat markers */}
+        {/* Seat markers — three roles: speakers (on-stage), guests (flanking), press */}
         <svg
           viewBox="0 0 1000 671"
-          className="absolute inset-0 w-full h-full text-gold"
+          className="absolute inset-0 w-full h-full"
           style={{ position: 'absolute', inset: 0 }}
           aria-hidden="true"
         >
-          {CALIBRATED_PRESS.map((seat, i) => {
-            const occupied = i < seated.length;
-            return occupied ? (
-              <circle key={i} cx={seat.x} cy={seat.y} r={5} fill="currentColor" opacity={0.9} />
-            ) : (
+          {speakerMarkers.map((m, i) => (
+            <circle
+              key={`speaker-${m.i}`}
+              cx={m.x}
+              cy={m.y}
+              r={ROLE_STYLE.speaker.size / 2}
+              fill={i < speakerCount ? ROLE_STYLE.speaker.active : ROLE_STYLE.speaker.base}
+              opacity={i < speakerCount ? 0.95 : 0.45}
+            />
+          ))}
+          {guestMarkers.map((m, i) => {
+            const on = guestOccupied.has(i);
+            return (
               <circle
-                key={i}
-                cx={seat.x}
-                cy={seat.y}
-                r={4}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1}
-                opacity={0.25}
+                key={m.role === 'guest' ? `guest-${m.side}-${m.i}` : `guest-${i}`}
+                cx={m.x}
+                cy={m.y}
+                r={ROLE_STYLE.guest.size / 2}
+                fill={on ? ROLE_STYLE.guest.active : ROLE_STYLE.guest.base}
+                opacity={on ? 0.95 : 0.45}
               />
             );
           })}
+          {pressMarkers.map((m, i) => (
+            <circle
+              key={`press-${m.r}-${m.c}`}
+              cx={m.x}
+              cy={m.y}
+              r={ROLE_STYLE.press.size / 2}
+              fill={i < pressCount ? ROLE_STYLE.press.active : ROLE_STYLE.press.base}
+              opacity={i < pressCount ? 0.95 : 0.45}
+            />
+          ))}
         </svg>
 
         {/* At-podium avatar */}

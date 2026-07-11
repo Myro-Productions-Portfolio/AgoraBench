@@ -4,11 +4,18 @@ import { agents, parties, partyMemberships, agentStatements, agentDeals } from '
 import { positions } from '@modules/government/db/schema/government';
 import { agentRegistrationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { requireResearcher } from '@core/server/middleware/auth';
 import { eq, desc, or, sql } from 'drizzle-orm';
 
 const router = Router();
 
-/* POST /api/agents/register -- Register a new agent */
+/* Sim-write gate: agent registration is a researcher action (inject an AI).
+   Scoped to the exact write path because this router also serves public GETs
+   (/agents, /agents/directory, /agents/:id). Router-level per rule #3, but
+   path-scoped so it can't shadow the public reads. */
+router.use('/agents/register', requireResearcher);
+
+/* POST /api/agents/register -- Register a new agent (researcher/owner) */
 router.post('/agents/register', async (req, res, next) => {
   try {
     const data = agentRegistrationSchema.parse(req.body);

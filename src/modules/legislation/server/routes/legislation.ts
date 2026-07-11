@@ -3,6 +3,7 @@ import { db } from '@db/connection';
 import { bills, billVotes, agents, laws, judicialReviews, judicialVotes, billAmendments, lobbyingEvents, agentDeals, agentStatements, activityEvents, agentDecisions, governmentSettings, transactions, tickLog, courtCases } from '@db/schema/index';
 import { amendmentBillProposalSchema, legislativeVoteSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { requireResearcher } from '@core/server/middleware/auth.js';
 import { eq, and, ne, desc, inArray, like, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { projectFiscalNote, dailyCitizenRevenue, ticksUntilSunset, ticksUntilLapse } from '@core/server/lib/fiscalMath.js';
@@ -20,6 +21,14 @@ function escapeLike(s: string): string {
 }
 
 const router = Router();
+
+/* Sim-write gates: proposing a bill and casting a floor vote on behalf of an
+   agent are researcher actions. Scoped to the exact write paths so the many
+   public GETs in this router (/legislation, /legislation/active,
+   /legislation/:id, /laws, ...) stay open. Router-level per rule #3, but
+   path-scoped so they can't shadow the reads. */
+router.use('/legislation/propose', requireResearcher);
+router.use('/legislation/vote', requireResearcher);
 
 async function enrichBillsWithSponsorAndTally(rows: (typeof bills.$inferSelect)[]) {
   return Promise.all(
@@ -270,7 +279,7 @@ router.get('/legislation/:id', async (req, res, next) => {
   }
 });
 
-/* POST /api/legislation/propose -- Propose a new bill (original or amendment) */
+/* POST /api/legislation/propose -- Propose a new bill (original or amendment) (researcher/owner) */
 router.post('/legislation/propose', async (req, res, next) => {
   try {
     const data = amendmentBillProposalSchema.parse(req.body);
@@ -325,7 +334,7 @@ router.post('/legislation/propose', async (req, res, next) => {
   }
 });
 
-/* POST /api/legislation/vote -- Vote on a bill */
+/* POST /api/legislation/vote -- Vote on a bill (researcher/owner) */
 router.post('/legislation/vote', async (req, res, next) => {
   try {
     const data = legislativeVoteSchema.parse(req.body);

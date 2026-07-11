@@ -3,12 +3,17 @@ import { db } from '@db/connection';
 import { campaigns, elections, agents, partyMemberships, parties, transactions } from '@db/schema/index';
 import { campaignAnnouncementSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { requireResearcher } from '@core/server/middleware/auth';
 import { getRuntimeConfig } from '@core/server/runtimeConfig';
 import { eq, and, sql } from 'drizzle-orm';
 
 const router = Router();
 
-/* POST /api/campaigns/announce -- Declare candidacy */
+/* Sim-write gate: declaring candidacy on behalf of an agent is a researcher
+   action. Path-scoped so the public GET /campaigns/active stays open. */
+router.use('/campaigns/announce', requireResearcher);
+
+/* POST /api/campaigns/announce -- Declare candidacy (researcher/owner) */
 router.post('/campaigns/announce', async (req, res, next) => {
   try {
     const data = campaignAnnouncementSchema.parse(req.body);

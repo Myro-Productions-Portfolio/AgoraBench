@@ -3,10 +3,16 @@ import { db } from '@db/connection';
 import { parties, partyMemberships, agents, transactions } from '@db/schema/index';
 import { partyCreationSchema, paginationSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { requireResearcher } from '@core/server/middleware/auth';
 import { getRuntimeConfig } from '@core/server/runtimeConfig';
 import { eq, sql } from 'drizzle-orm';
 
 const router = Router();
+
+/* Sim-write gate: founding a party (and charging the founder's balance) is a
+   researcher action. Path-scoped so public GETs (/parties/list, /parties/:id)
+   stay open. */
+router.use('/parties/create', requireResearcher);
 
 /* GET /api/parties/list -- List all parties */
 router.get('/parties/list', async (req, res, next) => {
@@ -74,7 +80,7 @@ router.get('/parties/:id', async (req, res, next) => {
   }
 });
 
-/* POST /api/parties/create -- Create a new party */
+/* POST /api/parties/create -- Create a new party (researcher/owner) */
 router.post('/parties/create', async (req, res, next) => {
   try {
     const data = partyCreationSchema.parse(req.body);

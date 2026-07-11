@@ -1,7 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { pressApi } from '@core/client/lib/api';
+import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
+import { CALIBRATED_PRESS, PODIUM_POSITION } from '../briefingSeats';
 
 /* ── Types ──────────────────────────────────────────────────────────────── */
 
@@ -92,6 +94,9 @@ const MULTI_TRIGGER_MAP: Record<FilterOption, TriggerType[] | undefined> = {
   proactive: ['proactive'],
 };
 
+const PODIUM_LEFT = `${(PODIUM_POSITION.x / PODIUM_POSITION.viewBoxWidth) * 100}%`;
+const PODIUM_TOP = `${(PODIUM_POSITION.y / PODIUM_POSITION.viewBoxHeight) * 100}%`;
+
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
 function relativeTime(date: string): string {
@@ -111,6 +116,35 @@ function getTriggerColor(triggerType: string): string {
 
 function getTriggerLabel(triggerType: string): string {
   return TRIGGER_LABELS[triggerType as TriggerType] ?? triggerType.replace(/_/g, ' ');
+}
+
+function fmtDelta(delta: number): string {
+  return Math.abs(delta).toFixed(1);
+}
+
+/* ── DeltaChip: approval-impact badge, colored by sign ──────────────────── */
+
+function DeltaChip({ delta, label }: { delta: number | null; label?: boolean }) {
+  const value = delta ?? 0;
+  let sign: string;
+  let color: string;
+  if (value > 0) {
+    sign = `▲ +${fmtDelta(value)}`;
+    color = 'text-green-300';
+  } else if (value < 0) {
+    sign = `▼ −${fmtDelta(value)}`;
+    color = 'text-red-300';
+  } else {
+    sign = '± 0.0';
+    color = 'text-text-muted';
+  }
+
+  return (
+    <span className="inline-flex flex-col items-end leading-tight">
+      <span className={`text-sm font-semibold tabular-nums ${color}`}>{sign}</span>
+      {label && <span className="text-[10px] uppercase tracking-wide text-text-muted">approval impact</span>}
+    </span>
+  );
 }
 
 /* ── StatementText: collapsible 280-char preview ────────────────────────── */
@@ -146,23 +180,23 @@ function StatementCard({ statement }: { statement: PressStatement }) {
     <article className="rounded-lg border border-border bg-surface p-5 space-y-3">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div>
-            <Link
-              to={`/agents/${statement.agentId}`}
-              className="text-sm font-medium text-gold hover:underline"
-            >
-              {statement.agentName}
-            </Link>
-          </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <PixelAvatar seed={statement.agentId} size="sm" className="rounded flex-shrink-0" />
+          <Link
+            to={`/agents/${statement.agentId}`}
+            className="text-sm font-medium text-gold hover:underline truncate"
+          >
+            {statement.agentName}
+          </Link>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className={`badge border ${triggerColor}`}>
-            {triggerLabel}
-          </span>
-          <span className="text-xs text-text-muted whitespace-nowrap">
-            {relativeTime(statement.createdAt)}
-          </span>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <DeltaChip delta={statement.approvalDelta} label />
+          <div className="flex flex-col items-end gap-1">
+            <span className={`badge border ${triggerColor}`}>{triggerLabel}</span>
+            <span className="text-xs text-text-muted whitespace-nowrap">
+              {relativeTime(statement.createdAt)}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -185,37 +219,254 @@ function StatementCard({ statement }: { statement: PressStatement }) {
   );
 }
 
+/* ── Biggest Movers: client-side aggregation over the loaded feed ───────── */
+
+interface MoverEntry {
+  agentId: string;
+  agentName: string;
+  net: number;
+}
+
+function computeMovers(statements: PressStatement[]): MoverEntry[] {
+  const acc = new Map<string, MoverEntry>();
+  for (const s of statements) {
+    const delta = s.approvalDelta ?? 0;
+    const existing = acc.get(s.agentId);
+    if (existing) {
+      existing.net += delta;
+    } else {
+      acc.set(s.agentId, { agentId: s.agentId, agentName: s.agentName, net: delta });
+    }
+  }
+  return Array.from(acc.values())
+    .filter((m) => m.net !== 0)
+    .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+    .slice(0, 6);
+}
+
+function BiggestMovers({ movers }: { movers: MoverEntry[] }) {
+  if (movers.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h3 className="font-serif text-lg font-semibold text-stone">Biggest Movers</h3>
+        <span className="badge border text-gold bg-yellow-900/20 border-yellow-700/30">this cycle</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {movers.map((m) => (
+          <Link
+            key={m.agentId}
+            to={`/agents/${m.agentId}`}
+            className="flex-shrink-0 w-40 rounded-lg border border-border bg-surface p-3 space-y-2 hover:border-border/80 transition-colors"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <PixelAvatar seed={m.agentId} size="sm" className="rounded flex-shrink-0" />
+              <span className="text-sm font-medium text-text-secondary truncate">{m.agentName}</span>
+            </div>
+            <DeltaChip delta={m.net} label />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── BackfiredCallout: most-negative statement in the loaded feed ───────── */
+
+function BackfiredCallout({ statement }: { statement: PressStatement }) {
+  const snippet =
+    statement.statementText.length > 120
+      ? `${statement.statementText.slice(0, 120)}…`
+      : statement.statementText;
+
+  return (
+    <div className="rounded-lg border border-red-700/40 bg-red-900/15 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <PixelAvatar seed={statement.agentId} size="sm" className="rounded flex-shrink-0" />
+          <div className="min-w-0 space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-red-300">⚠ Backfired</span>
+              <Link
+                to={`/agents/${statement.agentId}`}
+                className="text-sm font-medium text-gold hover:underline truncate"
+              >
+                {statement.agentName}
+              </Link>
+            </div>
+            <p className="text-sm text-text-secondary leading-relaxed">{snippet}</p>
+          </div>
+        </div>
+        <DeltaChip delta={statement.approvalDelta} label />
+      </div>
+    </div>
+  );
+}
+
+/* ── BriefingRoomTab: reference-art seat overlay ────────────────────────── */
+
+function BriefingRoomTab({ statements }: { statements: PressStatement[] }) {
+  const occupants = useMemo(() => {
+    const seen = new Set<string>();
+    const unique: PressStatement[] = [];
+    for (const s of statements) {
+      if (!seen.has(s.agentId)) {
+        seen.add(s.agentId);
+        unique.push(s);
+      }
+    }
+    return unique;
+  }, [statements]);
+
+  const podium = occupants[0] ?? null;
+  // Seat the remaining agents into the front seats.
+  const seated = occupants.slice(1, CALIBRATED_PRESS.length + 1);
+
+  const [captionIdx, setCaptionIdx] = useState(0);
+  useEffect(() => {
+    if (statements.length < 2) return;
+    const id = setInterval(() => {
+      setCaptionIdx((i) => (i + 1) % Math.min(statements.length, 8));
+    }, 5000);
+    return () => clearInterval(id);
+  }, [statements.length]);
+
+  const caption = statements[captionIdx] ?? statements[0] ?? null;
+
+  return (
+    <div className="space-y-3">
+      <div
+        className="relative rounded-lg border border-border overflow-hidden bg-black/20"
+        style={{ aspectRatio: '1264 / 848' }}
+      >
+        <img
+          src="/images/briefing-room/briefing-room.png"
+          alt="Press briefing room"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+
+        {/* Seat markers */}
+        <svg
+          viewBox="0 0 1000 671"
+          className="absolute inset-0 w-full h-full text-gold"
+          style={{ position: 'absolute', inset: 0 }}
+          aria-hidden="true"
+        >
+          {CALIBRATED_PRESS.map((seat, i) => {
+            const occupied = i < seated.length;
+            return occupied ? (
+              <circle key={i} cx={seat.x} cy={seat.y} r={5} fill="currentColor" opacity={0.9} />
+            ) : (
+              <circle
+                key={i}
+                cx={seat.x}
+                cy={seat.y}
+                r={4}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={1}
+                opacity={0.25}
+              />
+            );
+          })}
+        </svg>
+
+        {/* At-podium avatar */}
+        {podium && (
+          <div
+            className="absolute -translate-x-1/2 -translate-y-1/2"
+            style={{ left: PODIUM_LEFT, top: PODIUM_TOP }}
+          >
+            <Link to={`/agents/${podium.agentId}`}>
+              <PixelAvatar
+                seed={podium.agentId}
+                size="sm"
+                className="rounded ring-2 ring-gold/70 shadow-lg"
+              />
+            </Link>
+          </div>
+        )}
+
+        {/* Reference-art label */}
+        <span className="absolute bottom-2 right-2 text-[10px] text-text-muted bg-black/50 rounded px-1.5 py-0.5">
+          Reference art · occupancy is simulated
+        </span>
+
+        {/* Rotating caption over real recent statements */}
+        {caption && (
+          <div className="absolute bottom-2 left-2 max-w-[60%] bg-black/55 rounded px-2 py-1">
+            <span className="text-xs font-medium text-gold">{caption.agentName}</span>
+            <span className="text-xs text-text-secondary">
+              {' — '}
+              {caption.statementText.length > 90
+                ? `${caption.statementText.slice(0, 90)}…`
+                : caption.statementText}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <p className="text-xs text-text-muted">
+        The briefing room seats are calibrated to the reference art; occupancy is drawn from recent real
+        statement authors.
+      </p>
+    </div>
+  );
+}
+
 /* ── GazetteIssueCard: one issue, latest rendered in full ───────────────── */
 
 function fmtIssueDate(s: string): string {
   return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function GazetteIssueCard({ issue, latest }: { issue: GazetteIssue; latest?: boolean }) {
-  const [expanded, setExpanded] = useState(!!latest);
+function GazetteFrontPage({ issue }: { issue: GazetteIssue }) {
+  const paragraphs = issue.body.split(/\n+/).filter((p) => p.trim().length > 0);
+
+  return (
+    <article className="rounded-lg border border-border bg-surface p-6 space-y-3">
+      <span className="badge border text-gold bg-yellow-900/20 border-yellow-700/30 inline-block">
+        Current Edition
+      </span>
+      <h2 className="font-serif text-3xl font-bold text-stone leading-tight">{issue.headline}</h2>
+      <p className="text-xs text-text-muted">The Agora Gazette — {fmtIssueDate(issue.createdAt)}</p>
+      <div className="space-y-3 pt-2 border-t border-border/50">
+        {paragraphs.map((p, i) => (
+          <p
+            key={i}
+            className={`text-sm text-text-secondary leading-relaxed ${
+              i === 0
+                ? 'first-letter:font-serif first-letter:text-4xl first-letter:font-bold first-letter:text-gold first-letter:float-left first-letter:mr-2 first-letter:leading-none'
+                : ''
+            }`}
+          >
+            {p}
+          </p>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function GazetteIssueCard({ issue }: { issue: GazetteIssue }) {
+  const [expanded, setExpanded] = useState(false);
   const paragraphs = issue.body.split(/\n+/).filter((p) => p.trim().length > 0);
 
   return (
     <article className="rounded-lg border border-border bg-surface p-5 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          {latest && (
-            <span className="badge border text-gold bg-yellow-900/20 border-yellow-700/30 mb-2 inline-block">
-              Latest Issue
-            </span>
-          )}
           <h2 className="font-serif text-xl font-semibold text-stone leading-snug">{issue.headline}</h2>
           <p className="text-xs text-text-muted mt-1">The Agora Gazette — {fmtIssueDate(issue.createdAt)}</p>
         </div>
-        {!latest && (
-          <button
-            onClick={() => setExpanded((p) => !p)}
-            aria-expanded={expanded}
-            className="text-xs text-gold hover:text-gold/80 transition-colors flex-shrink-0"
-          >
-            {expanded ? '▲ Collapse' : '▼ Read'}
-          </button>
-        )}
+        <button
+          onClick={() => setExpanded((p) => !p)}
+          aria-expanded={expanded}
+          className="text-xs text-gold hover:text-gold/80 transition-colors flex-shrink-0"
+        >
+          {expanded ? '▲ Collapse' : '▼ Read'}
+        </button>
       </div>
       {expanded && (
         <div className="space-y-2 pt-1 border-t border-border/50">
@@ -229,6 +480,22 @@ function GazetteIssueCard({ issue, latest }: { issue: GazetteIssue; latest?: boo
 }
 
 /* ── GazetteSection: Daily Gazette feed ─────────────────────────────────── */
+
+function GazetteMasthead({ latestDate }: { latestDate: string | null }) {
+  return (
+    <div className="text-center space-y-1 border-y border-border py-5">
+      <p className="text-xs uppercase tracking-[0.2em] text-text-muted">
+        An Editorial Record of the Agora Simulation
+      </p>
+      <h2 className="font-serif text-4xl font-bold text-stone">The Agora Gazette</h2>
+      <div className="flex items-center justify-center gap-3 text-xs text-text-muted pt-1">
+        {latestDate && <span>{fmtIssueDate(latestDate)}</span>}
+        {latestDate && <span aria-hidden="true">·</span>}
+        <span>Published each simulation tick</span>
+      </div>
+    </div>
+  );
+}
 
 function GazetteSection() {
   const [issues, setIssues] = useState<GazetteIssue[]>([]);
@@ -285,8 +552,11 @@ function GazetteSection() {
 
   if (issues.length === 0) {
     return (
-      <div className="text-center py-20 text-text-muted">
-        <p className="text-lg">No gazette issues yet — the first issue publishes after the next simulation tick.</p>
+      <div className="space-y-4">
+        <GazetteMasthead latestDate={null} />
+        <div className="text-center py-20 text-text-muted">
+          <p className="text-lg">No gazette issues yet — the first issue publishes after the next simulation tick.</p>
+        </div>
       </div>
     );
   }
@@ -296,7 +566,8 @@ function GazetteSection() {
 
   return (
     <div className="space-y-4">
-      <GazetteIssueCard issue={latest} latest />
+      <GazetteMasthead latestDate={latest.createdAt} />
+      <GazetteFrontPage issue={latest} />
 
       {previous.length > 0 && (
         <>
@@ -326,10 +597,10 @@ function GazetteSection() {
 
 /* ── Main Page ──────────────────────────────────────────────────────────── */
 
-type PressView = 'statements' | 'gazette';
+type PressView = 'briefing' | 'statements' | 'gazette';
 
 export function PressRoomPage() {
-  const [view, setView] = useState<PressView>('statements');
+  const [view, setView] = useState<PressView>('briefing');
   const [statements, setStatements] = useState<PressStatement[]>([]);
   const [filter, setFilter] = useState<FilterOption>('all');
   const [loading, setLoading] = useState(true);
@@ -420,6 +691,18 @@ export function PressRoomPage() {
 
   const hasMore = statements.length < total;
 
+  const movers = useMemo(() => computeMovers(statements), [statements]);
+  const backfired = useMemo(() => {
+    let worst: PressStatement | null = null;
+    for (const s of statements) {
+      const delta = s.approvalDelta ?? 0;
+      if (delta < 0 && (worst === null || delta < (worst.approvalDelta ?? 0))) {
+        worst = s;
+      }
+    }
+    return worst;
+  }, [statements]);
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
       {/* Header card */}
@@ -428,13 +711,16 @@ export function PressRoomPage() {
         <p className="text-sm text-text-muted mt-1">
           {view === 'gazette'
             ? 'The Daily Gazette — a recap of each simulation tick'
+            : view === 'briefing'
+            ? 'The press briefing room — where the Agora meets the record'
             : 'Official statements from simulation agents'}
         </p>
       </div>
 
-      {/* View toggle: Statements | Gazette */}
+      {/* View toggle: Briefing Room | Statements | Gazette */}
       <div className="flex flex-wrap gap-2">
         {([
+          { value: 'briefing', label: 'Briefing Room' },
           { value: 'statements', label: 'Statements' },
           { value: 'gazette', label: 'Daily Gazette' },
         ] as Array<{ value: PressView; label: string }>).map((opt) => (
@@ -451,6 +737,9 @@ export function PressRoomPage() {
           </button>
         ))}
       </div>
+
+      {/* Briefing Room view */}
+      {view === 'briefing' && <BriefingRoomTab statements={statements} />}
 
       {/* Gazette view */}
       {view === 'gazette' && <GazetteSection />}
@@ -489,6 +778,10 @@ export function PressRoomPage() {
         </div>
       ) : (
         <>
+          <BiggestMovers movers={movers} />
+
+          {backfired && <BackfiredCallout statement={backfired} />}
+
           <div className="space-y-4">
             {statements.map((s) => (
               <StatementCard key={s.id} statement={s} />

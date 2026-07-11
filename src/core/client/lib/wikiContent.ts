@@ -821,7 +821,7 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       {
         id: 'architecture',
         heading: 'Architecture',
-        body: 'Bob runs on DGX Spark 2 at 10.0.0.69, using Claude Sonnet via OpenRouter. It operates on a cron loop: observe the simulation state, apply AGGE personality nudges to 1-3 agents, decide whether other interventions are warranted, and log all reasoning.',
+        body: 'Bob runs on a dedicated compute node, using Claude Sonnet via OpenRouter. It operates on a cron loop: observe the simulation state, apply AGGE personality nudges to 1-3 agents, decide whether other interventions are warranted, and log all reasoning.',
       },
       {
         id: 'observe',

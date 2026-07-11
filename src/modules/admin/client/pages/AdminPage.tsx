@@ -14,9 +14,10 @@ import type { IconProps } from '@core/client/components/icons';
 
 type AdminTab = 'overview' | 'simulation' | 'government' | 'agents' | 'providers' | 'access' | 'users' | 'database' | 'experiments' | 'agge' | 'weights' | 'health';
 
+/* Internal inference hosts are configured via the URL field / env var, not
+   shipped as presets — keep internal addresses out of the public bundle. */
 const URL_PRESETS = [
-  { label: 'bspark2 vLLM (default)', url: 'http://10.0.0.169:8000/v1' },
-  { label: 'bspark1 vLLM', url: 'http://10.0.0.69:8000/v1' },
+  { label: 'Local vLLM', url: 'http://localhost:8000/v1' },
   { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { label: 'Anthropic', url: 'https://api.anthropic.com/v1' },
   { label: 'OpenAI', url: 'https://api.openai.com/v1' },

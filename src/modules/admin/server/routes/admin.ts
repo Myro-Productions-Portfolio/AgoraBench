@@ -37,6 +37,11 @@ export function toCSV(headers: string[], rows: (string | number | boolean | null
 /* All /admin/* routes are owner-only */
 router.use('/admin', requireOwner);
 
+/* /god/* routes fall outside the /admin prefix above — give them the same
+   router-level owner backstop (defense in depth; per-route requireOwner
+   guards on each /god handler are kept too). */
+router.use('/god', requireOwner);
+
 router.use(healthRouter);
 
 /* GET /api/admin/status — simulation state + decision stats */

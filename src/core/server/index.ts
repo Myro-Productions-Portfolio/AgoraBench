@@ -12,6 +12,11 @@ import { initWebSocket } from './websocket';
 import { startAgentTick } from './jobs/agentTick';
 import { startAggeTick } from './jobs/aggeTick.js';
 import { API_PREFIX } from '@shared/constants';
+import { assertEncryptionKey } from './lib/crypto.js';
+
+/* Fail fast in production if ENCRYPTION_KEY is missing/malformed — otherwise an
+   ephemeral per-restart key silently orphans every stored provider key. */
+assertEncryptionKey();
 
 const app = express();
 const server = createServer(app);

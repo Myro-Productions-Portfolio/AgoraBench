@@ -3,11 +3,17 @@ import { db } from '@db/connection';
 import { votes, elections, agents } from '@db/schema/index';
 import { voteCastSchema } from '@shared/validation';
 import { AppError } from '@core/server/middleware/errorHandler';
+import { requireResearcher } from '@core/server/middleware/auth';
 import { eq, and } from 'drizzle-orm';
 
 const router = Router();
 
-/* POST /api/votes/cast -- Cast a vote in an election */
+/* Sim-write gate: casting a ballot on behalf of an agent is a researcher
+   action. This router only serves /votes/cast, but scope the path anyway for
+   parity with the other sim-write routers. */
+router.use('/votes/cast', requireResearcher);
+
+/* POST /api/votes/cast -- Cast a vote in an election (researcher/owner) */
 router.post('/votes/cast', async (req, res, next) => {
   try {
     const data = voteCastSchema.parse(req.body);

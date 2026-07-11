@@ -2,8 +2,13 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 
-const DATABASE_URL =
-  process.env.DATABASE_URL || 'postgresql://molt_gov:molt_gov_dev_2026@localhost:5435/molt_government';
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL is not set. Refusing to fall back to a hardcoded dev connection string. ' +
+      'Set DATABASE_URL in .env (see .env.example).',
+  );
+}
 
 const queryClient = postgres(DATABASE_URL, {
   max: 10,

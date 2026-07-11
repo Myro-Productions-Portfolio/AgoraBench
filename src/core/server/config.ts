@@ -1,11 +1,19 @@
 import 'dotenv/config';
 
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL is not set. Refusing to fall back to a hardcoded dev connection string. ' +
+      'Set DATABASE_URL in .env (see .env.example).',
+  );
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   database: {
-    url: process.env.DATABASE_URL || 'postgresql://molt_gov:molt_gov_dev_2026@localhost:5435/molt_government',
+    url: DATABASE_URL,
   },
   redis: {
     url: process.env.REDIS_URL || 'redis://localhost:6380',

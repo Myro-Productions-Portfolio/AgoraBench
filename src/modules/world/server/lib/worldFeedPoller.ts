@@ -15,6 +15,7 @@
 // module's try/catch per source is a second line of defense against a future
 // change to one of them regressing that guarantee.
 
+import { lt } from 'drizzle-orm';
 import { db } from '@db/connection';
 import { worldEvents } from '@db/schema/index';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
@@ -111,4 +112,34 @@ export async function pollWorldEvents(): Promise<{ inserted: number; errors: str
   // gdelt.ts adapter exists.
 
   return { inserted, errors };
+}
+
+/** Null = sweep disabled (retention 0/invalid); otherwise the fetched_at cutoff. */
+export function retentionCutoff(retentionDays: number, now: Date): Date | null {
+  if (!Number.isFinite(retentionDays) || retentionDays <= 0) return null;
+  return new Date(now.getTime() - retentionDays * 86_400_000);
+}
+
+/**
+ * Hard-delete rows fetched more than rc.worldEventsRetentionDays ago
+ * (docs/specs/world-events-retention.md §1.2). Keyed on fetchedAt, not
+ * occurredAt: OpenFEMA serves its 25 newest declarations regardless of age,
+ * so occurredAt-keyed deletes would churn them every poll. status is never
+ * written here -- that lifecycle belongs to the AGGE curation slice.
+ * Never throws (same contract as pollWorldEvents).
+ */
+export async function sweepWorldEvents(): Promise<number> {
+  const rc = getRuntimeConfig();
+  const cutoff = retentionCutoff(rc.worldEventsRetentionDays, new Date());
+  if (cutoff === null) return 0;
+  try {
+    const deleted = await db
+      .delete(worldEvents)
+      .where(lt(worldEvents.fetchedAt, cutoff))
+      .returning({ id: worldEvents.id });
+    return deleted.length;
+  } catch (err) {
+    console.warn('[worldFeedPoller] sweep failed:', err instanceof Error ? err.message : String(err));
+    return 0;
+  }
 }

@@ -191,6 +191,8 @@ interface RuntimeConfig {
   worldEventsInjectionEnabled: boolean;
   worldEventsRecencyHours: number;
   worldEventsMinSeverity: number;
+  worldMapRecencyHours: number;
+  worldEventsRetentionDays: number;
   /* Fiscal Consequence Loop */
   fiscalConsequenceEnabled: boolean;
   fiscalApprovalDebtWeight: number;
@@ -2796,6 +2798,38 @@ export function AdminPage() {
                         />
                       </label>
                     ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Retention &amp; Map Display</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Retention (days)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.worldEventsRetentionDays}</span>
+                      </div>
+                      <input type="number" min={0} max={365} step={1}
+                        value={simConfig.worldEventsRetentionDays}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, worldEventsRetentionDays: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ worldEventsRetentionDays: simConfig.worldEventsRetentionDays })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Rows fetched more than this many days ago are hard-deleted each poll. 0 = never delete; 1–6 clamps up to 7.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Map Window (hours)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.worldMapRecencyHours}</span>
+                      </div>
+                      <input type="number" min={1} max={720} step={1}
+                        value={simConfig.worldMapRecencyHours}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, worldMapRecencyHours: parseInt(e.target.value) || 1 } : c)}
+                        onBlur={() => void saveConfig({ worldMapRecencyHours: simConfig.worldMapRecencyHours })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">The /world choropleth and hotspot rail only aggregate events inside this window. Display-only — independent of the agent-prompt recency window below.</p>
+                    </div>
                   </div>
                 </div>
 

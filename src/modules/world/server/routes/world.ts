@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
 import { worldEvents } from '@db/schema/index';
-import { desc, sql, eq } from 'drizzle-orm';
+import { desc, sql, eq, and, gte } from 'drizzle-orm';
 import { isStateFips } from '@modules/world/server/lib/worldSeverity';
+import { getRuntimeConfig } from '@core/server/runtimeConfig';
 
 const router = Router();
 
@@ -101,6 +102,8 @@ router.get('/world/state-summary', async (req, res, next) => {
     const catParam = String(req.query.category ?? 'all');
     const category = ALLOWED_CATEGORIES.has(catParam) ? catParam : 'all';
     const whereCat = category === 'all' ? sql`TRUE` : sql`category = ${category}`;
+    const windowHours = getRuntimeConfig().worldMapRecencyHours;
+    const since = new Date(Date.now() - windowHours * 3_600_000);
     const rows = await db
       .select({
         location: worldEvents.location,
@@ -109,9 +112,9 @@ router.get('/world/state-summary', async (req, res, next) => {
         topCategory: sql<string>`MODE() WITHIN GROUP (ORDER BY ${worldEvents.category})`,
       })
       .from(worldEvents)
-      .where(whereCat)
+      .where(and(gte(worldEvents.occurredAt, since), whereCat))
       .groupBy(worldEvents.location);
-    res.json({ success: true, data: splitStateAggregates(rows as AggRow[]) });
+    res.json({ success: true, data: { ...splitStateAggregates(rows as AggRow[]), windowHours } });
   } catch (error) {
     next(error);
   }

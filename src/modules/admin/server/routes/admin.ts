@@ -478,6 +478,14 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (werh !== undefined) update.worldEventsRecencyHours = werh;
     const wems = prob('worldEventsMinSeverity');
     if (wems !== undefined) update.worldEventsMinSeverity = wems;
+    const wmrh = posInt('worldMapRecencyHours', 1, 720);
+    if (wmrh !== undefined) update.worldMapRecencyHours = wmrh;
+    // 0 = sweep off; any positive value clamps to 7-365 so retention can never
+    // undercut the 72h prompt window or USGS's 7-day re-serve window.
+    if (typeof body.worldEventsRetentionDays === 'number' && !Number.isNaN(body.worldEventsRetentionDays)) {
+      const v = Math.round(body.worldEventsRetentionDays);
+      update.worldEventsRetentionDays = v <= 0 ? 0 : Math.max(7, Math.min(365, v));
+    }
 
     // Fiscal Consequence Loop — Rule 1: every RuntimeConfig field gets a
     // server handler branch with type check + range clamp, same commit.

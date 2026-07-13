@@ -177,6 +177,8 @@ export interface RuntimeConfig {
   worldEventsInjectionEnabled: boolean;      // master gate for the prompt-injection channel; false = buildWorldEventsBlock() returns '' (deploy dark, independent of worldFeedEnabled)
   worldEventsRecencyHours: number;           // only events within this many hours are eligible (1-168)
   worldEventsMinSeverity: number;            // severity floor 0-1; 0.35 = advisory-tier boundary
+  worldMapRecencyHours: number;              // /world map + state-summary aggregation window (1-720h); spectator display only, independent of worldEventsRecencyHours
+  worldEventsRetentionDays: number;          // hard-delete rows with fetched_at older than N days; 0 = never delete, otherwise 7-365
 
   /* ---- Fiscal Consequence Loop — deployed dark, zero-effect defaults ---- */
   fiscalConsequenceEnabled: boolean;         // master kill switch: fiscal->approval phase is a no-op when false (deploy dark)
@@ -368,6 +370,8 @@ const DEFAULTS: RuntimeConfig = {
   worldEventsInjectionEnabled: false,
   worldEventsRecencyHours: 72,
   worldEventsMinSeverity: 0.35,
+  worldMapRecencyHours: 168,
+  worldEventsRetentionDays: 30,
 
   /* Fiscal Consequence Loop — deployed dark, zero-effect defaults */
   fiscalConsequenceEnabled: false,

@@ -57,6 +57,7 @@ import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember } from '../
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
+import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -4347,6 +4348,29 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 10 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Macro Engine step (E5 world-model Layer 1, docs/specs/world-model.md */
+  /* §2). Deterministic, no LLM. OBSERVE-ONLY: writes world_state, read   */
+  /* by nothing in this slice. Dark by default (rc.macroEngineEnabled).   */
+  /* stepMacroEngine never throws; try/catch here is belt-and-suspenders, */
+  /* mirroring the world-feed block.                                      */
+  /* ------------------------------------------------------------------ */
+  if (rc.macroEngineEnabled && tickNumber % rc.macroStepEveryNTicks === 0) {
+    try {
+      const result = await stepMacroEngine(tickNumber, currentTick?.id ?? null);
+      if (result) {
+        const s = result.state;
+        console.warn(
+          `[SIMULATION] Macro: ${result.seeded ? 'seeded T0' : 'stepped'} — ` +
+          `regime=${s.regime}, g=${s.gdpGrowthPct.toFixed(2)}%, u=${s.unemploymentPct.toFixed(2)}%, ` +
+          `pi=${s.inflationPct.toFixed(2)}%, sent=${s.sentiment.toFixed(1)}`,
+        );
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] Macro step error:', err);
+    }
   }
 
   /* ------------------------------------------------------------------ */

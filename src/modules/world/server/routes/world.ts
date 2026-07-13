@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { worldEvents } from '@db/schema/index';
+import { worldEvents, worldState } from '@db/schema/index';
 import { desc, sql, eq, and, gte } from 'drizzle-orm';
 import { isStateFips } from '@modules/world/server/lib/worldSeverity';
 import { getRuntimeConfig } from '@core/server/runtimeConfig';
@@ -115,6 +115,34 @@ router.get('/world/state-summary', async (req, res, next) => {
       .where(and(gte(worldEvents.occurredAt, since), whereCat))
       .groupBy(worldEvents.location);
     res.json({ success: true, data: { ...splitStateAggregates(rows as AggRow[]), windowHours } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/world/macro -- E5 macro trajectory, newest first. Public,
+   read-only, same posture as /world/events. */
+router.get('/world/macro', async (req, res, next) => {
+  try {
+    const limitParam = Number.parseInt(String(req.query.limit ?? '96'), 10);
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 96;
+    const rows = await db
+      .select({
+        tickNumber: worldState.tickNumber,
+        regime: worldState.regime,
+        gdpAnnualized: worldState.gdpAnnualized,
+        gdpGrowthPct: worldState.gdpGrowthPct,
+        unemploymentPct: worldState.unemploymentPct,
+        inflationPct: worldState.inflationPct,
+        sentiment: worldState.sentiment,
+        fiscalImpulsePct: worldState.fiscalImpulsePct,
+        policyEffectPct: worldState.policyEffectPct,
+        createdAt: worldState.createdAt,
+      })
+      .from(worldState)
+      .orderBy(desc(worldState.tickNumber))
+      .limit(limit);
+    res.json({ success: true, data: { steps: rows } });
   } catch (error) {
     next(error);
   }

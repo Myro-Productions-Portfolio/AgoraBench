@@ -40,6 +40,7 @@ interface StateSummaryResponse {
   states: StateAgg[];
   coastal: StateAgg[];
   nationwide: { totalAlerts: number; statesWithAlerts: number };
+  windowHours?: number;
 }
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
@@ -351,6 +352,7 @@ export function WorldPage() {
                 <p className="font-serif text-4xl font-semibold text-stone mt-1">{summary.nationwide.totalAlerts}</p>
                 <p className="text-xs text-text-muted mt-1">
                   active alert{summary.nationwide.totalAlerts === 1 ? '' : 's'} across {summary.nationwide.statesWithAlerts} state{summary.nationwide.statesWithAlerts === 1 ? '' : 's'}
+                  {summary.windowHours ? ` · past ${summary.windowHours >= 48 ? `${Math.round(summary.windowHours / 24)} days` : `${summary.windowHours}h`}` : ''}
                 </p>
               </div>
 

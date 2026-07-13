@@ -4,7 +4,7 @@
 // in this slice.
 import { db } from '@db/connection';
 import { worldState, laws } from '@db/schema/index';
-import { desc, eq, and, isNotNull } from 'drizzle-orm';
+import { desc, isNotNull } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import {
   seedMacroState, stepMacro,
@@ -39,7 +39,18 @@ function paramsFromConfig(): MacroParams {
 /** Fiscal stance from structured law columns (never LLM text).
     purchasesSince: one-time spends enacted after sinceTick (spend_once $).
     recurringAnnualized: current annualized recurring+mandatory total.
-    taxDeltaSince: net signed tax-point changes enacted after sinceTick. */
+    taxDeltaSince: net signed tax-point changes enacted after sinceTick.
+
+    Call-site ordering is load-bearing: the macro step must run AFTER Phase 9
+    enactment in the tick — enactedTick is stamped with the current tick, so
+    the (sinceTick, now] window counts a step-tick enactment exactly once
+    only if this runs post-Phase-9.
+
+    isActive gates ONLY the recurring accumulation. spend_once/tax_change are
+    one-shot effects applied at enactment (Phase 9) and never reversed by a
+    Phase 10 strike-down (which only flips isActive=false) — a law struck
+    within the same macro window must still count for that window, so those
+    two branches are windowed by enactedTick alone, regardless of isActive. */
 async function readFiscalStance(sinceTick: number, ticksPerDay: number) {
   const rows = await db
     .select({
@@ -47,13 +58,14 @@ async function readFiscalStance(sinceTick: number, ticksPerDay: number) {
       fiscalAmount: laws.fiscalAmount,
       fiscalTaxDelta: laws.fiscalTaxDelta,
       programActive: laws.programActive,
+      isActive: laws.isActive,
       enactedTick: laws.enactedTick,
     })
     .from(laws)
-    .where(and(isNotNull(laws.fiscalKind), eq(laws.isActive, true)));
+    .where(isNotNull(laws.fiscalKind));
   let purchasesSince = 0, recurringAnnualized = 0, taxDeltaSince = 0;
   for (const r of rows) {
-    if ((r.fiscalKind === 'spend_recurring' || r.fiscalKind === 'mandatory') && r.programActive) {
+    if ((r.fiscalKind === 'spend_recurring' || r.fiscalKind === 'mandatory') && r.programActive && r.isActive) {
       recurringAnnualized += (r.fiscalAmount ?? 0) * ticksPerDay * 365;
     }
     if (r.fiscalKind === 'spend_once' && (r.enactedTick ?? 0) > sinceTick) {

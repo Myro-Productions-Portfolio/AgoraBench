@@ -121,6 +121,26 @@ describe('stepMacroEngine', () => {
     expect(insertCalls).toBe(1);
   });
 
+  it('seeds T0 with fiscalImpulsePct=0 and recurringStanceAnnualized from mocked laws', async () => {
+    const recurringLaw = {
+      fiscalKind: 'spend_recurring',
+      fiscalAmount: 2_000_000,
+      fiscalTaxDelta: null,
+      programActive: true,
+      isActive: true,
+      enactedTick: 0,
+    };
+    const ticksPerDay = Math.max(1, Math.round(86_400_000 / (baseRc().tickIntervalMs as number)));
+    const expectedRecurring = 2_000_000 * ticksPerDay * 365;
+    queryResults = [[], [recurringLaw]]; // no prior world_state row, one recurring law
+    const { stepMacroEngine } = await loadEngine();
+    const result = await stepMacroEngine(1, 'tick-1');
+    expect(result).not.toBeNull();
+    expect(insertedValues).not.toBeNull();
+    expect(insertedValues!.fiscalImpulsePct as number).toBe(0);
+    expect(insertedValues!.recurringStanceAnnualized as number).toBe(expectedRecurring);
+  });
+
   it('steps from a prior row, advancing rngSeed', async () => {
     const prior = priorRow();
     queryResults = [[prior], []]; // prior row, no active laws
@@ -139,11 +159,30 @@ describe('stepMacroEngine', () => {
       fiscalAmount: 1_000_000,
       fiscalTaxDelta: null,
       programActive: true,
+      isActive: true,
       enactedTick: 50,
     };
     queryResults = [[prior], [activeLaw]];
     const { stepMacroEngine } = await loadEngine();
     const result = await stepMacroEngine(101, 'tick-101');
+    expect(result).not.toBeNull();
+    expect(insertedValues).not.toBeNull();
+    expect(insertedValues!.fiscalImpulsePct as number).toBeGreaterThan(0);
+  });
+
+  it('counts a struck one-shot enacted inside the window (survives Phase 10 strike-down)', async () => {
+    const prior = priorRow({ recurringStanceAnnualized: 0 });
+    const struckLaw = {
+      fiscalKind: 'spend_once',
+      fiscalAmount: 50_000_000_000,
+      fiscalTaxDelta: null,
+      programActive: false,
+      isActive: false,
+      enactedTick: 101,
+    };
+    queryResults = [[prior], [struckLaw]];
+    const { stepMacroEngine } = await loadEngine();
+    const result = await stepMacroEngine(150, 'tick-150');
     expect(result).not.toBeNull();
     expect(insertedValues).not.toBeNull();
     expect(insertedValues!.fiscalImpulsePct as number).toBeGreaterThan(0);

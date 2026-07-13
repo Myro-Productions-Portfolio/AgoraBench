@@ -487,6 +487,51 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.worldEventsRetentionDays = v <= 0 ? 0 : Math.max(7, Math.min(365, v));
     }
 
+    /* Macro Engine (E5) -- Rule 1: every field gets a type check + clamp, same commit */
+    if (typeof body.macroEngineEnabled === 'boolean') update.macroEngineEnabled = body.macroEngineEnabled;
+    const msent = posInt('macroStepEveryNTicks', 1, 96);
+    if (msent !== undefined) update.macroStepEveryNTicks = msent;
+    const mseed = posInt('macroRngSeedInit', 1, 2_147_483_646);
+    if (mseed !== undefined) update.macroRngSeedInit = mseed;
+    const mrh = prob('macroRecessionHazardMonthly');
+    if (mrh !== undefined) update.macroRecessionHazardMonthly = mrh;
+    const mvh = prob('macroRecoveryHazardMonthly');
+    if (mvh !== undefined) update.macroRecoveryHazardMonthly = mvh;
+    const mte = num('macroGdpTrendExpansionPct', 0, 8);
+    if (mte !== undefined) update.macroGdpTrendExpansionPct = mte;
+    const mtr = num('macroGdpTrendRecessionPct', -10, 0);
+    if (mtr !== undefined) update.macroGdpTrendRecessionPct = mtr;
+    const mgp = num('macroGdpPhiQuarterly', 0, 0.95);
+    if (mgp !== undefined) update.macroGdpPhiQuarterly = mgp;
+    const mgs = num('macroGdpShockSigmaPct', 0, 2);
+    if (mgs !== undefined) update.macroGdpShockSigmaPct = mgs;
+    const mok = num('macroOkunCoeff', 0, 1.5);
+    if (mok !== undefined) update.macroOkunCoeff = mok;
+    const mnu = num('macroNaturalUnemploymentPct', 2, 8);
+    if (mnu !== undefined) update.macroNaturalUnemploymentPct = mnu;
+    const muf = num('macroUnemploymentFloorPct', 0.5, 4);
+    if (muf !== undefined) update.macroUnemploymentFloorPct = muf;
+    const mpn = num('macroPhillipsSlopeNormal', 0, 1);
+    if (mpn !== undefined) update.macroPhillipsSlopeNormal = mpn;
+    const mpt = num('macroPhillipsSlopeTight', 0, 3);
+    if (mpt !== undefined) update.macroPhillipsSlopeTight = mpt;
+    const mth = num('macroPhillipsTightThresholdPct', 2, 6);
+    if (mth !== undefined) update.macroPhillipsTightThresholdPct = mth;
+    const mip = num('macroInflationPhiQuarterly', 0, 0.95);
+    if (mip !== undefined) update.macroInflationPhiQuarterly = mip;
+    const mia = num('macroInflationAnchorPct', 0, 6);
+    if (mia !== undefined) update.macroInflationAnchorPct = mia;
+    const mmp = num('macroMultiplierPurchases', 0, 3);
+    if (mmp !== undefined) update.macroMultiplierPurchases = mmp;
+    const mmt = num('macroMultiplierTransfers', 0, 3);
+    if (mmt !== undefined) update.macroMultiplierTransfers = mmt;
+    const mmx = num('macroMultiplierTax', 0, 3);
+    if (mmx !== undefined) update.macroMultiplierTax = mmx;
+    const mms = num('macroMultiplierRecessionScale', 1, 3);
+    if (mms !== undefined) update.macroMultiplierRecessionScale = mms;
+    const msa = num('macroSentimentAdjustSpeed', 0.001, 1);
+    if (msa !== undefined) update.macroSentimentAdjustSpeed = msa;
+
     // Fiscal Consequence Loop — Rule 1: every RuntimeConfig field gets a
     // server handler branch with type check + range clamp, same commit.
     // fiscalConsequenceEnabled is the master kill switch: false (default)

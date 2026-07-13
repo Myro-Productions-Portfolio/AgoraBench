@@ -180,6 +180,30 @@ export interface RuntimeConfig {
   worldMapRecencyHours: number;              // /world map + state-summary aggregation window (1-720h); spectator display only, independent of worldEventsRecencyHours
   worldEventsRetentionDays: number;          // hard-delete rows with fetched_at older than N days; 0 = never delete, otherwise 7-365
 
+  /* ---- Macro Engine (E5 world-model Layer 1) ---- */
+  macroEngineEnabled: boolean;              // master switch; false = engine fully dormant (deploy dark)
+  macroStepEveryNTicks: number;             // step cadence in ticks; 16 = daily at 90-min ticks (1-96)
+  macroRngSeedInit: number;                 // first seed of the deterministic PRNG chain (change = new universe)
+  macroRecessionHazardMonthly: number;      // P(expansion->recession)/month; NBER postwar 0.0156
+  macroRecoveryHazardMonthly: number;       // P(recession->expansion)/month; NBER postwar 0.0971
+  macroGdpTrendExpansionPct: number;        // trend growth g* in expansion, %/yr
+  macroGdpTrendRecessionPct: number;        // trend growth g* in recession, %/yr (negative)
+  macroGdpPhiQuarterly: number;             // AR(1) persistence of growth, quarterly (0-0.95)
+  macroGdpShockSigmaPct: number;            // sd of daily growth innovation, annualized pp
+  macroOkunCoeff: number;                   // du = -okun * (g - g*) / 365; consensus 0.45
+  macroNaturalUnemploymentPct: number;      // u* (CBO NAIRU-style anchor)
+  macroUnemploymentFloorPct: number;        // hard floor on u
+  macroPhillipsSlopeNormal: number;         // pi response to (u* - u), normal labor market, per quarter
+  macroPhillipsSlopeTight: number;          // steepened slope when u < tight threshold
+  macroPhillipsTightThresholdPct: number;   // u below this = tight labor market
+  macroInflationPhiQuarterly: number;       // AR(1) persistence of inflation toward anchor, quarterly
+  macroInflationAnchorPct: number;          // long-run expectations anchor (Fed target 2.0)
+  macroMultiplierPurchases: number;         // CBO central 1.5 (range 0.5-2.5) for spend_once
+  macroMultiplierTransfers: number;         // CBO/DSGE-family central for recurring/mandatory
+  macroMultiplierTax: number;               // flat (state-INdependent: Ramey 2019 - tax multipliers higher in EXPANSIONS, so no recession boost)
+  macroMultiplierRecessionScale: number;    // scale on SPENDING multipliers in recession (A&G 2012 direction; Ramey calls it fragile - keep modest)
+  macroSentimentAdjustSpeed: number;        // daily partial-adjustment rate of sentiment toward its target (0-1)
+
   /* ---- Fiscal Consequence Loop — deployed dark, zero-effect defaults ---- */
   fiscalConsequenceEnabled: boolean;         // master kill switch: fiscal->approval phase is a no-op when false (deploy dark)
   fiscalApprovalDebtWeight: number;          // debt/GDP -> approval strength (0-50)
@@ -372,6 +396,30 @@ const DEFAULTS: RuntimeConfig = {
   worldEventsMinSeverity: 0.35,
   worldMapRecencyHours: 168,
   worldEventsRetentionDays: 30,
+
+  /* Macro Engine (E5 world-model Layer 1) */
+  macroEngineEnabled: false,
+  macroStepEveryNTicks: 16,
+  macroRngSeedInit: 20260713,
+  macroRecessionHazardMonthly: 0.0156,
+  macroRecoveryHazardMonthly: 0.0971,
+  macroGdpTrendExpansionPct: 2.25,
+  macroGdpTrendRecessionPct: -2.0,
+  macroGdpPhiQuarterly: 0.35,
+  macroGdpShockSigmaPct: 0.15,
+  macroOkunCoeff: 0.45,
+  macroNaturalUnemploymentPct: 4.4,
+  macroUnemploymentFloorPct: 2.0,
+  macroPhillipsSlopeNormal: 0.18,
+  macroPhillipsSlopeTight: 1.1,
+  macroPhillipsTightThresholdPct: 4.0,
+  macroInflationPhiQuarterly: 0.6,
+  macroInflationAnchorPct: 2.0,
+  macroMultiplierPurchases: 1.5,
+  macroMultiplierTransfers: 0.9,
+  macroMultiplierTax: 0.7,
+  macroMultiplierRecessionScale: 1.6,
+  macroSentimentAdjustSpeed: 0.05,
 
   /* Fiscal Consequence Loop — deployed dark, zero-effect defaults */
   fiscalConsequenceEnabled: false,

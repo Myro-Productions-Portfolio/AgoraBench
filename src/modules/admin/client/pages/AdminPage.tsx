@@ -193,6 +193,29 @@ interface RuntimeConfig {
   worldEventsMinSeverity: number;
   worldMapRecencyHours: number;
   worldEventsRetentionDays: number;
+  /* Macro Engine (E5 world-model Layer 1) */
+  macroEngineEnabled: boolean;
+  macroStepEveryNTicks: number;
+  macroRngSeedInit: number;
+  macroRecessionHazardMonthly: number;
+  macroRecoveryHazardMonthly: number;
+  macroGdpTrendExpansionPct: number;
+  macroGdpTrendRecessionPct: number;
+  macroGdpPhiQuarterly: number;
+  macroGdpShockSigmaPct: number;
+  macroOkunCoeff: number;
+  macroNaturalUnemploymentPct: number;
+  macroUnemploymentFloorPct: number;
+  macroPhillipsSlopeNormal: number;
+  macroPhillipsSlopeTight: number;
+  macroPhillipsTightThresholdPct: number;
+  macroInflationPhiQuarterly: number;
+  macroInflationAnchorPct: number;
+  macroMultiplierPurchases: number;
+  macroMultiplierTransfers: number;
+  macroMultiplierTax: number;
+  macroMultiplierRecessionScale: number;
+  macroSentimentAdjustSpeed: number;
   /* Fiscal Consequence Loop */
   fiscalConsequenceEnabled: boolean;
   fiscalApprovalDebtWeight: number;
@@ -2872,6 +2895,345 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       />
                       <p className="text-xs text-text-muted">Severity floor. 0.35 = advisory tier; 0.55 = warning; 0.75 = severe-only. Below the floor, an event is noise a national legislature would not register.</p>
+                    </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Macro Engine (E5 world-model Layer 1) — deployed dark */}
+            {simConfig && (
+              <CollapsibleSection
+                id="macro_engine"
+                title="Macro Engine"
+                subtitle="E5 world-model Layer 1 — regime/GDP/unemployment/inflation/sentiment. Observe-only: writes world_state, reads nothing into prompts or money. Deployed dark."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Macro Engine Enabled (master switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.macroEngineEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, macroEngineEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ macroEngineEnabled: simConfig.macroEngineEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, the engine is fully dormant — no stepping, no world_state writes.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Step Cadence (ticks)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.macroStepEveryNTicks}</span>
+                    </div>
+                    <input type="number" min={1} max={96} step={1}
+                      value={simConfig.macroStepEveryNTicks}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, macroStepEveryNTicks: parseInt(e.target.value) || 1 } : c)}
+                      onBlur={() => void saveConfig({ macroStepEveryNTicks: simConfig.macroStepEveryNTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">How often (in ticks) the engine steps. 16 = daily at 90-min ticks.</p>
+                  </div>
+                  <div className="space-y-2 max-w-xs mt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">RNG Seed (init)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.macroRngSeedInit}</span>
+                    </div>
+                    <input type="number" min={1} max={2_147_483_646} step={1}
+                      value={simConfig.macroRngSeedInit}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, macroRngSeedInit: parseInt(e.target.value) || 1 } : c)}
+                      onBlur={() => void saveConfig({ macroRngSeedInit: simConfig.macroRngSeedInit })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">First seed of the deterministic PRNG chain. Changing this starts a new universe.</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Regime Hazards</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Recession Hazard (monthly)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroRecessionHazardMonthly}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.01}
+                        value={simConfig.macroRecessionHazardMonthly}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroRecessionHazardMonthly: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroRecessionHazardMonthly: simConfig.macroRecessionHazardMonthly })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">P(expansion→recession) per month. NBER postwar average 0.0156.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Recovery Hazard (monthly)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroRecoveryHazardMonthly}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.01}
+                        value={simConfig.macroRecoveryHazardMonthly}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroRecoveryHazardMonthly: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroRecoveryHazardMonthly: simConfig.macroRecoveryHazardMonthly })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">P(recession→expansion) per month. NBER postwar average 0.0971.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">GDP Growth</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Trend Growth, Expansion (%/yr)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroGdpTrendExpansionPct}</span>
+                      </div>
+                      <input type="number" min={0} max={8} step={0.01}
+                        value={simConfig.macroGdpTrendExpansionPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroGdpTrendExpansionPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroGdpTrendExpansionPct: simConfig.macroGdpTrendExpansionPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Trend growth g* while in expansion.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Trend Growth, Recession (%/yr)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroGdpTrendRecessionPct}</span>
+                      </div>
+                      <input type="number" min={-10} max={0} step={0.01}
+                        value={simConfig.macroGdpTrendRecessionPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroGdpTrendRecessionPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroGdpTrendRecessionPct: simConfig.macroGdpTrendRecessionPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Trend growth g* while in recession (negative).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Growth AR(1) Persistence (quarterly)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroGdpPhiQuarterly}</span>
+                      </div>
+                      <input type="number" min={0} max={0.95} step={0.01}
+                        value={simConfig.macroGdpPhiQuarterly}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroGdpPhiQuarterly: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroGdpPhiQuarterly: simConfig.macroGdpPhiQuarterly })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">AR(1) persistence of growth, quarterly.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Growth Shock Sigma (annualized pp)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroGdpShockSigmaPct}</span>
+                      </div>
+                      <input type="number" min={0} max={2} step={0.01}
+                        value={simConfig.macroGdpShockSigmaPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroGdpShockSigmaPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroGdpShockSigmaPct: simConfig.macroGdpShockSigmaPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Standard deviation of daily growth innovation, annualized pp.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Unemployment (Okun / NAIRU)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Okun Coefficient</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroOkunCoeff}</span>
+                      </div>
+                      <input type="number" min={0} max={1.5} step={0.01}
+                        value={simConfig.macroOkunCoeff}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroOkunCoeff: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroOkunCoeff: simConfig.macroOkunCoeff })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">du = -okun × (g - g*) / 365. Consensus value 0.45.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Natural Unemployment (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroNaturalUnemploymentPct}</span>
+                      </div>
+                      <input type="number" min={2} max={8} step={0.01}
+                        value={simConfig.macroNaturalUnemploymentPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroNaturalUnemploymentPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroNaturalUnemploymentPct: simConfig.macroNaturalUnemploymentPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">u* — CBO NAIRU-style anchor.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Unemployment Floor (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroUnemploymentFloorPct}</span>
+                      </div>
+                      <input type="number" min={0.5} max={4} step={0.01}
+                        value={simConfig.macroUnemploymentFloorPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroUnemploymentFloorPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroUnemploymentFloorPct: simConfig.macroUnemploymentFloorPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Hard floor on u — unemployment can never drop below this.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Phillips Curve</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Phillips Slope, Normal (per quarter)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroPhillipsSlopeNormal}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.01}
+                        value={simConfig.macroPhillipsSlopeNormal}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroPhillipsSlopeNormal: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroPhillipsSlopeNormal: simConfig.macroPhillipsSlopeNormal })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Inflation response to (u* - u) in a normal labor market.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Phillips Slope, Tight (per quarter)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroPhillipsSlopeTight}</span>
+                      </div>
+                      <input type="number" min={0} max={3} step={0.01}
+                        value={simConfig.macroPhillipsSlopeTight}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroPhillipsSlopeTight: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroPhillipsSlopeTight: simConfig.macroPhillipsSlopeTight })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Steepened slope once the labor market is tight.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Tight-Market Threshold (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroPhillipsTightThresholdPct}</span>
+                      </div>
+                      <input type="number" min={2} max={6} step={0.01}
+                        value={simConfig.macroPhillipsTightThresholdPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroPhillipsTightThresholdPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroPhillipsTightThresholdPct: simConfig.macroPhillipsTightThresholdPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Unemployment below this counts as a tight labor market.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Inflation</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Inflation AR(1) Persistence (quarterly)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroInflationPhiQuarterly}</span>
+                      </div>
+                      <input type="number" min={0} max={0.95} step={0.01}
+                        value={simConfig.macroInflationPhiQuarterly}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroInflationPhiQuarterly: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroInflationPhiQuarterly: simConfig.macroInflationPhiQuarterly })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">AR(1) persistence of inflation toward its anchor, quarterly.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Inflation Anchor (%)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroInflationAnchorPct}</span>
+                      </div>
+                      <input type="number" min={0} max={6} step={0.01}
+                        value={simConfig.macroInflationAnchorPct}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroInflationAnchorPct: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroInflationAnchorPct: simConfig.macroInflationAnchorPct })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Long-run expectations anchor. Fed target is 2.0.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-text-muted uppercase tracking-wide mb-4">Fiscal Multipliers</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Multiplier, Purchases</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroMultiplierPurchases}</span>
+                      </div>
+                      <input type="number" min={0} max={3} step={0.05}
+                        value={simConfig.macroMultiplierPurchases}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroMultiplierPurchases: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroMultiplierPurchases: simConfig.macroMultiplierPurchases })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">CBO central 1.5 (range 0.5–2.5) for one-time spending.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Multiplier, Transfers</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroMultiplierTransfers}</span>
+                      </div>
+                      <input type="number" min={0} max={3} step={0.05}
+                        value={simConfig.macroMultiplierTransfers}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroMultiplierTransfers: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroMultiplierTransfers: simConfig.macroMultiplierTransfers })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">CBO/DSGE-family central multiplier for recurring/mandatory spending.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Multiplier, Tax</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroMultiplierTax}</span>
+                      </div>
+                      <input type="number" min={0} max={3} step={0.05}
+                        value={simConfig.macroMultiplierTax}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroMultiplierTax: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroMultiplierTax: simConfig.macroMultiplierTax })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Flat, state-independent — Ramey 2019 finds tax multipliers higher in expansions, so no recession boost is applied here.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Multiplier, Recession Scale</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroMultiplierRecessionScale}</span>
+                      </div>
+                      <input type="number" min={1} max={3} step={0.05}
+                        value={simConfig.macroMultiplierRecessionScale}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroMultiplierRecessionScale: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroMultiplierRecessionScale: simConfig.macroMultiplierRecessionScale })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Scale on spending multipliers during recession (Auerbach &amp; Gorodnichenko direction; Ramey calls this fragile — kept modest).</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Sentiment Adjust Speed</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.macroSentimentAdjustSpeed}</span>
+                      </div>
+                      <input type="number" min={0} max={1} step={0.01}
+                        value={simConfig.macroSentimentAdjustSpeed}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, macroSentimentAdjustSpeed: parseFloat(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ macroSentimentAdjustSpeed: simConfig.macroSentimentAdjustSpeed })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Daily partial-adjustment rate of sentiment toward its target.</p>
                     </div>
                   </div>
                 </div>

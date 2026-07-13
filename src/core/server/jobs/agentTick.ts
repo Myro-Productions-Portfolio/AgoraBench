@@ -56,7 +56,7 @@ import { finalizeElection } from '@modules/elections/server/finalizeElection.js'
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
-import { pollWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
+import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -6251,8 +6251,9 @@ agentTickQueue.process(async () => {
   if (rc.worldFeedEnabled && tickNumber % rc.worldFeedPollTicks === 0) {
     try {
       const { inserted, errors } = await pollWorldEvents();
+      const swept = await sweepWorldEvents();
       console.warn(
-        `[SIMULATION] World events: pulled ${inserted} event(s)` +
+        `[SIMULATION] World events: pulled ${inserted} event(s), swept ${swept} aged row(s)` +
         (errors.length > 0 ? ` (${errors.length} source error(s): ${errors.join('; ')})` : ''),
       );
     } catch (err) {

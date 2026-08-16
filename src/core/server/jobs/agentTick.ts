@@ -58,6 +58,7 @@ import { runAppointment, getSittingPresident } from '@modules/government/server/
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
+import { staleRepeatableKeys } from '../lib/tickReconcile.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -6504,16 +6505,27 @@ agentTickQueue.process(async () => {
 
 export function startAgentTick(): void {
   const rc = getRuntimeConfig();
-  agentTickQueue
-    .add({}, {
-      repeat: { every: rc.tickIntervalMs },
-      removeOnComplete: 10,
-      removeOnFail: 5,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-    })
-    .catch((err: unknown) => console.error('[SIMULATION] Failed to add tick job:', err));
-  console.warn(`[SIMULATION] Agent tick started — interval: ${rc.tickIntervalMs}ms`);
+  (async () => {
+    // Reconcile first: a boot under a changed config value must not leave a
+    // stale repeatable (different `every`) running alongside the new one.
+    const jobs = await agentTickQueue.getRepeatableJobs();
+    const staleKeys = staleRepeatableKeys(jobs, rc.tickIntervalMs);
+    for (const key of staleKeys) {
+      await agentTickQueue.removeRepeatableByKey(key);
+      console.warn(`[SIMULATION] Removed stale repeatable tick job: ${key}`);
+    }
+    const alreadyCurrent = jobs.length > staleKeys.length;
+    if (!alreadyCurrent) {
+      await agentTickQueue.add({}, {
+        repeat: { every: rc.tickIntervalMs },
+        removeOnComplete: 10,
+        removeOnFail: 5,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+      });
+    }
+    console.warn(`[SIMULATION] Agent tick started — interval: ${rc.tickIntervalMs}ms`);
+  })().catch((err: unknown) => console.error('[SIMULATION] Failed to start tick job:', err));
 }
 
 export async function changeTickInterval(newIntervalMs: number): Promise<void> {

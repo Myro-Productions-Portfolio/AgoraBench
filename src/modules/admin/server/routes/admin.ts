@@ -587,6 +587,11 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
       update.electoralCollegeEnabled = body.electoralCollegeEnabled;
     }
 
+    // Elections Revival (minimal slice) — 0 = disabled (deploy dark default,
+    // byte-identical to today's suppress-while-seated behavior).
+    const pTermTicks = posInt('presidentTermTicks', 0, 100_000);
+    if (pTermTicks !== undefined) update.presidentTermTicks = pTermTicks;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

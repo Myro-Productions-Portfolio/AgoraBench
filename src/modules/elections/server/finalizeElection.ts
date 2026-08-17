@@ -4,7 +4,10 @@
  * election by real cast ballots (E3 slice A — see docs/specs/simulation-
  * completeness.md §A), inserts a positions row, vacates any lower office the
  * winner already holds, updates agent stats, runs the approval + relationship
- * cascade, and broadcasts activity events.
+ * cascade, and broadcasts activity events. Also vacates an outgoing SITTING
+ * president who lost re-election (elections revival minimal slice) — the one
+ * case where the winner and the current holder of the same singleton office
+ * can differ.
  *
  * Tally source: `votes` rows for this election, grouped by candidateId (see
  * electionMath.tallyElectionVotes). `campaigns.contributions` is no longer
@@ -293,6 +296,35 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
      existing vacancy auto-fill on the next tick (congress: reputation-rank
      fill; president: re-election trigger) — this helper only marks them
      inactive, it never appoints a replacement itself. */
+  /* Outgoing-incumbent handoff (elections revival minimal slice): 'president'
+     is the one singleton office reachable via this helper where the SAME
+     type can now be won by someone OTHER than its current holder — a
+     presidential election used to only ever fire when there was no sitting
+     president (structurally impossible for this to happen), but the term-
+     expiry trigger keeps the incumbent seated through the whole election, so
+     they can now lose to a challenger. getSeatsToVacate only vacates the
+     WINNER's own lower offices, not a same-rank seat held by someone else,
+     so that path leaves the outgoing president's row active — deactivate it
+     explicitly here. Scoped to 'president' only: congress_member/
+     cabinet_secretary/etc. are multi-seat, not singleton, so blanket-
+     deactivating "the other active row of this type" would wrongly evict
+     every other sitting officeholder of that type. */
+  if (election.positionType === 'president') {
+    const outgoingPresident = await db
+      .select({ id: positions.id, agentId: positions.agentId })
+      .from(positions)
+      .where(and(eq(positions.type, 'president'), eq(positions.isActive, true)))
+      .limit(1);
+    const outgoing = outgoingPresident[0];
+    if (outgoing && outgoing.agentId !== winner.agentId) {
+      await db
+        .update(positions)
+        .set({ isActive: false, endDate: now })
+        .where(eq(positions.id, outgoing.id));
+      console.warn(`[FINALIZE] Outgoing president (agent ${outgoing.agentId}) vacated on ${winnerName}'s win.`);
+    }
+  }
+
   const seatIdsToVacate = getSeatsToVacate(winnerPriorPositions, election.positionType);
   if (seatIdsToVacate.length > 0) {
     await db

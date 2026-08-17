@@ -9,6 +9,10 @@ import {
   tallyMajorityBallot,
   tallyElectoralCollege,
   assignVoterState,
+  tenureTicks,
+  presidentTermExpired,
+  filterCandidacyEligible,
+  registrationShouldClose,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -496,5 +500,88 @@ describe('assignVoterState', () => {
 
   it('falls back to the first state when total weight is zero', () => {
     expect(assignVoterState('a', { XX: 0, YY: 0 }, ['XX', 'YY'])).toBe('XX');
+  });
+});
+
+/* ── Elections revival (minimal slice) ─────────────────────────────────── */
+
+describe('tenureTicks', () => {
+  it('divides elapsed wall-clock ms by tickIntervalMs', () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-01-01T03:00:00Z'); // 3h later
+    expect(tenureTicks(start, now, 60 * 60 * 1000)).toBe(3); // 3 ticks @ 1h each
+  });
+
+  it('clamps negative elapsed time to 0 (future startDate)', () => {
+    const start = new Date('2026-01-02T00:00:00Z');
+    const now = new Date('2026-01-01T00:00:00Z');
+    expect(tenureTicks(start, now, 60 * 60 * 1000)).toBe(0);
+  });
+
+  it('returns 0 for non-positive or non-finite tickIntervalMs', () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-01-02T00:00:00Z');
+    expect(tenureTicks(start, now, 0)).toBe(0);
+    expect(tenureTicks(start, now, -1)).toBe(0);
+    expect(tenureTicks(start, now, NaN)).toBe(0);
+  });
+
+  it('returns 0 for invalid dates', () => {
+    expect(tenureTicks('not-a-date', new Date(), 1000)).toBe(0);
+    expect(tenureTicks(new Date(), 'not-a-date', 1000)).toBe(0);
+  });
+});
+
+describe('presidentTermExpired', () => {
+  it('is false when termLimitTicks <= 0 (disabled default)', () => {
+    expect(presidentTermExpired(999999, 0)).toBe(false);
+    expect(presidentTermExpired(999999, -5)).toBe(false);
+  });
+
+  it('is true once tenure reaches the limit', () => {
+    expect(presidentTermExpired(1460, 1460)).toBe(true);
+    expect(presidentTermExpired(1461, 1460)).toBe(true);
+    expect(presidentTermExpired(1459, 1460)).toBe(false);
+  });
+
+  it('is false for non-finite tenure', () => {
+    expect(presidentTermExpired(NaN, 1460)).toBe(false);
+  });
+});
+
+describe('filterCandidacyEligible', () => {
+  const agents = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('excludes ids in the exclude set', () => {
+    expect(filterCandidacyEligible(agents, ['b'])).toEqual([{ id: 'a' }, { id: 'c' }]);
+  });
+
+  it('returns all agents when exclude set is empty', () => {
+    expect(filterCandidacyEligible(agents, [])).toEqual(agents);
+  });
+
+  it('returns empty for empty/non-array input', () => {
+    expect(filterCandidacyEligible([], ['a'])).toEqual([]);
+    // @ts-expect-error defensive runtime check
+    expect(filterCandidacyEligible(null, ['a'])).toEqual([]);
+  });
+});
+
+describe('registrationShouldClose', () => {
+  const before = new Date('2026-01-01T00:00:00Z');
+  const deadline = new Date('2026-01-02T00:00:00Z');
+  const after = new Date('2026-01-03T00:00:00Z');
+
+  it('false before the deadline regardless of campaign count', () => {
+    expect(registrationShouldClose(before, deadline, 5)).toBe(false);
+  });
+
+  it('false at/after the deadline with zero campaigns (caller handles fallback)', () => {
+    expect(registrationShouldClose(after, deadline, 0)).toBe(false);
+  });
+
+  it('true at/after the deadline with >=1 active campaign', () => {
+    expect(registrationShouldClose(deadline, deadline, 1)).toBe(true);
+    expect(registrationShouldClose(after, deadline, 3)).toBe(true);
   });
 });

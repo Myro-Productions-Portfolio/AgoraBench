@@ -238,6 +238,8 @@ interface RuntimeConfig {
   appointmentConfirmationEnabled: boolean;
   appointmentConfirmationThreshold: number;
   electoralCollegeEnabled: boolean;
+  /* Elections Revival (minimal slice) */
+  presidentTermTicks: number;
 }
 
 interface EconomySettings {
@@ -3707,6 +3709,21 @@ export function AdminPage() {
                         </table>
                       </div>
                     )}
+                  </div>
+
+                  {/* Presidential term limit (elections revival minimal slice) — 0 = disabled, deploy dark */}
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">President Term Limit</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.presidentTermTicks === 0 ? 'disabled' : `${simConfig.presidentTermTicks} ticks`}</span>
+                    </div>
+                    <input type="number" min={0} max={100000} step={1}
+                      value={simConfig.presidentTermTicks}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, presidentTermTicks: parseInt(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ presidentTermTicks: simConfig.presidentTermTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Incumbent tenure limit in ticks, derived from wall-clock time since inauguration. 0 = disabled; recommended 1460 ≈ 4 sim-years. When enabled and the sitting president's tenure reaches this limit, a new presidential election is triggered automatically instead of being suppressed — the incumbent stays seated until certification.</p>
                   </div>
 
                   {/* Timing config */}

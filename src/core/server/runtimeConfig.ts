@@ -227,6 +227,9 @@ export interface RuntimeConfig {
   appointmentConfirmationEnabled: boolean;   // Slice 3: justices + cabinet filled by president-nominate → Legislature-confirm. Off = today's reputation-rank justice auto-fill, no cabinet.
   appointmentConfirmationThreshold: number;  // confirmation vote pass threshold, share of weighted alignment (0-1; 0.5 = simple majority)
   electoralCollegeEnabled: boolean;          // Slice 4: president tallied per-state → Electoral College (270 to win). Off = today's single honest national popular-vote count.
+
+  /* ---- Elections Revival (minimal slice) — deployed dark, off by default ---- */
+  presidentTermTicks: number;                // incumbent tenure limit in ticks (wall-clock-derived from positions.startDate); 0 = disabled, preserves today's suppress-while-seated behavior; recommended 1460 ≈ 4 sim-years
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -445,6 +448,9 @@ const DEFAULTS: RuntimeConfig = {
   appointmentConfirmationEnabled: false,
   appointmentConfirmationThreshold: 0.5,
   electoralCollegeEnabled: false,
+
+  /* Elections Revival (minimal slice) — deployed dark */
+  presidentTermTicks: 0,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

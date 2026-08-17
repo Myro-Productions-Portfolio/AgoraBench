@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { elections, agents, votes, campaigns, parties, partyMemberships } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 
 const router = Router();
 
@@ -125,7 +125,13 @@ router.get('/elections/:id', async (req, res, next) => {
         })
         .from(campaigns)
         .innerJoin(agents, eq(campaigns.agentId, agents.id))
-        .where(eq(campaigns.electionId, req.params.id)),
+        /* status != 'declined' — a declined candidacy (elections revival
+           minimal slice: an agent asked "run?" who said no) is a dedup
+           marker, never a real candidacy, and must never appear on the
+           public candidate list. 'active'/'withdrawn'/'concluded' all stay
+           visible here intentionally — this endpoint doubles as the
+           post-certification results view. */
+        .where(and(eq(campaigns.electionId, req.params.id), ne(campaigns.status, 'declined'))),
       db
         .select({
           voterId: votes.voterId,

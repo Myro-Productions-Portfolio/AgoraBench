@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { staleRepeatableKeys, type RepeatableJobInfo } from '@core/server/lib/tickReconcile';
+import { staleRepeatableKeys, godMode, type RepeatableJobInfo } from '@core/server/lib/tickReconcile';
 
 describe('staleRepeatableKeys', () => {
   it('returns nothing when no repeatables exist', () => {
@@ -30,5 +30,23 @@ describe('staleRepeatableKeys', () => {
       { key: 'b', every: 60_000 },
     ];
     expect(staleRepeatableKeys(jobs, 5_400_000)).toEqual(['a', 'b']);
+  });
+});
+
+describe('godMode', () => {
+  it('is "none" when neither driver is active', () => {
+    expect(godMode(false, false)).toBe('none');
+  });
+
+  it('is "bob" when only the orchestrator key is set', () => {
+    expect(godMode(true, false)).toBe('bob');
+  });
+
+  it('is "agge" when only aggeEnabled is set — Bob key no longer suppresses AGGE', () => {
+    expect(godMode(false, true)).toBe('agge');
+  });
+
+  it('is "both" when Bob and AGGE are active simultaneously', () => {
+    expect(godMode(true, true)).toBe('both');
   });
 });

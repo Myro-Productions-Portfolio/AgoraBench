@@ -96,6 +96,7 @@ export interface RuntimeConfig {
   simInferenceModel: string;
 
   /* ---- AGGE (God Agent) ---- */
+  aggeEnabled: boolean;
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
   aggeAgentsPerTickMax: number;
@@ -316,7 +317,8 @@ const DEFAULTS: RuntimeConfig = {
   simInferenceUrl: '',
   simInferenceModel: '',
 
-  /* AGGE */
+  /* AGGE — ships dark; flip deliberately via admin UI */
+  aggeEnabled: false,
   aggeTickIntervalMs: 3_600_000,
   aggeAgentsPerTickMin: 1,
   aggeAgentsPerTickMax: 3,

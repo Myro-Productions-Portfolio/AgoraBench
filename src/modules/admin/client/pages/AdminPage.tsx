@@ -133,6 +133,7 @@ interface RuntimeConfig {
   simInferenceUrl: string;
   simInferenceModel: string;
   /* AGGE (God Agent) */
+  aggeEnabled: boolean;
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
   aggeAgentsPerTickMax: number;
@@ -751,7 +752,7 @@ export function AdminPage() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   /* AGGE state */
-  const [aggeMode, setAggeMode] = useState<'bob' | 'agge' | null>(null);
+  const [aggeMode, setAggeMode] = useState<'bob' | 'agge' | 'both' | 'none' | null>(null);
   const [bobChecking, setBobChecking] = useState(false);
   const [aggeInterventions, setAggeInterventions] = useState<Array<{
     id: string;
@@ -958,7 +959,7 @@ export function AdminPage() {
 
   const fetchAggeMode = useCallback(async () => {
     try {
-      const res = await adminApi.godMode() as unknown as { bobActive: boolean; mode: 'bob' | 'agge' };
+      const res = await adminApi.godMode() as unknown as { bobActive: boolean; aggeActive: boolean; mode: 'bob' | 'agge' | 'both' | 'none' };
       setAggeMode(res.mode);
     } catch (err) { console.error('[ADMIN] fetchAggeMode failed:', err); }
   }, []);
@@ -4553,14 +4554,37 @@ export function AdminPage() {
                 <span className="text-xs text-text-muted uppercase tracking-widest">Active driver:</span>
                 {aggeMode === null ? (
                   <span className="text-xs text-text-muted">checking…</span>
+                ) : aggeMode === 'both' ? (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono bg-gold/10 text-gold border border-gold/30">Bob (Openclaw) + AGGE auto-tick</span>
                 ) : aggeMode === 'bob' ? (
                   <span className="px-2 py-0.5 rounded text-xs font-mono bg-gold/10 text-gold border border-gold/30">Bob (Openclaw)</span>
-                ) : (
+                ) : aggeMode === 'agge' ? (
                   <span className="px-2 py-0.5 rounded text-xs font-mono bg-white/5 text-text-secondary border border-border">AGGE auto-tick</span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-xs font-mono bg-white/5 text-text-muted border border-border">None (manual tick only)</span>
                 )}
               </div>
 
               <div className="space-y-3">
+                {/* AGGE auto-tick enable */}
+                <div className="flex items-center justify-between py-2 border-b border-border/50">
+                  <div>
+                    <label className="text-sm font-medium text-text-secondary">AGGE Auto-Tick</label>
+                    <p className="text-xs text-text-muted">Runs AGGE on its own interval, independent of Bob/BOB_ORCHESTRATOR_KEY.</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const next = !simConfig?.aggeEnabled;
+                      setSimConfig((c) => c ? { ...c, aggeEnabled: next } : c);
+                      void saveConfig({ aggeEnabled: next });
+                      void fetchAggeMode();
+                    }}
+                    className={`relative w-12 h-6 rounded-full transition-colors ${simConfig?.aggeEnabled ? 'bg-gold/60' : 'bg-white/20'}`}
+                  >
+                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${simConfig?.aggeEnabled ? 'translate-x-6' : ''}`} />
+                  </button>
+                </div>
+
                 {/* AGGE direct tick — always available */}
                 <div>
                   <AdminButton

@@ -11,7 +11,8 @@ import {
   changeTickInterval,
   retryFailedJobs,
 } from '@core/server/jobs/agentTick.js';
-import { triggerManualAggeTick } from '@core/server/jobs/aggeTick.js';
+import { triggerManualAggeTick, changeAggeTickInterval } from '@core/server/jobs/aggeTick.js';
+import { godMode } from '@core/server/lib/tickReconcile.js';
 import { runSeed } from '@db/seedFn';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
@@ -237,8 +238,14 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const vot = prob('vetoOverrideThreshold');            if (vot !== undefined) update.vetoOverrideThreshold = vot;
 
     /* AGGE */
+    if (typeof body.aggeEnabled === 'boolean') {
+      update.aggeEnabled = body.aggeEnabled;
+    }
     const atiMs = num('aggeTickIntervalMs', 60_000, 86_400_000);
-    if (atiMs !== undefined) update.aggeTickIntervalMs = Math.round(atiMs);
+    if (atiMs !== undefined) {
+      update.aggeTickIntervalMs = Math.round(atiMs);
+      await changeAggeTickInterval(update.aggeTickIntervalMs);
+    }
     const aaptMin = posInt('aggeAgentsPerTickMin', 1, 10);
     if (aaptMin !== undefined) update.aggeAgentsPerTickMin = aaptMin;
     const aaptMax = posInt('aggeAgentsPerTickMax', 1, 10);
@@ -1148,10 +1155,12 @@ router.get('/god/interventions', requireOwner, async (req, res, next) => {
   }
 });
 
-// GET /api/admin/god/mode — returns active personality-mod driver (bob or agge)
+// GET /api/admin/god/mode — returns active personality-mod driver(s). Bob and AGGE
+// are independent since AGGE no longer suppresses itself when the Bob key is set.
 router.get('/god/mode', requireOwner, (_req, res) => {
   const bobActive = !!process.env.BOB_ORCHESTRATOR_KEY;
-  res.json({ bobActive, mode: bobActive ? 'bob' : 'agge' });
+  const aggeActive = getRuntimeConfig().aggeEnabled;
+  res.json({ bobActive, aggeActive, mode: godMode(bobActive, aggeActive) });
 });
 
 // POST /api/admin/god/bob-ping — admin proxy: call observe endpoint with Bob key, return summary

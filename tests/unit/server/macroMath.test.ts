@@ -135,4 +135,28 @@ describe('stepMacro', () => {
     expect(s.policyPipeline[0]).toBeCloseTo(bucket1, 10);
     expect(s.policyPipeline[11]).toBe(0);
   });
+
+  // Regression: E5 fiscal-review bug (task-2, 2026-08-16). macroEngine.ts fed
+  // recurringAnnualized inflated 16x (spurious ticksPerDay factor) into the
+  // transfers impulse. This isn't a macroMath.ts bug -- the pure step math is
+  // unit-correct -- but pins the plausibility contract macroEngine must
+  // respect: a live-DB-scale fiscal impulse (each component sized as a
+  // realistic fraction of a $28T GDP, per the task-2 brief's law-stack scale)
+  // must print single-digit-percent growth/impulse, never the 96-126%
+  // gdp_growth_pct / -607%..+365% fiscal_impulse_pct seen in production.
+  it('a realistic single-step fiscal impulse (few % of GDP per component) keeps growth plausible', () => {
+    const s = seedMacroState(GDP, 1, noNoise);
+    // purchases: one big spend_once bill, ~0.3% of GDP (brief: up to $85B active)
+    // transfers: one program's daily amount swinging by ~$300M/day annualized,
+    //   ~0.06% of GDP (brief: mandatory ~$11.4B/day total across 5 laws)
+    // tax: a 2pp tax law (fiscalMaxTaxDeltaPerLaw), ~2% of GDP annualized
+    const impulse: FiscalImpulse = {
+      purchases: 85_000_000_000,
+      transfers: 300_000_000 * 365,
+      tax: (2 / 100) * GDP,
+    };
+    const next = stepMacro(s, impulse, noNoise);
+    expect(Math.abs(next.fiscalImpulsePct!)).toBeLessThan(10);
+    expect(Math.abs(next.gdpGrowthPct)).toBeLessThan(15);
+  });
 });

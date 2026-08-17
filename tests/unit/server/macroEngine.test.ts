@@ -130,8 +130,9 @@ describe('stepMacroEngine', () => {
       isActive: true,
       enactedTick: 0,
     };
-    const ticksPerDay = Math.max(1, Math.round(86_400_000 / (baseRc().tickIntervalMs as number)));
-    const expectedRecurring = 2_000_000 * ticksPerDay * 365;
+    // fiscalAmount is already $/tick and 1 tick = 1 sim day, so annualizing
+    // is *365 only -- no wall-clock ticksPerDay factor belongs here.
+    const expectedRecurring = 2_000_000 * 365;
     queryResults = [[], [recurringLaw]]; // no prior world_state row, one recurring law
     const { stepMacroEngine } = await loadEngine();
     const result = await stepMacroEngine(1, 'tick-1');
@@ -139,6 +140,68 @@ describe('stepMacroEngine', () => {
     expect(insertedValues).not.toBeNull();
     expect(insertedValues!.fiscalImpulsePct as number).toBe(0);
     expect(insertedValues!.recurringStanceAnnualized as number).toBe(expectedRecurring);
+  });
+
+  it('counts a mandatory law even though programActive is null (isFiscallyActive rule)', async () => {
+    // mandatory rows are seeded with programActive=null (Phase 9 convention:
+    // that column only means something for spend_recurring); a query gated
+    // on programActive as well as isActive silently drops every mandatory
+    // row -- this is the regression this test guards.
+    const mandatoryLaw = {
+      fiscalKind: 'mandatory',
+      fiscalAmount: 4_000_000_000,
+      fiscalTaxDelta: null,
+      programActive: null,
+      isActive: true,
+      enactedTick: 0,
+    };
+    queryResults = [[], [mandatoryLaw]];
+    const { stepMacroEngine } = await loadEngine();
+    await stepMacroEngine(1, 'tick-1');
+    expect(insertedValues).not.toBeNull();
+    expect(insertedValues!.recurringStanceAnnualized as number).toBe(4_000_000_000 * 365);
+  });
+
+  it('excludes a lapsed spend_recurring law (programActive false)', async () => {
+    const lapsedLaw = {
+      fiscalKind: 'spend_recurring',
+      fiscalAmount: 5_000_000,
+      fiscalTaxDelta: null,
+      programActive: false,
+      isActive: true,
+      enactedTick: 0,
+    };
+    queryResults = [[], [lapsedLaw]];
+    const { stepMacroEngine } = await loadEngine();
+    await stepMacroEngine(1, 'tick-1');
+    expect(insertedValues).not.toBeNull();
+    expect(insertedValues!.recurringStanceAnnualized as number).toBe(0);
+  });
+
+  it('a lapsing program produces a fiscal impulse within plausible bounds (% of GDP), not a units explosion', async () => {
+    // Regression for the ticksPerDay unit bug: one $800M/day mandatory
+    // program (7% of a plausible $11.4B/day mandatory total) lapsing in a
+    // single macro step must not swing fiscalImpulsePct into the hundreds.
+    const prior = priorRow({
+      recurringStanceAnnualized: (4_000_000_000 + 3_000_000_000 + 2_400_000_000 + 1_200_000_000 + 800_000_000) * 365,
+    });
+    const remainingMandatory = [
+      { fiscalKind: 'mandatory', fiscalAmount: 4_000_000_000, fiscalTaxDelta: null, programActive: null, isActive: true, enactedTick: 0 },
+      { fiscalKind: 'mandatory', fiscalAmount: 3_000_000_000, fiscalTaxDelta: null, programActive: null, isActive: true, enactedTick: 0 },
+      { fiscalKind: 'mandatory', fiscalAmount: 2_400_000_000, fiscalTaxDelta: null, programActive: null, isActive: true, enactedTick: 0 },
+      { fiscalKind: 'mandatory', fiscalAmount: 1_200_000_000, fiscalTaxDelta: null, programActive: null, isActive: true, enactedTick: 0 },
+      // the $800M/day law struck this window (isActive flips false at Phase 10 for mandatory)
+      { fiscalKind: 'mandatory', fiscalAmount: 800_000_000, fiscalTaxDelta: null, programActive: null, isActive: false, enactedTick: 0 },
+    ];
+    queryResults = [[prior], remainingMandatory];
+    const { stepMacroEngine } = await loadEngine();
+    const result = await stepMacroEngine(116, 'tick-116');
+    expect(result).not.toBeNull();
+    expect(insertedValues).not.toBeNull();
+    const impulsePct = insertedValues!.fiscalImpulsePct as number;
+    // 7% of an $11.4B/day mandatory total lapsing is a real but modest shock
+    // -- single-digit percent of GDP, nowhere near the hundreds seen live.
+    expect(Math.abs(impulsePct)).toBeLessThan(5);
   });
 
   it('steps from a prior row, advancing rngSeed', async () => {

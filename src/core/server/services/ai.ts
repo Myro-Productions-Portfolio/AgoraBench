@@ -54,6 +54,8 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   public_statement:    'public_statement',
   /* E3 slice A: election ballot casting */
   election_voting:     'election_vote',
+  /* Elections revival minimal slice: candidacy yes/no during registration */
+  candidacy_declaration: 'candidacy_declaration',
   /* Phase 4 judicial arc */
   court_filing:        'file_case',
   oral_argument:       'present_argument',

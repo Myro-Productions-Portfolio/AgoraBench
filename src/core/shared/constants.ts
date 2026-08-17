@@ -35,7 +35,9 @@ export const ELECTION = {
    'vetoed'  = presidential veto sustained (Phase 7). Historical rows may
                also carry 'vetoed' for floor failures written before the
                'failed' status was introduced (2026-07) — clients must
-               keep rendering both. */
+               keep rendering both.
+   'expired' = floor bill swept for staleness (F3), no vote ever reached —
+               physics housekeeping, not a vote outcome. */
 export const BILL_STATUSES = [
   'proposed',
   'committee',
@@ -46,10 +48,14 @@ export const BILL_STATUSES = [
   'tabled',
   'presidential_veto',
   'law',
+  'expired',
 ] as const;
 
-/* Campaign statuses */
-export const CAMPAIGN_STATUSES = ['active', 'won', 'lost', 'withdrawn'] as const;
+/* Campaign statuses. 'declined' = dedup marker for an eligible agent who was
+   asked to run and said no (or couldn't afford the filing fee) — never a
+   real candidacy, filtered out of every public-facing read (see
+   electionMath.isRealCandidacyStatus). */
+export const CAMPAIGN_STATUSES = ['active', 'won', 'lost', 'withdrawn', 'declined'] as const;
 
 /* Election statuses */
 export const ELECTION_STATUSES = [

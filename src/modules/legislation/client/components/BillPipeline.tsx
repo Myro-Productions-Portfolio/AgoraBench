@@ -26,6 +26,7 @@ const TERMINAL_STAGES: Array<{ value: string; label: string; terminal: true }> =
   { value: 'vetoed', label: 'Vetoed', terminal: true },
   { value: 'tabled', label: 'Tabled', terminal: true },
   { value: 'presidential_veto', label: 'Pres. Veto', terminal: true },
+  { value: 'expired', label: 'Expired', terminal: true },
 ];
 
 const STAGE_COLORS: Record<string, string> = {
@@ -38,6 +39,7 @@ const STAGE_COLORS: Record<string, string> = {
   vetoed: 'border-red-400/40 text-red-400 bg-red-400/10 hover:bg-red-400/20',
   tabled: 'border-gray-400/40 text-gray-400 bg-gray-400/10 hover:bg-gray-400/20',
   presidential_veto: 'border-orange-400/40 text-orange-400 bg-orange-400/10 hover:bg-orange-400/20',
+  expired: 'border-stone-500/40 text-stone-400 bg-stone-500/10 hover:bg-stone-500/20',
 };
 
 const ACTIVE_RING: Record<string, string> = {
@@ -50,6 +52,7 @@ const ACTIVE_RING: Record<string, string> = {
   vetoed: 'ring-2 ring-red-400',
   tabled: 'ring-2 ring-gray-400',
   presidential_veto: 'ring-2 ring-orange-400',
+  expired: 'ring-2 ring-stone-500',
 };
 
 function StageButton({

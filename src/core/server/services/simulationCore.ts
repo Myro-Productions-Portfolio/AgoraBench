@@ -180,7 +180,7 @@ export function isValidBillTransition(from: string, to: string): boolean {
 
 /** Has the bill reached committee (or any stage past it)? */
 export function billReachedCommittee(status: string): boolean {
-  const committeeAndBeyond = ['committee', 'floor', 'passed', 'failed', 'vetoed', 'tabled', 'presidential_veto', 'law'];
+  const committeeAndBeyond = ['committee', 'floor', 'passed', 'failed', 'vetoed', 'tabled', 'presidential_veto', 'law', 'expired'];
   return committeeAndBeyond.includes(status);
 }
 

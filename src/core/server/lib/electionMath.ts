@@ -400,3 +400,92 @@ export function assignVoterState(
   }
   return stateOrder[stateOrder.length - 1] ?? null;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Presidential term-limit trigger (elections revival minimal slice)
+ *
+ * The incumbent's tenure is derived from wall-clock `positions.startDate`,
+ * not a tick-stamped column (no migration this slice — see task brief).
+ * `presidentTermTicks` defaults to 0 (disabled, byte-identical to today's
+ * suppression); a positive value is ticks of *wall-clock-derived* tenure,
+ * using the current tick interval as the ticks<->ms conversion.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Incumbent tenure in ticks, approximated as elapsed wall-clock time since
+ * `positions.startDate` divided by the current tick interval. Non-finite or
+ * non-positive tickIntervalMs returns 0 (never divides by zero / NaN).
+ */
+export function tenureTicks(startDate: Date | string | number, now: Date | string | number, tickIntervalMs: number): number {
+  if (!Number.isFinite(tickIntervalMs) || tickIntervalMs <= 0) return 0;
+  const start = new Date(startDate).getTime();
+  const current = new Date(now).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(current)) return 0;
+  return Math.max(0, (current - start) / tickIntervalMs);
+}
+
+/**
+ * True when a president's term has expired: term limit enabled (> 0) and
+ * elapsed tenure has reached or exceeded it. termLimitTicks <= 0 means
+ * disabled — always false, preserving today's suppress-while-seated
+ * behavior exactly (deploy-dark default).
+ */
+export function presidentTermExpired(tenure: number, termLimitTicks: number): boolean {
+  if (!Number.isFinite(termLimitTicks) || termLimitTicks <= 0) return false;
+  if (!Number.isFinite(tenure)) return false;
+  return tenure >= termLimitTicks;
+}
+
+/** Minimal shape of an agent needed for the candidacy-eligibility filter. */
+export interface CandidacyEligibilityAgent {
+  id: string;
+}
+
+/**
+ * Agents eligible to be offered a candidacy decision for a presidential
+ * election in 'registration': active agents (caller already filters
+ * isActive), excluding sitting supreme justices and anyone who already has
+ * a campaign row for this election (the incumbent auto-registers without an
+ * LLM call — see task brief — so they are excluded via the same
+ * already-registered set once seeded). Pure set-difference, order-preserving.
+ */
+export function filterCandidacyEligible(
+  agents: CandidacyEligibilityAgent[],
+  excludeAgentIds: Iterable<string>,
+): CandidacyEligibilityAgent[] {
+  if (!Array.isArray(agents) || agents.length === 0) return [];
+  const exclude = new Set(excludeAgentIds);
+  return agents.filter((a) => a && typeof a.id === 'string' && !exclude.has(a.id));
+}
+
+/**
+ * registration -> campaigning transition gate: past the registration
+ * deadline AND at least one active campaign exists. Zero-campaigns-at-
+ * deadline is handled by the caller (auto-register the incumbent, the
+ * chosen simpler behavior — see task report), not by extending the
+ * deadline, so this predicate stays a plain two-part AND.
+ */
+export function registrationShouldClose(now: Date | string | number, registrationDeadline: Date | string | number, activeCampaignCount: number): boolean {
+  const deadline = new Date(registrationDeadline).getTime();
+  const current = new Date(now).getTime();
+  if (!Number.isFinite(deadline) || !Number.isFinite(current)) return false;
+  return current >= deadline && activeCampaignCount > 0;
+}
+
+/**
+ * Single source of truth for "is this campaigns.status a real candidacy the
+ * public/owner should ever see." 'declined' (elections revival minimal
+ * slice) is a dedup marker written when an eligible agent was asked to run
+ * and said no, or wanted to but couldn't afford the filing fee — it was
+ * never a real candidacy and must never render as one (review round 1,
+ * Finding 1: it was leaking onto an agent's public Career Timeline as a
+ * fabricated lost-election entry). 'active'/'withdrawn'/'concluded' all
+ * count as real — a withdrawn or concluded candidacy still really happened.
+ * Every campaigns read site that shows candidates/history to a human
+ * (GET /elections/:id, GET /agents/:id/profile, the admin elections CSV
+ * export) filters on this — see task-4-report.md fix-round-1 section for
+ * the file:line list.
+ */
+export function isRealCandidacyStatus(status: string): boolean {
+  return status !== 'declined';
+}

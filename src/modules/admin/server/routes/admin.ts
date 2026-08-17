@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
 import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions } from '@db/schema/index';
-import { count, eq, sql, asc, desc } from 'drizzle-orm';
+import { and, count, eq, ne, sql, asc, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   pauseSimulation,
@@ -11,7 +11,8 @@ import {
   changeTickInterval,
   retryFailedJobs,
 } from '@core/server/jobs/agentTick.js';
-import { triggerManualAggeTick } from '@core/server/jobs/aggeTick.js';
+import { triggerManualAggeTick, changeAggeTickInterval } from '@core/server/jobs/aggeTick.js';
+import { godMode } from '@core/server/lib/tickReconcile.js';
 import { runSeed } from '@db/seedFn';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
@@ -190,6 +191,8 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (mcspt !== undefined) update.maxCampaignSpeechesPerTick = mcspt;
     const mfbpt = posInt('maxFloorBillsPerTick', 1, 20);
     if (mfbpt !== undefined) update.maxFloorBillsPerTick = mfbpt;
+    const bfet = posInt('billFloorExpiryTicks', 0, 1000);
+    if (bfet !== undefined) update.billFloorExpiryTicks = bfet;
 
     /* Agent Behavior */
     const bpc = prob('billProposalChance');       if (bpc !== undefined) update.billProposalChance = bpc;
@@ -235,8 +238,14 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const vot = prob('vetoOverrideThreshold');            if (vot !== undefined) update.vetoOverrideThreshold = vot;
 
     /* AGGE */
+    if (typeof body.aggeEnabled === 'boolean') {
+      update.aggeEnabled = body.aggeEnabled;
+    }
     const atiMs = num('aggeTickIntervalMs', 60_000, 86_400_000);
-    if (atiMs !== undefined) update.aggeTickIntervalMs = Math.round(atiMs);
+    if (atiMs !== undefined) {
+      update.aggeTickIntervalMs = Math.round(atiMs);
+      await changeAggeTickInterval(update.aggeTickIntervalMs);
+    }
     const aaptMin = posInt('aggeAgentsPerTickMin', 1, 10);
     if (aaptMin !== undefined) update.aggeAgentsPerTickMin = aaptMin;
     const aaptMax = posInt('aggeAgentsPerTickMax', 1, 10);
@@ -584,6 +593,11 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (typeof body.electoralCollegeEnabled === 'boolean') {
       update.electoralCollegeEnabled = body.electoralCollegeEnabled;
     }
+
+    // Elections Revival (minimal slice) — 0 = disabled (deploy dark default,
+    // byte-identical to today's suppress-while-seated behavior).
+    const pTermTicks = posInt('presidentTermTicks', 0, 100_000);
+    if (pTermTicks !== undefined) update.presidentTermTicks = pTermTicks;
 
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
@@ -1054,7 +1068,17 @@ router.get('/admin/export/elections', requireOwner, async (_req, res, next) => {
       })
       .from(elections)
       .leftJoin(winnerAgents, eq(elections.winnerId, winnerAgents.id))
-      .leftJoin(campaigns, eq(campaigns.electionId, elections.id))
+      /* status != 'declined' in the JOIN condition (not a WHERE) — a
+         'declined' campaign row (elections revival minimal slice: an
+         eligible agent asked "run?" who said no) is a dedup marker, never a
+         real candidacy, and must not leak into this export (review round 1,
+         Finding 4; same isRealCandidacyStatus predicate as GET
+         /elections/:id and GET /agents/:id/profile). Filtering in the JOIN
+         rather than a WHERE keeps this a left join in effect: an election
+         with only declined rows (or none at all) still appears — its
+         campaign columns are just null — instead of a WHERE silently
+         dropping the whole election row. */
+      .leftJoin(campaigns, and(eq(campaigns.electionId, elections.id), ne(campaigns.status, 'declined')))
       .leftJoin(candidateAgents, eq(campaigns.agentId, candidateAgents.id))
       .orderBy(desc(elections.createdAt));
 
@@ -1131,10 +1155,12 @@ router.get('/god/interventions', requireOwner, async (req, res, next) => {
   }
 });
 
-// GET /api/admin/god/mode — returns active personality-mod driver (bob or agge)
+// GET /api/admin/god/mode — returns active personality-mod driver(s). Bob and AGGE
+// are independent since AGGE no longer suppresses itself when the Bob key is set.
 router.get('/god/mode', requireOwner, (_req, res) => {
   const bobActive = !!process.env.BOB_ORCHESTRATOR_KEY;
-  res.json({ bobActive, mode: bobActive ? 'bob' : 'agge' });
+  const aggeActive = getRuntimeConfig().aggeEnabled;
+  res.json({ bobActive, aggeActive, mode: godMode(bobActive, aggeActive) });
 });
 
 // POST /api/admin/god/bob-ping — admin proxy: call observe endpoint with Bob key, return summary

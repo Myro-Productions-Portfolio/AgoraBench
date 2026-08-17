@@ -13,6 +13,7 @@ import { startAgentTick } from './jobs/agentTick';
 import { startAggeTick } from './jobs/aggeTick.js';
 import { API_PREFIX } from '@shared/constants';
 import { assertEncryptionKey } from './lib/crypto.js';
+import { isScannerProbePath } from './lib/scannerProbeGuard.js';
 
 /* Fail fast in production if ENCRYPTION_KEY is missing/malformed — otherwise an
    ephemeral per-restart key silently orphans every stored provider key. */
@@ -77,6 +78,19 @@ app.use('/mcp', mcpRouter);
 /* Static files + SPA catch-all (production only) */
 if (config.isProd) {
   const clientDist = path.resolve(process.cwd(), 'dist/client');
+
+  /* Scanner probes (wp-*, *.php, .env) hit the SPA catch-all below and got a
+     free 200 (index.html) — pollutes logs and reads as a hit to the scanner.
+     404 them before static/catch-all; runs after /api and /mcp so those are
+     never affected. */
+  app.use((req, res, next) => {
+    if (isScannerProbePath(req.path)) {
+      res.status(404).type('text/plain').send('Not found');
+      return;
+    }
+    next();
+  });
+
   // Cache hashed assets forever, never cache HTML or service worker
   app.use(express.static(clientDist, {
     setHeaders(res, filePath) {

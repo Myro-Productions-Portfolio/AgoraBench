@@ -6,6 +6,7 @@ import { db } from '@db/connection';
 import { worldState, laws } from '@db/schema/index';
 import { desc, isNotNull } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
+import { isFiscallyActive } from '@modules/government/server/lib/divergenceMath.js';
 import {
   seedMacroState, stepMacro,
   type MacroState, type MacroParams, type FiscalImpulse,
@@ -46,12 +47,26 @@ function paramsFromConfig(): MacroParams {
     the (sinceTick, now] window counts a step-tick enactment exactly once
     only if this runs post-Phase-9.
 
-    isActive gates ONLY the recurring accumulation. spend_once/tax_change are
-    one-shot effects applied at enactment (Phase 9) and never reversed by a
-    Phase 10 strike-down (which only flips isActive=false) — a law struck
-    within the same macro window must still count for that window, so those
-    two branches are windowed by enactedTick alone, regardless of isActive. */
-async function readFiscalStance(sinceTick: number, ticksPerDay: number) {
+    isActive gates ONLY the recurring accumulation, via isFiscallyActive()
+    (divergenceMath.ts) — the canonical mandatory/spend_recurring activation
+    rule. mandatory rows are seeded with programActive=null (Phase 9: that
+    column only means something for spend_recurring) and never lapse via
+    Phase 9.7, so gating them on programActive as well as isActive silently
+    drops every mandatory row; isFiscallyActive exists specifically to avoid
+    re-deriving (and mis-deriving) that rule at each call site.
+    spend_once/tax_change are one-shot effects applied at enactment (Phase 9)
+    and never reversed by a Phase 10 strike-down (which only flips
+    isActive=false) — a law struck within the same macro window must still
+    count for that window, so those two branches are windowed by enactedTick
+    alone, regardless of isActive.
+
+    laws.fiscalAmount is already $/tick, and 1 tick = 1 sim day everywhere
+    else in this codebase (fiscalMath.ts, divergence.ts) regardless of the
+    wall-clock ms a tick takes — so annualizing is *365 only. Multiplying by
+    ticksPerDay (real ticks per wall-clock day) double-counts the tick=day
+    unit and previously inflated every recurring/mandatory law's annualized
+    contribution by that factor (16x at the 90-min tick interval). */
+async function readFiscalStance(sinceTick: number) {
   const rows = await db
     .select({
       fiscalKind: laws.fiscalKind,
@@ -65,8 +80,8 @@ async function readFiscalStance(sinceTick: number, ticksPerDay: number) {
     .where(isNotNull(laws.fiscalKind));
   let purchasesSince = 0, recurringAnnualized = 0, taxDeltaSince = 0;
   for (const r of rows) {
-    if ((r.fiscalKind === 'spend_recurring' || r.fiscalKind === 'mandatory') && r.programActive && r.isActive) {
-      recurringAnnualized += (r.fiscalAmount ?? 0) * ticksPerDay * 365;
+    if (isFiscallyActive(r)) {
+      recurringAnnualized += (r.fiscalAmount ?? 0) * 365;
     }
     if (r.fiscalKind === 'spend_once' && (r.enactedTick ?? 0) > sinceTick) {
       purchasesSince += r.fiscalAmount ?? 0;
@@ -86,7 +101,6 @@ export async function stepMacroEngine(
   if (!rc.macroEngineEnabled) return null;
   try {
     const p = paramsFromConfig();
-    const ticksPerDay = Math.max(1, Math.round(86_400_000 / rc.tickIntervalMs));
     const [prevRow] = await db
       .select()
       .from(worldState)
@@ -99,10 +113,10 @@ export async function stepMacroEngine(
 
     if (!prevRow) {
       state = seedMacroState(rc.gdpAnnual, rc.macroRngSeedInit, p);
-      recurringNow = (await readFiscalStance(tickNumber, ticksPerDay)).recurringAnnualized;
+      recurringNow = (await readFiscalStance(tickNumber)).recurringAnnualized;
       seeded = true;
     } else {
-      const stance = await readFiscalStance(prevRow.tickNumber, ticksPerDay);
+      const stance = await readFiscalStance(prevRow.tickNumber);
       recurringNow = stance.recurringAnnualized;
       const impulse: FiscalImpulse = {
         purchases: stance.purchasesSince,

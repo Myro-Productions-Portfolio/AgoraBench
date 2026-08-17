@@ -796,7 +796,7 @@ const EXPANDED_ARTICLES: WikiArticle[] = [
       {
         id: 'modes',
         heading: 'Auto-tick vs. Bob',
-        body: 'When BOB_ORCHESTRATOR_KEY is set in the environment, AGGE auto-tick is disabled and Bob orchestrates instead. When the key is absent, AGGE runs its own tick cycle: selecting agents by evolution pressure score, generating personality modifications via the LLM, and applying them directly.',
+        body: 'AGGE auto-tick is controlled by its own admin toggle (independent of Bob). When enabled, AGGE runs its own tick cycle on its configured interval: selecting agents by evolution pressure score, generating personality modifications via the LLM, and applying them directly. Bob (when BOB_ORCHESTRATOR_KEY is set) can orchestrate the same personality-mod mechanism separately — the two are not mutually exclusive.',
       },
       {
         id: 'selection',

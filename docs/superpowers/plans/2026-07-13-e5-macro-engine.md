@@ -639,8 +639,9 @@ git commit -m "feat(macro): macroMath -- seeded PRNG, regime/GDP/Okun/Phillips/s
 // in this slice.
 import { db } from '@db/connection';
 import { worldState, laws } from '@db/schema/index';
-import { desc, eq, and, isNotNull } from 'drizzle-orm';
+import { desc, isNotNull } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
+import { isFiscallyActive } from '@modules/government/server/lib/divergenceMath.js';
 import {
   seedMacroState, stepMacro,
   type MacroState, type MacroParams, type FiscalImpulse,
@@ -674,22 +675,34 @@ function paramsFromConfig(): MacroParams {
 /** Fiscal stance from structured law columns (never LLM text).
     purchasesSince: one-time spends enacted after sinceTick (spend_once $).
     recurringAnnualized: current annualized recurring+mandatory total.
-    taxDeltaSince: net signed tax-point changes enacted after sinceTick. */
-async function readFiscalStance(sinceTick: number, ticksPerDay: number) {
+    taxDeltaSince: net signed tax-point changes enacted after sinceTick.
+
+    [corrected 2026-08-16] laws.fiscalAmount is already $/tick, and 1 tick =
+    1 sim day everywhere else in this codebase — so annualizing is *365
+    only; multiplying by ticksPerDay (real ticks per wall-clock day)
+    double-counts the tick=day unit (16x inflation at the 90-min tick
+    interval in prod). Activation uses the shared isFiscallyActive() helper
+    (divergenceMath.ts), not an inline programActive check — gating
+    mandatory rows on programActive as well as isActive silently drops
+    every mandatory row, since mandatory rows are seeded with
+    programActive=null. See src/modules/world/server/lib/macroEngine.ts for
+    the fixed implementation this reference was patched to match. */
+async function readFiscalStance(sinceTick: number) {
   const rows = await db
     .select({
       fiscalKind: laws.fiscalKind,
       fiscalAmount: laws.fiscalAmount,
       fiscalTaxDelta: laws.fiscalTaxDelta,
       programActive: laws.programActive,
+      isActive: laws.isActive,
       enactedTick: laws.enactedTick,
     })
     .from(laws)
-    .where(and(isNotNull(laws.fiscalKind), eq(laws.isActive, true)));
+    .where(isNotNull(laws.fiscalKind));
   let purchasesSince = 0, recurringAnnualized = 0, taxDeltaSince = 0;
   for (const r of rows) {
-    if ((r.fiscalKind === 'spend_recurring' || r.fiscalKind === 'mandatory') && r.programActive) {
-      recurringAnnualized += (r.fiscalAmount ?? 0) * ticksPerDay * 365;
+    if (isFiscallyActive(r)) {
+      recurringAnnualized += (r.fiscalAmount ?? 0) * 365;
     }
     if (r.fiscalKind === 'spend_once' && (r.enactedTick ?? 0) > sinceTick) {
       purchasesSince += r.fiscalAmount ?? 0;
@@ -709,7 +722,6 @@ export async function stepMacroEngine(
   if (!rc.macroEngineEnabled) return null;
   try {
     const p = paramsFromConfig();
-    const ticksPerDay = Math.max(1, Math.round(86_400_000 / rc.tickIntervalMs));
     const [prevRow] = await db
       .select()
       .from(worldState)
@@ -722,10 +734,10 @@ export async function stepMacroEngine(
 
     if (!prevRow) {
       state = seedMacroState(rc.gdpAnnual, rc.macroRngSeedInit, p);
-      recurringNow = (await readFiscalStance(tickNumber, ticksPerDay)).recurringAnnualized;
+      recurringNow = (await readFiscalStance(tickNumber)).recurringAnnualized;
       seeded = true;
     } else {
-      const stance = await readFiscalStance(prevRow.tickNumber, ticksPerDay);
+      const stance = await readFiscalStance(prevRow.tickNumber);
       recurringNow = stance.recurringAnnualized;
       const impulse: FiscalImpulse = {
         purchases: stance.purchasesSince,

@@ -4,7 +4,10 @@
  * election by real cast ballots (E3 slice A — see docs/specs/simulation-
  * completeness.md §A), inserts a positions row, vacates any lower office the
  * winner already holds, updates agent stats, runs the approval + relationship
- * cascade, and broadcasts activity events.
+ * cascade, and broadcasts activity events. Also vacates an outgoing SITTING
+ * president who lost re-election (elections revival minimal slice) — the one
+ * case where the winner and the current holder of the same singleton office
+ * can differ.
  *
  * Tally source: `votes` rows for this election, grouped by candidateId (see
  * electionMath.tallyElectionVotes). `campaigns.contributions` is no longer
@@ -267,6 +270,50 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
     .select({ id: positions.id, type: positions.type })
     .from(positions)
     .where(and(eq(positions.agentId, winner.agentId), eq(positions.isActive, true)));
+
+  /* Outgoing-incumbent handoff (elections revival minimal slice): 'president'
+     is the one singleton office reachable via this helper where the SAME
+     type can now be won by someone OTHER than its current holder — a
+     presidential election used to only ever fire when there was no sitting
+     president (structurally impossible for this to happen), but the term-
+     expiry trigger keeps the incumbent seated through the whole election, so
+     they can now lose to a challenger. getSeatsToVacate only vacates the
+     WINNER's own OTHER (lower-ranked) offices, never the same-rank seat that
+     is the subject of THIS election, so neither an outgoing loser NOR an
+     outgoing WINNER's own prior term ever gets closed out by that path.
+     Looked up and closed out BEFORE the winner's new row is inserted below —
+     querying isActive=true after the insert would ambiguously match both the
+     stale old row and the brand-new row on a winning incumbent (Finding 2:
+     review round 1), and picking the wrong one via LIMIT 1 either leaves two
+     active rows forever or — worse for a re-elected incumbent specifically —
+     leaves the OLD row's startDate live, so tenureTicks never resets and
+     term-expiry immediately re-fires the very next tick. Re-elected
+     incumbents MUST get a fresh row with a fresh startDate, same as a
+     challenger winning — so this branch closes the old row unconditionally,
+     including when outgoing.agentId === winner.agentId. Scoped to
+     'president' only: congress_member/cabinet_secretary/etc. are multi-seat,
+     not singleton, so blanket-deactivating "the other active row of this
+     type" would wrongly evict every other sitting officeholder of that
+     type. */
+  if (election.positionType === 'president') {
+    const outgoingPresident = await db
+      .select({ id: positions.id, agentId: positions.agentId })
+      .from(positions)
+      .where(and(eq(positions.type, 'president'), eq(positions.isActive, true)))
+      .limit(1);
+    const outgoing = outgoingPresident[0];
+    if (outgoing) {
+      await db
+        .update(positions)
+        .set({ isActive: false, endDate: now })
+        .where(eq(positions.id, outgoing.id));
+      console.warn(
+        outgoing.agentId === winner.agentId
+          ? `[FINALIZE] ${winnerName} re-elected — prior term row closed out, fresh term row follows (tenure clock resets).`
+          : `[FINALIZE] Outgoing president (agent ${outgoing.agentId}) vacated on ${winnerName}'s win.`,
+      );
+    }
+  }
 
   /* Insert position row for winner */
   const termDays = election.positionType === 'president'

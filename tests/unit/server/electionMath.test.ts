@@ -9,6 +9,11 @@ import {
   tallyMajorityBallot,
   tallyElectoralCollege,
   assignVoterState,
+  tenureTicks,
+  presidentTermExpired,
+  filterCandidacyEligible,
+  registrationShouldClose,
+  isRealCandidacyStatus,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -496,5 +501,121 @@ describe('assignVoterState', () => {
 
   it('falls back to the first state when total weight is zero', () => {
     expect(assignVoterState('a', { XX: 0, YY: 0 }, ['XX', 'YY'])).toBe('XX');
+  });
+});
+
+/* ── Elections revival (minimal slice) ─────────────────────────────────── */
+
+describe('tenureTicks', () => {
+  it('divides elapsed wall-clock ms by tickIntervalMs', () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-01-01T03:00:00Z'); // 3h later
+    expect(tenureTicks(start, now, 60 * 60 * 1000)).toBe(3); // 3 ticks @ 1h each
+  });
+
+  it('clamps negative elapsed time to 0 (future startDate)', () => {
+    const start = new Date('2026-01-02T00:00:00Z');
+    const now = new Date('2026-01-01T00:00:00Z');
+    expect(tenureTicks(start, now, 60 * 60 * 1000)).toBe(0);
+  });
+
+  it('returns 0 for non-positive or non-finite tickIntervalMs', () => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-01-02T00:00:00Z');
+    expect(tenureTicks(start, now, 0)).toBe(0);
+    expect(tenureTicks(start, now, -1)).toBe(0);
+    expect(tenureTicks(start, now, NaN)).toBe(0);
+  });
+
+  it('returns 0 for invalid dates', () => {
+    expect(tenureTicks('not-a-date', new Date(), 1000)).toBe(0);
+    expect(tenureTicks(new Date(), 'not-a-date', 1000)).toBe(0);
+  });
+
+  it('documents the just-certified scenario: a freshly-seated winner has ~0 tenure even though the outgoing president was term-expired', () => {
+    // Phase 14 review fix: tenure must be computed from the NEW president's
+    // startDate (set at finalizeElection time, same tick), not the outgoing
+    // president's — otherwise term-expiry re-fires against the new incumbent.
+    const outgoingStart = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-04-01T00:00:00Z'); // well past a 1460-tick term at 1h/tick
+    const newPresidentStart = now; // finalizeElection stamps startDate = now
+    const tickIntervalMs = 60 * 60 * 1000;
+
+    const outgoingTenure = tenureTicks(outgoingStart, now, tickIntervalMs);
+    expect(presidentTermExpired(outgoingTenure, 1460)).toBe(true); // why the election fired
+
+    const freshTenure = tenureTicks(newPresidentStart, now, tickIntervalMs);
+    expect(freshTenure).toBe(0);
+    expect(presidentTermExpired(freshTenure, 1460)).toBe(false); // must not re-trigger
+  });
+});
+
+describe('presidentTermExpired', () => {
+  it('is false when termLimitTicks <= 0 (disabled default)', () => {
+    expect(presidentTermExpired(999999, 0)).toBe(false);
+    expect(presidentTermExpired(999999, -5)).toBe(false);
+  });
+
+  it('is true once tenure reaches the limit', () => {
+    expect(presidentTermExpired(1460, 1460)).toBe(true);
+    expect(presidentTermExpired(1461, 1460)).toBe(true);
+    expect(presidentTermExpired(1459, 1460)).toBe(false);
+  });
+
+  it('is false for non-finite tenure', () => {
+    expect(presidentTermExpired(NaN, 1460)).toBe(false);
+  });
+});
+
+describe('filterCandidacyEligible', () => {
+  const agents = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+  it('excludes ids in the exclude set', () => {
+    expect(filterCandidacyEligible(agents, ['b'])).toEqual([{ id: 'a' }, { id: 'c' }]);
+  });
+
+  it('returns all agents when exclude set is empty', () => {
+    expect(filterCandidacyEligible(agents, [])).toEqual(agents);
+  });
+
+  it('returns empty for empty/non-array input', () => {
+    expect(filterCandidacyEligible([], ['a'])).toEqual([]);
+    // @ts-expect-error defensive runtime check
+    expect(filterCandidacyEligible(null, ['a'])).toEqual([]);
+  });
+});
+
+describe('registrationShouldClose', () => {
+  const before = new Date('2026-01-01T00:00:00Z');
+  const deadline = new Date('2026-01-02T00:00:00Z');
+  const after = new Date('2026-01-03T00:00:00Z');
+
+  it('false before the deadline regardless of campaign count', () => {
+    expect(registrationShouldClose(before, deadline, 5)).toBe(false);
+  });
+
+  it('false at/after the deadline with zero campaigns (caller handles fallback)', () => {
+    expect(registrationShouldClose(after, deadline, 0)).toBe(false);
+  });
+
+  it('true at/after the deadline with >=1 active campaign', () => {
+    expect(registrationShouldClose(deadline, deadline, 1)).toBe(true);
+    expect(registrationShouldClose(after, deadline, 3)).toBe(true);
+  });
+});
+
+describe('isRealCandidacyStatus', () => {
+  it('declined is not a real candidacy (the dedup-marker leak, review round 1 Finding 1)', () => {
+    expect(isRealCandidacyStatus('declined')).toBe(false);
+  });
+
+  it('active/withdrawn/concluded — every real candidacy status — all count as real', () => {
+    expect(isRealCandidacyStatus('active')).toBe(true);
+    expect(isRealCandidacyStatus('withdrawn')).toBe(true);
+    expect(isRealCandidacyStatus('concluded')).toBe(true);
+  });
+
+  it('is a plain string comparison — any unrecognized future status defaults to real (only "declined" is special-cased out)', () => {
+    expect(isRealCandidacyStatus('some_future_status')).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import { db } from '@db/connection';
 import { agents, activityEvents, aggeInterventions, governmentSettings } from '@db/schema/index';
 import { broadcast } from '../websocket.js';
 import { WS_EVENTS } from '@shared/constants';
+import { staleRepeatableKeys } from '../lib/tickReconcile.js';
 
 const AGGE_AGENT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -352,15 +353,49 @@ async function runAggeTick(count: number): Promise<void> {
 
 aggeQueue.process(async () => {
   const rc = getRuntimeConfig();
+  if (!rc.aggeEnabled) return;
   const count = rc.aggeAgentsPerTickMin + Math.floor(
     Math.random() * (rc.aggeAgentsPerTickMax - rc.aggeAgentsPerTickMin + 1)
   );
   await runAggeTick(count);
 });
 
+/* Always schedules the repeatable at boot; per-run enablement is gated
+   inside the processor above on rc.aggeEnabled. This lets the toggle take
+   effect without a restart and keeps BOB_ORCHESTRATOR_KEY scoped to what it
+   actually secures (orchestrator auth), not AGGE scheduling. */
 export function startAggeTick(): void {
-  console.warn('[AGGE] AGGE auto-tick disabled — Bob orchestrates personality nudges');
-  return;
+  const rc = getRuntimeConfig();
+  (async () => {
+    const jobs = await aggeQueue.getRepeatableJobs();
+    const staleKeys = staleRepeatableKeys(jobs, rc.aggeTickIntervalMs);
+    for (const key of staleKeys) {
+      await aggeQueue.removeRepeatableByKey(key);
+      console.warn(`[AGGE] Removed stale repeatable tick job: ${key}`);
+    }
+    const alreadyCurrent = jobs.length > staleKeys.length;
+    if (!alreadyCurrent) {
+      await aggeQueue.add({}, {
+        repeat: { every: rc.aggeTickIntervalMs },
+        removeOnComplete: 10,
+        removeOnFail: 5,
+      });
+    }
+    console.warn(`[AGGE] Tick scheduler started — interval: ${rc.aggeTickIntervalMs}ms, enabled: ${rc.aggeEnabled}`);
+  })().catch((err: unknown) => console.error('[AGGE] Failed to start tick scheduler:', err));
+}
+
+export async function changeAggeTickInterval(newIntervalMs: number): Promise<void> {
+  const jobs = await aggeQueue.getRepeatableJobs();
+  for (const job of jobs) {
+    await aggeQueue.removeRepeatableByKey(job.key);
+  }
+  await aggeQueue.add({}, {
+    repeat: { every: newIntervalMs },
+    removeOnComplete: 10,
+    removeOnFail: 5,
+  });
+  console.warn(`[AGGE] Tick interval changed to ${newIntervalMs}ms`);
 }
 
 export async function triggerManualAggeTick(): Promise<void> {

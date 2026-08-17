@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '@db/connection';
 import { elections, agents, votes, campaigns, parties, partyMemberships } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 
 const router = Router();
 
@@ -125,7 +125,14 @@ router.get('/elections/:id', async (req, res, next) => {
         })
         .from(campaigns)
         .innerJoin(agents, eq(campaigns.agentId, agents.id))
-        .where(eq(campaigns.electionId, req.params.id)),
+        /* status != 'declined' — see electionMath.isRealCandidacyStatus for
+           the single source of truth on what counts as a real candidacy.
+           'active'/'withdrawn'/'concluded' all stay visible here
+           intentionally — this endpoint doubles as the post-certification
+           results view. Same exclusion also applied to GET
+           /agents/:id/profile and the admin elections CSV export (review
+           round 1, Findings 1 and 4). */
+        .where(and(eq(campaigns.electionId, req.params.id), ne(campaigns.status, 'declined'))),
       db
         .select({
           voterId: votes.voterId,

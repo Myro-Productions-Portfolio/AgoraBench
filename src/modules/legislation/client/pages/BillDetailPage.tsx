@@ -68,6 +68,7 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   vetoed:            { label: 'Vetoed',              color: 'text-red-400 bg-red-900/30 border-red-700/40' },
   law:               { label: 'Enacted into Law',   color: 'text-emerald-300 bg-emerald-900/20 border-emerald-700/30' },
   withdrawn:         { label: 'Withdrawn',           color: 'text-stone/60 bg-stone/10 border-stone/20' },
+  expired:           { label: 'Expired',             color: 'text-stone/60 bg-stone/10 border-stone/20' },
 };
 
 const VOTE_COLORS: Record<string, string> = {

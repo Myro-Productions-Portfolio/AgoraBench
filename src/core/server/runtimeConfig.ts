@@ -66,6 +66,7 @@ export interface RuntimeConfig {
   maxBillsPerAgentPerTick: number;    // default: 1
   maxCampaignSpeechesPerTick: number; // default: 1
   maxFloorBillsPerTick: number;       // default: 5 — caps the floor working set (phases 1, 1.5, 1.7, 2)
+  billFloorExpiryTicks: number;       // default: 90 — floor bills idle this many ticks (lastActionAt-derived) are swept to 'expired'; 0 = sweep disabled
 
   /* ---- Relationship Evolution ---- */
   relationshipDecayRate: number;            // per-tick decay toward neutral
@@ -95,6 +96,7 @@ export interface RuntimeConfig {
   simInferenceModel: string;
 
   /* ---- AGGE (God Agent) ---- */
+  aggeEnabled: boolean;
   aggeTickIntervalMs: number;
   aggeAgentsPerTickMin: number;
   aggeAgentsPerTickMax: number;
@@ -226,6 +228,9 @@ export interface RuntimeConfig {
   appointmentConfirmationEnabled: boolean;   // Slice 3: justices + cabinet filled by president-nominate → Legislature-confirm. Off = today's reputation-rank justice auto-fill, no cabinet.
   appointmentConfirmationThreshold: number;  // confirmation vote pass threshold, share of weighted alignment (0-1; 0.5 = simple majority)
   electoralCollegeEnabled: boolean;          // Slice 4: president tallied per-state → Electoral College (270 to win). Off = today's single honest national popular-vote count.
+
+  /* ---- Elections Revival (minimal slice) — deployed dark, off by default ---- */
+  presidentTermTicks: number;                // incumbent tenure limit in ticks (wall-clock-derived from positions.startDate); 0 = disabled, preserves today's suppress-while-seated behavior; recommended 1460 ≈ 4 sim-years
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -283,6 +288,7 @@ const DEFAULTS: RuntimeConfig = {
   maxBillsPerAgentPerTick: 1,
   maxCampaignSpeechesPerTick: 1,
   maxFloorBillsPerTick: 5,
+  billFloorExpiryTicks: 90,
 
   /* Relationship Evolution */
   relationshipDecayRate: 0.05,
@@ -311,7 +317,8 @@ const DEFAULTS: RuntimeConfig = {
   simInferenceUrl: '',
   simInferenceModel: '',
 
-  /* AGGE */
+  /* AGGE — ships dark; flip deliberately via admin UI */
+  aggeEnabled: false,
   aggeTickIntervalMs: 3_600_000,
   aggeAgentsPerTickMin: 1,
   aggeAgentsPerTickMax: 3,
@@ -443,6 +450,9 @@ const DEFAULTS: RuntimeConfig = {
   appointmentConfirmationEnabled: false,
   appointmentConfirmationThreshold: 0.5,
   electoralCollegeEnabled: false,
+
+  /* Elections Revival (minimal slice) — deployed dark */
+  presidentTermTicks: 0,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

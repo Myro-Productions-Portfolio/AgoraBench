@@ -40,6 +40,7 @@ import {
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
+import { excludedOfficeHolderIds, excludeOfficeHolders } from '../lib/officeExclusivity.js';
 import { parseDealField, composeCommitment, commitmentPromisesYea } from '../lib/dealParsing.js';
 import { parseFiscalField } from '../lib/fiscalParsing.js';
 import { elasticCitizenRevenue, computePaycheck, paydayDue, applyTaxDelta, sunsetDue, lapseDue, budgetSessionDue, composeExpiringProgramsNote, mandatoryEffectiveAmount, tickInterest, settleTreasury, type FiscalKind } from '../lib/fiscalMath.js';
@@ -203,6 +204,14 @@ agentTickQueue.process(async () => {
     const activeAgentIdSet05 = new Set(activeAgentIds05);
     const agentById05 = new Map(activeAgents.map((a) => [a.id, a]));
 
+    /* President/supreme_justice holders are excluded from auto-seating and
+       chair succession below (office-exclusivity guard). */
+    const exclusivityPositions05 = await db
+      .select({ agentId: positions.agentId, type: positions.type })
+      .from(positions)
+      .where(eq(positions.isActive, true));
+    const excludedOfficeIds05 = excludedOfficeHolderIds(exclusivityPositions05);
+
     const allMemberships05 = await db.select().from(committeeMemberships);
     const policyRows05 = activeAgentIds05.length > 0
       ? await db
@@ -247,7 +256,7 @@ agentTickQueue.process(async () => {
     /* (2) Seat every active agent with no active membership on their top-2
        committees (reactivate-or-insert via the (agentId, committee) unique) */
     let newlySeated05 = 0;
-    for (const agent of activeAgents) {
+    for (const agent of excludeOfficeHolders(activeAgents, excludedOfficeIds05)) {
       if ((membershipsByAgent05.get(agent.id)?.length ?? 0) > 0) continue;
       const topCommittees = pickTopCommittees(agent.id, (committee) => engagementOf05(agent.id, committee), 2);
       for (const committee of topCommittees) {
@@ -314,7 +323,7 @@ agentTickQueue.process(async () => {
        committee's members, excluding sitting chairs of other committees. */
     for (const committee of vacantCommittees05) {
       const candidates = (membersByCommittee05.get(committee) ?? [])
-        .filter((id) => activeAgentIdSet05.has(id))
+        .filter((id) => activeAgentIdSet05.has(id) && !excludedOfficeIds05.has(id))
         .map((id) => ({
           agentId: id,
           engagement: engagementOf05(id, committee),
@@ -5971,8 +5980,20 @@ agentTickQueue.process(async () => {
       const vacancyCount = rc.congressSeats - activeCongress.length;
       console.warn(`[SIMULATION] Phase 14: ${vacancyCount} congress vacancies — filling...`);
 
-      const eligible = activeAgents
-        .filter((a) => !heldAgentIds.has(a.id))
+      /* Re-fetched, not the allActivePositions snapshot above: elections
+         finalized earlier in this same phase (finalizeElection, just above)
+         can have seated a new president/justice since that snapshot was
+         taken, so heldAgentIds could be stale for the exclusion check. */
+      const freshOfficePositions14 = await db
+        .select({ agentId: positions.agentId, type: positions.type })
+        .from(positions)
+        .where(eq(positions.isActive, true));
+      const excludedOfficeIdsFresh14 = excludedOfficeHolderIds(freshOfficePositions14);
+
+      const eligible = excludeOfficeHolders(
+        activeAgents.filter((a) => !heldAgentIds.has(a.id)),
+        excludedOfficeIdsFresh14,
+      )
         .sort((a, b) => b.reputation - a.reputation)
         .slice(0, vacancyCount);
 

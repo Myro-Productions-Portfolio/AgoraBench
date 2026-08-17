@@ -19,6 +19,17 @@ describe('isScannerProbePath', () => {
     expect(isScannerProbePath('/.env')).toBe(true);
   });
 
+  it('matches regardless of case (scanners vary case deliberately)', () => {
+    expect(isScannerProbePath('/WP-ADMIN/')).toBe(true);
+    expect(isScannerProbePath('/Index.PHP')).toBe(true);
+    expect(isScannerProbePath('/.ENV')).toBe(true);
+    expect(isScannerProbePath('/WordPress/wp-login.PHP')).toBe(true);
+  });
+
+  it('still passes through a legit mixed-case SPA route', () => {
+    expect(isScannerProbePath('/Agents/42')).toBe(false);
+  });
+
   it('ignores query strings and hashes when matching', () => {
     expect(isScannerProbePath('/goods.php?id=1')).toBe(true);
     expect(isScannerProbePath('/wp-admin/?page=1')).toBe(true);

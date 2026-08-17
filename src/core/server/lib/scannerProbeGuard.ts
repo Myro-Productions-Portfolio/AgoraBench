@@ -12,7 +12,8 @@ const PROBE_EXACT = ['/.env'];
 /** True if the path matches a known scanner-probe pattern (not a real route). */
 export function isScannerProbePath(pathname: string): boolean {
   if (typeof pathname !== 'string' || pathname.length === 0) return false;
-  const path = pathname.split('?')[0].split('#')[0];
+  // Express doesn't case-normalize req.path, but scanners vary case deliberately.
+  const path = pathname.split('?')[0].split('#')[0].toLowerCase();
   if (path.endsWith('.php')) return true;
   if (PROBE_EXACT.includes(path)) return true;
   return PROBE_PREFIXES.some((prefix) => path.startsWith(prefix));

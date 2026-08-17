@@ -31,6 +31,13 @@ Each site is marked with a `PATCH(agorabench)` comment.
    rejects the module graph over it, webpack only warned).
 6. **`blockMapUtils.js`** — `crimeScan` loop bounds used non-existent `mapWidth`/`mapHeight`
    (upstream regression; the scan silently never ran) → `gameMapWidth`/`gameMapHeight`.
+7. **`valves.js`** — external RCI demand seam (Slice 2, spec §3): the upstream valve
+   integrator now runs on new `resBase`/`comBase`/`indBase` fields (identical arithmetic);
+   the visible `resValve`/`comValve`/`indValve` become base + injectable
+   `externalOffset{Res,Com,Ind}` (default 0), re-clamped to the native ranges, caps
+   re-applied. All offsets 0 = byte-identical dynamics to upstream. Exposed through the
+   wrapper as `setExternalDemand({r,c,i})`; snapshot version bumped 1 → 2 (valve state
+   gained fields).
 
 ## Local additions (not upstream code)
 

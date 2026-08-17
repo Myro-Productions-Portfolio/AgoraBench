@@ -41,6 +41,13 @@ export interface Valves {
   resCap: boolean;
   comCap: boolean;
   indCap: boolean;
+  /* PATCH(agorabench) seam: engine-integrated bases + injected external demand offsets. */
+  resBase: number;
+  comBase: number;
+  indBase: number;
+  externalOffsetRes: number;
+  externalOffsetCom: number;
+  externalOffsetInd: number;
 }
 
 export interface Evaluation {

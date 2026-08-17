@@ -11,6 +11,15 @@ export interface CityKnobs {
   disastersEnabled?: boolean;
 }
 
+export interface ExternalDemand {
+  /** Residential valve offset, native valve units (clamped to ±2000). */
+  r: number;
+  /** Commercial valve offset (clamped to ±1500). */
+  c: number;
+  /** Industrial valve offset (clamped to ±1500). */
+  i: number;
+}
+
 export type BuildToolName =
   | 'residential'
   | 'commercial'

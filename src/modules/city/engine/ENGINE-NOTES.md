@@ -30,11 +30,13 @@ harness (`pnpm city:smoke`) at commit time.
 - **Funding percentages are desired levels, not guarantees**: every January
   `_calculateBestPercentages` overwrites them with what the treasury can afford
   (priority road → fire → police). Set them each tick if you want them pinned.
-- **RCI valves are NOT settable.** `resValve`/`comValve`/`indValve` (ranges ±2000/±1500/±1500)
-  are recomputed from census + tax + gameLevel every 2nd sim cycle by `Valves.setValves`;
-  a direct write is overwritten within one month. The spec §3 GDP-regime → valve coupling
-  needs a small physics seam added to `valves.js` in Slice 2 (e.g. an additive external-demand
-  bias term). This is the one place Slice 2 must touch upstream code.
+- **RCI valves are NOT settable directly.** `resValve`/`comValve`/`indValve` (ranges
+  ±2000/±1500/±1500) are recomputed from census + tax + gameLevel every 2nd sim cycle by
+  `Valves.setValves`; a direct write is overwritten within one month. Slice 2 added the
+  planned seam (PROVENANCE.md patch 7): the integrator runs on internal base valves and the
+  visible valves are base + an injectable external demand offset (`setExternalDemand({r,c,i})`
+  on the wrapper, default 0, clamped to the native ranges). Offsets serialize with the valve
+  state, so save/resume stays byte-identical; the city driver also re-applies them every tick.
 - Fixed at construction: `LEVEL_EASY` (maintenance ×0.7, tax yield ×1.4), `SPEED_SLOW`
   (most frequent scan cadence — speed changes scan physics, not wall-clock, in headless use).
 

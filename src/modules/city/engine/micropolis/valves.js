@@ -22,6 +22,15 @@ var Valves = EventEmitter(function () {
   this.resCap = false;
   this.comCap = false;
   this.indCap = false;
+  // PATCH(agorabench): injectable external demand offsets + the engine-integrated
+  // base valves they bias. setValves runs the upstream integrator on the bases;
+  // the visible valves become base + offset (see the tail of setValves below).
+  this.resBase = 0;
+  this.comBase = 0;
+  this.indBase = 0;
+  this.externalOffsetRes = 0;
+  this.externalOffsetCom = 0;
+  this.externalOffsetInd = 0;
 });
 
 
@@ -126,9 +135,29 @@ Valves.prototype.setValves = function(gameLevel, census, budget) {
   comRatio = (comRatio - 1) * taxTableScale + taxTable[z];
   indRatio = (indRatio - 1) * taxTableScale + taxTable[z];
 
-  this.resValve = MiscUtils.clamp(this.resValve + Math.round(resRatio), -RES_VALVE_RANGE, RES_VALVE_RANGE);
-  this.comValve = MiscUtils.clamp(this.comValve + Math.round(comRatio), -COM_VALVE_RANGE, COM_VALVE_RANGE);
-  this.indValve = MiscUtils.clamp(this.indValve + Math.round(indRatio), -IND_VALVE_RANGE, IND_VALVE_RANGE);
+  // PATCH(agorabench): the upstream integrator now runs on the base valves
+  // (identical arithmetic); the visible valves add the injected external demand
+  // offset, re-clamped to the native range, so a persistent offset biases demand
+  // without compounding through the integrator on every recompute. Caps still
+  // zero positive demand (stadium/port/airport prerequisites outrank external
+  // demand). With all offsets 0 the visible valves equal the bases exactly —
+  // byte-identical dynamics to upstream.
+  this.resBase = MiscUtils.clamp(this.resBase + Math.round(resRatio), -RES_VALVE_RANGE, RES_VALVE_RANGE);
+  this.comBase = MiscUtils.clamp(this.comBase + Math.round(comRatio), -COM_VALVE_RANGE, COM_VALVE_RANGE);
+  this.indBase = MiscUtils.clamp(this.indBase + Math.round(indRatio), -IND_VALVE_RANGE, IND_VALVE_RANGE);
+
+  if (this.resCap && this.resBase > 0)
+    this.resBase = 0;
+
+  if (this.comCap && this.comBase > 0)
+      this.comBase = 0;
+
+  if (this.indCap && this.indBase > 0)
+      this.indBase = 0;
+
+  this.resValve = MiscUtils.clamp(this.resBase + this.externalOffsetRes, -RES_VALVE_RANGE, RES_VALVE_RANGE);
+  this.comValve = MiscUtils.clamp(this.comBase + this.externalOffsetCom, -COM_VALVE_RANGE, COM_VALVE_RANGE);
+  this.indValve = MiscUtils.clamp(this.indBase + this.externalOffsetInd, -IND_VALVE_RANGE, IND_VALVE_RANGE);
 
   if (this.resCap && this.resValve > 0)
     this.resValve = 0;

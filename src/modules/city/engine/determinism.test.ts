@@ -50,6 +50,22 @@ describe('city engine determinism', () => {
     expect(b.serialize()).toBe(c.serialize());
   });
 
+  it('save -> reload -> resume is byte-identical with a nonzero external demand offset', () => {
+    const a = grownCity(24);
+    a.setExternalDemand({ r: 600, c: 450, i: -300 });
+    a.tick(6);
+    const saved = a.serialize();
+
+    const b = deserializeCity(saved);
+    expect(b.serialize()).toBe(saved);
+    b.tick(12);
+
+    const c = grownCity(24);
+    c.setExternalDemand({ r: 600, c: 450, i: -300 });
+    c.tick(18);
+    expect(b.serialize()).toBe(c.serialize());
+  });
+
   it('develops a real city, so the identity checks are not vacuous', () => {
     const stats = grownCity(36).getState().stats;
     expect(stats.population).toBeGreaterThan(0);

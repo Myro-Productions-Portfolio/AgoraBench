@@ -21,13 +21,20 @@ import type {
   CityState,
   CityStats,
   CreateCityOptions,
+  ExternalDemand,
 } from './types';
 
-export type { BuildResult, BuildToolName, CityKnobs, CityState, CityStats, CreateCityOptions };
+export type { BuildResult, BuildToolName, CityKnobs, CityState, CityStats, CreateCityOptions, ExternalDemand };
 
 /* One city month = 4 cityTime units = 4 full 16-phase simulation cycles. */
 const FRAMES_PER_MONTH = 64;
-const SNAPSHOT_VERSION = 1;
+/* v2: valve state gained base/externalOffset fields (PATCH(agorabench) demand
+   seam) — a v1 snapshot would resume with zeroed bases and diverge. */
+const SNAPSHOT_VERSION = 2;
+/* Native valve ranges, mirrored from valves.js. */
+const RES_VALVE_RANGE = 2000;
+const COM_VALVE_RANGE = 1500;
+const IND_VALVE_RANGE = 1500;
 const DEFAULT_WIDTH = 120;
 const DEFAULT_HEIGHT = 100;
 
@@ -218,6 +225,17 @@ export class CityEngine {
     if (knobs.disastersEnabled !== undefined) {
       this.sim.disasterManager.disastersEnabled = knobs.disastersEnabled;
     }
+  }
+
+  /* External demand offsets live inside the serialized valve state AND are
+     re-applied by the driver every tick — either alone keeps save -> resume
+     byte-identical to a continuous run. Takes effect at the next valve
+     recompute (every 2nd sim cycle, i.e. within the current month). */
+  setExternalDemand(offset: ExternalDemand): void {
+    const v = this.sim._valves;
+    v.externalOffsetRes = clamp(Math.round(offset.r), -RES_VALVE_RANGE, RES_VALVE_RANGE);
+    v.externalOffsetCom = clamp(Math.round(offset.c), -COM_VALVE_RANGE, COM_VALVE_RANGE);
+    v.externalOffsetInd = clamp(Math.round(offset.i), -IND_VALVE_RANGE, IND_VALVE_RANGE);
   }
 
   getState(): CityState {

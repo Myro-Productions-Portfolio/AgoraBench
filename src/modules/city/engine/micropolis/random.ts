@@ -11,9 +11,28 @@
  *
  */
 
-interface MathGlobal {
-  random(): number;
-  floor(n: number): number;
+// PATCH(agorabench): Math.random replaced with a seedable mulberry32 PRNG so runs are
+// deterministic and the PRNG state can be captured in snapshots. See PROVENANCE.md.
+let prngState = 0;
+
+function mulberry32(): number {
+  prngState = (prngState + 0x6d2b79f5) | 0;
+  let t = prngState;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
+function seedRandom(seed: number): void {
+  prngState = seed | 0;
+}
+
+function getRandomState(): number {
+  return prngState;
+}
+
+function setRandomState(state: number): void {
+  prngState = state | 0;
 }
 
 type UpperBoundedRNG = (maxValue: number) => number;
@@ -31,8 +50,8 @@ function getERandom(max: number, rng: UpperBoundedRNG = getRandom): number {
   return Math.min(firstCandidate, secondCandidate);
 }
 
-function getRandom(max: number, mathGlobal: MathGlobal = Math): number {
-  return mathGlobal.floor(mathGlobal.random() * (max + 1));
+function getRandom(max: number): number {
+  return Math.floor(mulberry32() * (max + 1));
 }
 
 function getRandom16(rng: UpperBoundedRNG = getRandom): number {
@@ -55,6 +74,9 @@ const Random = {
   getRandom,
   getRandom16,
   getRandom16Signed,
+  seedRandom,
+  getRandomState,
+  setRandomState,
 };
 
 export { Random };

@@ -333,8 +333,10 @@ var crimeScan = function(census, blockMaps) {
   var crimeZoneCount = 0;
 
   // Scan the map, looking for developed land, as it can attract crime.
-  for (var x = 0, width = crimeRateMap.mapWidth, blockSize = crimeRateMap.blockSize; x < width; x += blockSize) {
-    for (var y = 0, height = crimeRateMap.mapHeight, b; y < height; y += blockSize) {
+  // PATCH(agorabench): BlockMap has no mapWidth/mapHeight — upstream regression left the loop
+  // bounds undefined, so crimeScan silently never ran. See PROVENANCE.md.
+  for (var x = 0, width = crimeRateMap.gameMapWidth, blockSize = crimeRateMap.blockSize; x < width; x += blockSize) {
+    for (var y = 0, height = crimeRateMap.gameMapHeight, b; y < height; y += blockSize) {
       // Remember: landValueMap values are in the range 0-250
       var value = landValueMap.worldGet(x, y);
 

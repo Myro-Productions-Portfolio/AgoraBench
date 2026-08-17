@@ -339,11 +339,13 @@ var simulate = function(simData) {
       break;
 
     case 9:
+      // PATCH(agorabench): upstream references an undefined bare `budget` here, which throws
+      // a ReferenceError the first time phase 9 hits a census boundary. See PROVENANCE.md.
       if (this._cityTime % CENSUS_FREQUENCY_10 === 0)
-        this._census.take10Census(budget);
+        this._census.take10Census(this.budget);
 
       if (this._cityTime % CENSUS_FREQUENCY_120 === 0)
-        this._census.take120Census(budget);
+        this._census.take120Census(this.budget);
 
       if (this._cityTime % TAX_FREQUENCY === 0)  {
         this.budget.collectTax(this._gameLevel, this._census);
@@ -400,6 +402,13 @@ Simulation.prototype._simulate = function(simData) {
   this.evaluation.cityEvaluation(simData);
   this._simulate = simulate;
   this._simulate(simData);
+};
+
+
+// PATCH(agorabench): lets a deserialized instance skip the one-shot initial-evaluation wrapper
+// above, which consumes PRNG draws a continuous run would not repeat. See PROVENANCE.md.
+Simulation.prototype._skipInitialEvaluation = function() {
+  this._simulate = simulate;
 };
 
 

@@ -15,10 +15,19 @@ import { Config } from './config.js';
 
 // Decorate the given object, by adding {add|remove}EventListener methods, and an internal '_emitEvent' method
 var EventEmitter = function(obj) {
-  var events = {};
+  // PATCH(agorabench): listener storage moved from a per-decoration closure (shared by every
+  // instance of a decorated constructor) to a non-enumerable per-object slot. The shared store
+  // cross-wired listeners between coexisting engine instances and accumulated without bound in
+  // a long-running headless process. See PROVENANCE.md.
+  var eventsFor = function(target) {
+    if (!Object.prototype.hasOwnProperty.call(target, '__eeEvents'))
+      Object.defineProperty(target, '__eeEvents', {value: {}, enumerable: false});
+    return target.__eeEvents;
+  };
 
 
   var addListener = function(event, listener) {
+    var events = eventsFor(this);
     if (!(event in events))
       events[event] = [];
 
@@ -29,6 +38,7 @@ var EventEmitter = function(obj) {
 
 
   var removeListener = function(event, listener) {
+    var events = eventsFor(this);
     if (!(event in events))
       events[event] = [];
 
@@ -47,6 +57,7 @@ var EventEmitter = function(obj) {
         throw new Error('Sending undefined event!');
     }
 
+    var events = eventsFor(this);
     if (!(event in events))
       events[event] = [];
 

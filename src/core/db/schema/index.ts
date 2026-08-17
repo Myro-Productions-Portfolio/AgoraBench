@@ -26,3 +26,4 @@ export { courtCases, courtCaseEvents, courtCaseVotes } from '@modules/government
 export { realitySnapshots } from '@modules/government/db/schema/realitySnapshots'; /* divergence experiment */
 export { worldEvents } from '@modules/world/db/schema/worldEvents'; /* exogenous reality feed, E2 slice 1 */
 export { worldState } from '@modules/world/db/schema/worldState'; /* E5 macro engine, world-model Layer 1 */
+export { cityState, citySnapshots } from '@modules/city/db/schema/cityState'; /* Capitol City effect layer */

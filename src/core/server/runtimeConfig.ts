@@ -231,6 +231,10 @@ export interface RuntimeConfig {
 
   /* ---- Elections Revival (minimal slice) — deployed dark, off by default ---- */
   presidentTermTicks: number;                // incumbent tenure limit in ticks (wall-clock-derived from positions.startDate); 0 = disabled, preserves today's suppress-while-seated behavior; recommended 1460 ≈ 4 sim-years
+
+  /* ---- Capitol City (effect layer) — deployed dark, off by default ---- */
+  cityEnabled: boolean;                      // master switch: city engine never loads, ticks, or persists when false (deploy dark)
+  cityMonthsPerTick: number;                 // city-months advanced per government tick (1-12); 1 keeps causality legible
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -453,6 +457,10 @@ const DEFAULTS: RuntimeConfig = {
 
   /* Elections Revival (minimal slice) — deployed dark */
   presidentTermTicks: 0,
+
+  /* Capitol City (effect layer) — deployed dark */
+  cityEnabled: false,
+  cityMonthsPerTick: 1,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

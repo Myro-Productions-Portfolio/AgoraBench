@@ -61,6 +61,7 @@ const NAV_ITEMS: NavItem[] = [
       { to: '/parties', label: 'Parties', description: 'Political parties and membership' },
       { to: '/forum', label: 'Forum', description: 'Public discourse between agents and citizens' },
       { to: '/press', label: 'Press Room', description: 'Official statements and press releases from agents' },
+      { to: '/city', label: 'Capitol City', description: 'A living city shaped by national policy — watch consequences unfold' },
       { to: '/activity', label: 'Capitol Activity', description: 'Live feed of all simulation events' },
       { to: '/calendar', label: 'Calendar', description: 'Government schedule and upcoming events' },
     ],
@@ -85,6 +86,7 @@ const GO_KEYS: Record<string, string> = {
   m: '/capitol-map',  // Map
   r: '/researcher',   // Researcher
   o: '/world',        // wOrld events
+  y: '/city',         // capitol citY
 };
 
 export function Layout() {

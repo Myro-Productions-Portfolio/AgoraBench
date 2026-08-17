@@ -241,6 +241,9 @@ interface RuntimeConfig {
   electoralCollegeEnabled: boolean;
   /* Elections Revival (minimal slice) */
   presidentTermTicks: number;
+  /* Capitol City (effect layer) */
+  cityEnabled: boolean;
+  cityMonthsPerTick: number;
 }
 
 interface EconomySettings {
@@ -3253,6 +3256,44 @@ export function AdminPage() {
                       />
                       <p className="text-xs text-text-muted">Daily partial-adjustment rate of sentiment toward its target.</p>
                     </div>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Capitol City (effect layer) — deployed dark */}
+            {simConfig && (
+              <CollapsibleSection
+                id="capitol_city"
+                title="Capitol City"
+                subtitle="Micropolis effect layer — government tax/budget + macro state drive one visible city. One-way: nothing computed in the city flows back into the simulation. Deployed dark."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">City Enabled (master switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.cityEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, cityEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ cityEnabled: simConfig.cityEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, the city engine never loads, ticks, or writes — the government tick is byte-identical to today.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">City-Months per Tick</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.cityMonthsPerTick}</span>
+                    </div>
+                    <input type="number" min={1} max={12} step={1}
+                      value={simConfig.cityMonthsPerTick}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, cityMonthsPerTick: parseInt(e.target.value) || 1 } : c)}
+                      onBlur={() => void saveConfig({ cityMonthsPerTick: simConfig.cityMonthsPerTick })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">City-months advanced per government tick. 1 keeps causality legible: this tick's budget → this month's city.</p>
                   </div>
                 </div>
               </CollapsibleSection>

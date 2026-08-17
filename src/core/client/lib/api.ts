@@ -114,6 +114,14 @@ export const pressApi = {
     request('/press/gazette/latest'),
 };
 
+/* Capitol City spectator endpoints (city-effect-layer slice 3) */
+export const cityApi = {
+  state: () =>
+    request('/city/state'),
+  history: (limit = 96) =>
+    request(`/city/history?limit=${limit}`),
+};
+
 /* Vote endpoints */
 export const votesApi = {
   cast: (data: {

@@ -59,6 +59,7 @@ import { runAppointment, getSittingPresident } from '@modules/government/server/
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
+import { stepCityEngine } from '@modules/city/server/lib/cityTick.js';
 import { staleRepeatableKeys } from '../lib/tickReconcile.js';
 import { floorExpiryCutoff, selectExpiredFloorBills } from '../lib/billExpiryMath.js';
 
@@ -4449,6 +4450,31 @@ agentTickQueue.process(async () => {
       }
     } catch (err) {
       console.warn('[SIMULATION] Macro step error:', err);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Capitol City step (docs/specs/city-effect-layer.md). One-way effect */
+  /* layer: government tax/budget + macro state -> engine knobs; nothing */
+  /* computed in the city ever flows back into approval, elections,      */
+  /* macro, or agent prompts. Dark by default (rc.cityEnabled).          */
+  /* stepCityEngine never throws; try/catch here is belt-and-suspenders, */
+  /* mirroring the macro block.                                          */
+  /* ------------------------------------------------------------------ */
+  if (rc.cityEnabled) {
+    try {
+      const city = await stepCityEngine(tickNumber);
+      if (city) {
+        const s = city.stats;
+        console.warn(
+          `[SIMULATION] City: ${city.bootstrapped ? 'bootstrapped, ' : ''}month ${city.cityTimeMonths} — ` +
+          `pop=${s.population}, funds=$${s.funds}, tax=${s.taxRate}/20, ` +
+          `funding road/fire/police=${city.knobs.roadFunding.toFixed(2)}/${city.knobs.fireFunding.toFixed(2)}/${city.knobs.policeFunding.toFixed(2)}, ` +
+          `demand r/c/i=${city.externalDemand.r}/${city.externalDemand.c}/${city.externalDemand.i} (${city.regime})`,
+        );
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] City step error:', err);
     }
   }
 

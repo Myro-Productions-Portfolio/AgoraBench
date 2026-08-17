@@ -5431,17 +5431,18 @@ agentTickQueue.process(async () => {
 
     const now = new Date();
 
-    /* Active positions snapshot — used by the vacancy auto-fill below AND by
-     * the candidacy declarations / term-expiry trigger further down (moved
-     * up so all three sub-phases share one query). */
+    /* Active positions snapshot — used by the candidacy declarations
+     * further down (moved up so that sub-phase shares one query). NOT used
+     * by the vacancy auto-fill / term-expiry blocks below finalizeElection
+     * — those re-fetch fresh (freshOfficePositions14 etc.) since
+     * finalizeElection can seat new officeholders mid-phase; see that
+     * block's comment. */
     const allActivePositions = await db
       .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate })
       .from(positions)
       .where(eq(positions.isActive, true));
 
-    const activeCongress = allActivePositions.filter((p) => p.type === 'congress_member');
     const activePresident = allActivePositions.find((p) => p.type === 'president');
-    const heldAgentIds = new Set(allActivePositions.map((p) => p.agentId));
     const sittingJusticeIds = new Set(allActivePositions.filter((p) => p.type === 'supreme_justice').map((p) => p.agentId));
 
     /* ---- Candidacy declarations (registration phase) ------------------ */
@@ -5970,28 +5971,32 @@ agentTickQueue.process(async () => {
     /* Match the justice auto-fill pattern from Phase 10. Before this fix,
      * seats only got filled when an organic election completed — so a
      * fresh DB with 50 congressSeats and nothing campaigning sat at zero
-     * sitting congress members indefinitely. allActivePositions/
-     * activeCongress/activePresident/heldAgentIds/sittingJusticeIds are
-     * declared earlier in this phase (candidacy declarations need them
-     * too). */
+     * sitting congress members indefinitely.
+     *
+     * Re-fetched here (not the allActivePositions snapshot from the top of
+     * the phase): elections finalized just above (finalizeElection) can
+     * have seated a new president/justice/congress-member since that
+     * snapshot was taken. Every decision point below — congress vacancy
+     * count/eligibility, the exclusivity guard, and the president
+     * vacancy/term-expiry checks — must derive from this single fresh
+     * fetch, not the stale top-of-phase snapshot, or a same-tick winner can
+     * be double-seated / re-elected against themselves. */
+    const freshOfficePositions14 = await db
+      .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate })
+      .from(positions)
+      .where(eq(positions.isActive, true));
+    const freshActiveCongress14 = freshOfficePositions14.filter((p) => p.type === 'congress_member');
+    const freshActivePresident14 = freshOfficePositions14.find((p) => p.type === 'president');
+    const freshHeldAgentIds14 = new Set(freshOfficePositions14.map((p) => p.agentId));
+    const excludedOfficeIdsFresh14 = excludedOfficeHolderIds(freshOfficePositions14);
 
     /* Congress: direct auto-fill (mirrors justice pattern) */
-    if (activeCongress.length < rc.congressSeats) {
-      const vacancyCount = rc.congressSeats - activeCongress.length;
+    if (freshActiveCongress14.length < rc.congressSeats) {
+      const vacancyCount = rc.congressSeats - freshActiveCongress14.length;
       console.warn(`[SIMULATION] Phase 14: ${vacancyCount} congress vacancies — filling...`);
 
-      /* Re-fetched, not the allActivePositions snapshot above: elections
-         finalized earlier in this same phase (finalizeElection, just above)
-         can have seated a new president/justice since that snapshot was
-         taken, so heldAgentIds could be stale for the exclusion check. */
-      const freshOfficePositions14 = await db
-        .select({ agentId: positions.agentId, type: positions.type })
-        .from(positions)
-        .where(eq(positions.isActive, true));
-      const excludedOfficeIdsFresh14 = excludedOfficeHolderIds(freshOfficePositions14);
-
       const eligible = excludeOfficeHolders(
-        activeAgents.filter((a) => !heldAgentIds.has(a.id)),
+        activeAgents.filter((a) => !freshHeldAgentIds14.has(a.id)),
         excludedOfficeIdsFresh14,
       )
         .sort((a, b) => b.reputation - a.reputation)
@@ -6015,7 +6020,7 @@ agentTickQueue.process(async () => {
           description: `Appointed to fill a congress vacancy (reputation rank fill)`,
         });
 
-        heldAgentIds.add(agent.id);
+        freshHeldAgentIds14.add(agent.id);
         console.warn(`[SIMULATION] Phase 14: Seated ${agent.displayName} as Congress Member`);
       }
     }
@@ -6023,7 +6028,7 @@ agentTickQueue.process(async () => {
     /* President: if no sitting president and no election currently in flight,
      * auto-trigger a new election in 'registration' state. We do NOT appoint
      * by fiat — presidents come from elections, not appointments. */
-    if (!activePresident) {
+    if (!freshActivePresident14) {
       const [inflightPresElection] = await db
         .select({ id: elections.id })
         .from(elections)
@@ -6074,8 +6079,16 @@ agentTickQueue.process(async () => {
        * transfer once a winner is certified. Tenure is wall-clock-derived
        * from positions.startDate (see electionMath.tenureTicks) — no
        * tick-stamped column added this slice; documented caveat: server
-       * downtime does not pause tenure the way a tick-count would. */
-      const tenure = tenureTicks(activePresident.startDate, now, rc.tickIntervalMs);
+       * downtime does not pause tenure the way a tick-count would.
+       *
+       * Uses freshActivePresident14, not the top-of-phase activePresident:
+       * a presidential election certified by finalizeElection earlier in
+       * THIS tick reseats a new president with a fresh startDate. Reading
+       * the stale snapshot here would compute tenure from the OUTGOING
+       * president's startDate — since exceeded tenure is why the election
+       * was triggered in the first place, that immediately re-triggers a
+       * second election against the brand-new incumbent. */
+      const tenure = tenureTicks(freshActivePresident14.startDate, now, rc.tickIntervalMs);
       if (presidentTermExpired(tenure, rc.presidentTermTicks)) {
         const [inflightPresElection] = await db
           .select({ id: elections.id })
@@ -6114,7 +6127,7 @@ agentTickQueue.process(async () => {
             const [incumbentAgent] = await db
               .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
               .from(agents)
-              .where(eq(agents.id, activePresident.agentId))
+              .where(eq(agents.id, freshActivePresident14.agentId))
               .limit(1);
 
             if (incumbentAgent) {

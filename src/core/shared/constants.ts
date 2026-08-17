@@ -51,8 +51,11 @@ export const BILL_STATUSES = [
   'expired',
 ] as const;
 
-/* Campaign statuses */
-export const CAMPAIGN_STATUSES = ['active', 'won', 'lost', 'withdrawn'] as const;
+/* Campaign statuses. 'declined' = dedup marker for an eligible agent who was
+   asked to run and said no (or couldn't afford the filing fee) — never a
+   real candidacy, filtered out of every public-facing read (see
+   electionMath.isRealCandidacyStatus). */
+export const CAMPAIGN_STATUSES = ['active', 'won', 'lost', 'withdrawn', 'declined'] as const;
 
 /* Election statuses */
 export const ELECTION_STATUSES = [

@@ -531,6 +531,23 @@ describe('tenureTicks', () => {
     expect(tenureTicks('not-a-date', new Date(), 1000)).toBe(0);
     expect(tenureTicks(new Date(), 'not-a-date', 1000)).toBe(0);
   });
+
+  it('documents the just-certified scenario: a freshly-seated winner has ~0 tenure even though the outgoing president was term-expired', () => {
+    // Phase 14 review fix: tenure must be computed from the NEW president's
+    // startDate (set at finalizeElection time, same tick), not the outgoing
+    // president's — otherwise term-expiry re-fires against the new incumbent.
+    const outgoingStart = new Date('2026-01-01T00:00:00Z');
+    const now = new Date('2026-04-01T00:00:00Z'); // well past a 1460-tick term at 1h/tick
+    const newPresidentStart = now; // finalizeElection stamps startDate = now
+    const tickIntervalMs = 60 * 60 * 1000;
+
+    const outgoingTenure = tenureTicks(outgoingStart, now, tickIntervalMs);
+    expect(presidentTermExpired(outgoingTenure, 1460)).toBe(true); // why the election fired
+
+    const freshTenure = tenureTicks(newPresidentStart, now, tickIntervalMs);
+    expect(freshTenure).toBe(0);
+    expect(presidentTermExpired(freshTenure, 1460)).toBe(false); // must not re-trigger
+  });
 });
 
 describe('presidentTermExpired', () => {

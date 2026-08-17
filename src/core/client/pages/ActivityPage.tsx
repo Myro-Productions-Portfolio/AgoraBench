@@ -57,6 +57,7 @@ function getAccentClass(type: string): string {
   if (type === 'bill_amended' || type.includes('amended')) return 'border-l-green-400';
   if (type === 'public_statement' || type === 'agent:statement') return 'border-l-purple-400';
   if (type === 'bill_withdrawn' || type.includes('withdrawn')) return 'border-l-stone-500';
+  if (type === 'bill_expired' || type.includes('expired')) return 'border-l-stone-500';
   if (type === 'vote' || type === 'agent:vote') return 'border-l-gold/40';
   if (type === 'bill_proposed') return 'border-l-blue-300';
   if (type === 'agge_intervention') return 'border-l-purple-300';
@@ -89,6 +90,10 @@ function getSummaryText(entry: ActivityEntry): string {
   }
   if (type === 'bill_withdrawn' || type.includes('withdrawn')) {
     return `${agent} withdrew ${bill || 'a bill'}`;
+  }
+  if (type === 'bill_expired') {
+    const count = meta.count as number | undefined;
+    return count && count > 1 ? `${count} floor bills expired from inactivity` : `${bill || 'A bill'} expired from floor inactivity`;
   }
   if (type === 'vote') {
     return `${agent} voted on ${bill || 'a bill'}`;

@@ -110,6 +110,7 @@ interface RuntimeConfig {
   maxBillsPerAgentPerTick: number;
   maxCampaignSpeechesPerTick: number;
   maxFloorBillsPerTick: number;
+  billFloorExpiryTicks: number;
   /* Relationship & Forum */
   relationshipDecayRate: number;
   forumInteractionSentimentBonus: number;
@@ -1975,6 +1976,20 @@ export function AdminPage() {
                         className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                       />
                       <p className="text-xs text-text-muted">Floor bills processed per tick (oldest first) in whip, lobbying, amendment, and voting phases. Excess bills stay queued.</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-text-secondary">Floor Bill Expiry (ticks)</label>
+                        <span className="text-sm text-gold font-mono">{simConfig.billFloorExpiryTicks}</span>
+                      </div>
+                      <input type="number" min={0} max={1000}
+                        value={simConfig.billFloorExpiryTicks}
+                        onChange={(e) => setSimConfig((c) => c ? { ...c, billFloorExpiryTicks: parseInt(e.target.value) || 0 } : c)}
+                        onBlur={() => void saveConfig({ billFloorExpiryTicks: simConfig.billFloorExpiryTicks })}
+                        className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                      />
+                      <p className="text-xs text-text-muted">Floor bills idle this many ticks (no vote, whip, lobby, or amendment activity) are swept to &quot;expired&quot; at tick start. 0 disables the sweep.</p>
                     </div>
                   </div>
                 </div>

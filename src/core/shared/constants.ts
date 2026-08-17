@@ -35,7 +35,9 @@ export const ELECTION = {
    'vetoed'  = presidential veto sustained (Phase 7). Historical rows may
                also carry 'vetoed' for floor failures written before the
                'failed' status was introduced (2026-07) — clients must
-               keep rendering both. */
+               keep rendering both.
+   'expired' = floor bill swept for staleness (F3), no vote ever reached —
+               physics housekeeping, not a vote outcome. */
 export const BILL_STATUSES = [
   'proposed',
   'committee',
@@ -46,6 +48,7 @@ export const BILL_STATUSES = [
   'tabled',
   'presidential_veto',
   'law',
+  'expired',
 ] as const;
 
 /* Campaign statuses */

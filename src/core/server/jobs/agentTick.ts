@@ -59,6 +59,7 @@ import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } fro
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
 import { staleRepeatableKeys } from '../lib/tickReconcile.js';
+import { floorExpiryCutoff, selectExpiredFloorBills } from '../lib/billExpiryMath.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -351,6 +352,74 @@ agentTickQueue.process(async () => {
     }
   } catch (err) {
     console.warn('[SIMULATION] Phase 0.5 error:', err);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* PHASE 0.7: Floor Bill Expiry Sweep                                    */
+  /* Floor time is scarce and sessions end — bills idle on the floor for   */
+  /* billFloorExpiryTicks (lastActionAt-derived; bills carry no tick-      */
+  /* number column) are swept to 'expired' before the floor working set    */
+  /* is selected, so the backlog cannot grow unbounded (F3). Housekeeping, */
+  /* not a vote outcome: sponsors are NOT penalized (no updateApproval      */
+  /* call, unlike bill_failed_floor/bill_withdrawn). 0 ticks disables the   */
+  /* sweep outright (floorExpiryCutoff returns null, no DB touch).         */
+  /* ------------------------------------------------------------------ */
+  try {
+    console.warn('[SIMULATION] Phase 0.7: Floor Bill Expiry Sweep');
+
+    const cutoff = floorExpiryCutoff(rc.billFloorExpiryTicks, rc.tickIntervalMs, new Date());
+    if (cutoff === null) {
+      console.warn('[SIMULATION] Phase 0.7: Skipping — billFloorExpiryTicks=0 (sweep disabled).');
+    } else {
+      const candidateFloorBills = await db
+        .select({ id: bills.id, status: bills.status, lastActionAt: bills.lastActionAt, title: bills.title })
+        .from(bills)
+        .where(eq(bills.status, 'floor'));
+
+      const expired = selectExpiredFloorBills(candidateFloorBills, cutoff);
+
+      if (expired.length === 0) {
+        console.warn('[SIMULATION] Phase 0.7: No aged floor bills — skipping.');
+      } else {
+        const titleById = new Map(candidateFloorBills.map((b) => [b.id, b.title]));
+        const expiredIds = expired.map((b) => b.id);
+        await db
+          .update(bills)
+          .set({ status: 'expired', lastActionAt: new Date() })
+          .where(inArray(bills.id, expiredIds));
+
+        /* Event-flood guard: a large first sweep (e.g. draining the 2,003-bill
+           backlog) must not write one activity_events row per bill. Per-bill
+           events only below a sane batch size; above it, one summary event. */
+        const EXPIRY_EVENT_BATCH_CAP = 20;
+        if (expired.length <= EXPIRY_EVENT_BATCH_CAP) {
+          await db.insert(activityEvents).values(
+            expired.map((b) => ({
+              type: 'bill_expired',
+              agentId: null,
+              title: 'Bill expired from floor inactivity',
+              description: `"${titleById.get(b.id) ?? 'A bill'}" expired after ${rc.billFloorExpiryTicks} ticks with no floor action`,
+              metadata: JSON.stringify({ billId: b.id }),
+            })),
+          );
+        } else {
+          /* Sample only — full billIds list would bloat this single text
+             column when the batch is large (e.g. the 2,003-bill backlog). */
+          await db.insert(activityEvents).values({
+            type: 'bill_expired',
+            agentId: null,
+            title: `${expired.length} floor bills expired from inactivity`,
+            description: `${expired.length} bills idle on the floor for over ${rc.billFloorExpiryTicks} ticks were swept to expired.`,
+            metadata: JSON.stringify({ count: expired.length, sampleBillIds: expiredIds.slice(0, 20) }),
+          });
+        }
+
+        broadcast('bill:expired', { count: expired.length });
+        console.warn(`[SIMULATION] Phase 0.7: Expired ${expired.length} aged floor bill(s) (cutoff ${cutoff.toISOString()}).`);
+      }
+    }
+  } catch (err) {
+    console.warn('[SIMULATION] Phase 0.7 error:', err);
   }
 
   /* ---- Floor working set (Phases 1, 1.5, 1.7, 2) ---------------------- */

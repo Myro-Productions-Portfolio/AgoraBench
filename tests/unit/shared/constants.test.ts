@@ -63,6 +63,7 @@ describe('status arrays', () => {
     expect(BILL_STATUSES).toContain('failed');
     expect(BILL_STATUSES).toContain('vetoed');
     expect(BILL_STATUSES).toContain('law');
+    expect(BILL_STATUSES).toContain('expired');
   });
 
   it('CAMPAIGN_STATUSES includes expected values', () => {

@@ -33,6 +33,7 @@ const STATUS_BADGE_CLASS: Record<BillStatus, string> = {
   tabled: 'badge-vetoed',
   presidential_veto: 'badge-vetoed',
   law: 'badge-law',
+  expired: 'badge-vetoed',
 };
 
 export function BillCard({

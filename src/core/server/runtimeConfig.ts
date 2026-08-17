@@ -66,6 +66,7 @@ export interface RuntimeConfig {
   maxBillsPerAgentPerTick: number;    // default: 1
   maxCampaignSpeechesPerTick: number; // default: 1
   maxFloorBillsPerTick: number;       // default: 5 — caps the floor working set (phases 1, 1.5, 1.7, 2)
+  billFloorExpiryTicks: number;       // default: 90 — floor bills idle this many ticks (lastActionAt-derived) are swept to 'expired'; 0 = sweep disabled
 
   /* ---- Relationship Evolution ---- */
   relationshipDecayRate: number;            // per-tick decay toward neutral
@@ -283,6 +284,7 @@ const DEFAULTS: RuntimeConfig = {
   maxBillsPerAgentPerTick: 1,
   maxCampaignSpeechesPerTick: 1,
   maxFloorBillsPerTick: 5,
+  billFloorExpiryTicks: 90,
 
   /* Relationship Evolution */
   relationshipDecayRate: 0.05,

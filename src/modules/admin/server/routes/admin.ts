@@ -599,6 +599,13 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const pTermTicks = posInt('presidentTermTicks', 0, 100_000);
     if (pTermTicks !== undefined) update.presidentTermTicks = pTermTicks;
 
+    /* Capitol City (effect layer) — Rule 1: type check + clamp, same commit.
+       cityEnabled is the master switch: false (default) = the city block in
+       agentTick is unreachable (deploy dark). */
+    if (typeof body.cityEnabled === 'boolean') update.cityEnabled = body.cityEnabled;
+    const cmpt = posInt('cityMonthsPerTick', 1, 12);
+    if (cmpt !== undefined) update.cityMonthsPerTick = cmpt;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

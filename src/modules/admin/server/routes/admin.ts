@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
 import { agentDecisions, agents, governmentSettings, users, researcherRequests, approvalEvents, bills, laws, billVotes, elections, campaigns, aggeInterventions } from '@db/schema/index';
-import { count, eq, sql, asc, desc } from 'drizzle-orm';
+import { and, count, eq, ne, sql, asc, desc } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   pauseSimulation,
@@ -1061,7 +1061,17 @@ router.get('/admin/export/elections', requireOwner, async (_req, res, next) => {
       })
       .from(elections)
       .leftJoin(winnerAgents, eq(elections.winnerId, winnerAgents.id))
-      .leftJoin(campaigns, eq(campaigns.electionId, elections.id))
+      /* status != 'declined' in the JOIN condition (not a WHERE) — a
+         'declined' campaign row (elections revival minimal slice: an
+         eligible agent asked "run?" who said no) is a dedup marker, never a
+         real candidacy, and must not leak into this export (review round 1,
+         Finding 4; same isRealCandidacyStatus predicate as GET
+         /elections/:id and GET /agents/:id/profile). Filtering in the JOIN
+         rather than a WHERE keeps this a left join in effect: an election
+         with only declined rows (or none at all) still appears — its
+         campaign columns are just null — instead of a WHERE silently
+         dropping the whole election row. */
+      .leftJoin(campaigns, and(eq(campaigns.electionId, elections.id), ne(campaigns.status, 'declined')))
       .leftJoin(candidateAgents, eq(campaigns.agentId, candidateAgents.id))
       .orderBy(desc(elections.createdAt));
 

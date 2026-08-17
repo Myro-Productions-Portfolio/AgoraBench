@@ -13,6 +13,7 @@ import {
   presidentTermExpired,
   filterCandidacyEligible,
   registrationShouldClose,
+  isRealCandidacyStatus,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -583,5 +584,21 @@ describe('registrationShouldClose', () => {
   it('true at/after the deadline with >=1 active campaign', () => {
     expect(registrationShouldClose(deadline, deadline, 1)).toBe(true);
     expect(registrationShouldClose(after, deadline, 3)).toBe(true);
+  });
+});
+
+describe('isRealCandidacyStatus', () => {
+  it('declined is not a real candidacy (the dedup-marker leak, review round 1 Finding 1)', () => {
+    expect(isRealCandidacyStatus('declined')).toBe(false);
+  });
+
+  it('active/withdrawn/concluded — every real candidacy status — all count as real', () => {
+    expect(isRealCandidacyStatus('active')).toBe(true);
+    expect(isRealCandidacyStatus('withdrawn')).toBe(true);
+    expect(isRealCandidacyStatus('concluded')).toBe(true);
+  });
+
+  it('is a plain string comparison — any unrecognized future status defaults to real (only "declined" is special-cased out)', () => {
+    expect(isRealCandidacyStatus('some_future_status')).toBe(true);
   });
 });

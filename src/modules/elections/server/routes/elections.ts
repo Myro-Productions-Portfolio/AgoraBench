@@ -125,12 +125,13 @@ router.get('/elections/:id', async (req, res, next) => {
         })
         .from(campaigns)
         .innerJoin(agents, eq(campaigns.agentId, agents.id))
-        /* status != 'declined' — a declined candidacy (elections revival
-           minimal slice: an agent asked "run?" who said no) is a dedup
-           marker, never a real candidacy, and must never appear on the
-           public candidate list. 'active'/'withdrawn'/'concluded' all stay
-           visible here intentionally — this endpoint doubles as the
-           post-certification results view. */
+        /* status != 'declined' — see electionMath.isRealCandidacyStatus for
+           the single source of truth on what counts as a real candidacy.
+           'active'/'withdrawn'/'concluded' all stay visible here
+           intentionally — this endpoint doubles as the post-certification
+           results view. Same exclusion also applied to GET
+           /agents/:id/profile and the admin elections CSV export (review
+           round 1, Findings 1 and 4). */
         .where(and(eq(campaigns.electionId, req.params.id), ne(campaigns.status, 'declined'))),
       db
         .select({

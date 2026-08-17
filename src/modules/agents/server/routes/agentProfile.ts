@@ -21,7 +21,7 @@ import {
 } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
 import { requireAuth } from '@core/server/middleware/auth.js';
-import { eq, desc, or, and, isNotNull, sql } from 'drizzle-orm';
+import { eq, desc, or, and, isNotNull, ne, sql } from 'drizzle-orm';
 
 const router = Router();
 
@@ -141,7 +141,14 @@ router.get('/agents/:id/profile', async (req, res, next) => {
       })
       .from(campaigns)
       .innerJoin(elections, eq(campaigns.electionId, elections.id))
-      .where(eq(campaigns.agentId, id));
+      /* status != 'declined' — see electionMath.isRealCandidacyStatus for
+         the single source of truth on what counts as a real candidacy.
+         Unfiltered, a 'declined' row renders on this agent's public Career
+         Timeline (AgentProfilePage.tsx CareerTab) as a fabricated
+         lost-election entry — this route is unauthenticated (review round
+         1, Finding 1). Same exclusion also applied to GET /elections/:id
+         and the admin elections CSV export (Finding 4). */
+      .where(and(eq(campaigns.agentId, id), ne(campaigns.status, 'declined')));
 
     /* Recent activity events */
     const recentActivity = await db

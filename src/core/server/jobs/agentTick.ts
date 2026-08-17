@@ -5443,7 +5443,15 @@ agentTickQueue.process(async () => {
      * incumbent (who auto-registered without an LLM call at trigger time —
      * see the term-expiry/vacancy trigger blocks below). Mirrors the Phase 14
      * ballot-casting batching pattern: Promise.allSettled, failure-isolated,
-     * one agent's rejected/idle call never aborts the phase. */
+     * one agent's rejected/idle call never aborts the phase.
+     *
+     * Scope note (controller sign-off, review round 1): this block and the
+     * registration->campaigning transition below run for ANY presidential
+     * election in 'registration', not just term-expiry-triggered ones —
+     * that's intentional, they fix the pipeline generally (the pipeline was
+     * broken for vacancy-triggered elections too). presidentTermTicks only
+     * gates whether a term-expiry re-election gets CREATED; once any
+     * presidential election exists, it runs the same full lifecycle. */
     const electionsInRegistration = await db
       .select()
       .from(elections)

@@ -471,3 +471,21 @@ export function registrationShouldClose(now: Date | string | number, registratio
   if (!Number.isFinite(deadline) || !Number.isFinite(current)) return false;
   return current >= deadline && activeCampaignCount > 0;
 }
+
+/**
+ * Single source of truth for "is this campaigns.status a real candidacy the
+ * public/owner should ever see." 'declined' (elections revival minimal
+ * slice) is a dedup marker written when an eligible agent was asked to run
+ * and said no, or wanted to but couldn't afford the filing fee — it was
+ * never a real candidacy and must never render as one (review round 1,
+ * Finding 1: it was leaking onto an agent's public Career Timeline as a
+ * fabricated lost-election entry). 'active'/'withdrawn'/'concluded' all
+ * count as real — a withdrawn or concluded candidacy still really happened.
+ * Every campaigns read site that shows candidates/history to a human
+ * (GET /elections/:id, GET /agents/:id/profile, the admin elections CSV
+ * export) filters on this — see task-4-report.md fix-round-1 section for
+ * the file:line list.
+ */
+export function isRealCandidacyStatus(status: string): boolean {
+  return status !== 'declined';
+}

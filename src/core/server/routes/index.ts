@@ -26,6 +26,7 @@ import pressRouter from '@modules/press/server/routes/press';
 import realityRouter from '@modules/admin/server/routes/reality'; // divergence experiment: reality reference pool status
 import divergenceRouter from '@modules/government/server/routes/divergence'; // divergence experiment: /divergence page API (E1 slice 4)
 import worldRouter from '@modules/world/server/routes/world'; // exogenous world-events feed: /world page API (E2 slice 1)
+import cityRouter from '@modules/city/server/routes/city'; // Capitol City spectator API: /city page (city-effect-layer slice 3)
 
 const router = Router();
 
@@ -56,5 +57,6 @@ router.use(pressRouter);
 router.use(realityRouter); // divergence experiment: reality reference pool status
 router.use(divergenceRouter); // divergence experiment: /divergence page API (E1 slice 4)
 router.use(worldRouter); // exogenous world-events feed: /world page API (E2 slice 1)
+router.use(cityRouter); // Capitol City spectator API: /city page (city-effect-layer slice 3)
 
 export default router;

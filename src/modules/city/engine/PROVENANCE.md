@@ -39,6 +39,16 @@ Each site is marked with a `PATCH(agorabench)` comment.
    wrapper as `setExternalDemand({r,c,i})`; snapshot version bumped 1 → 2 (valve state
    gained fields).
 
+## Tile artwork served to the client (2026-08-19)
+
+`images/tiles.png` from the same pinned commit is vendored at
+`public/images/micropolis-tiles.png` and shipped to the browser as a static
+asset for the spectator sprite renderer. This does not breach the code-side
+GPL wall above: the sheet is an art asset (data), not linked code — nothing
+under `src/modules/city/engine/` is imported by the client bundle. Attribution
+and provenance (upstream URL, pinned commit, sha256, license pointers) live
+beside the asset in `public/images/MICROPOLIS-TILES-ATTRIBUTION.md`.
+
 ## Local additions (not upstream code)
 
 - `micropolis/*.d.ts` — minimal type shims for the untyped `.js` modules the wrapper imports.

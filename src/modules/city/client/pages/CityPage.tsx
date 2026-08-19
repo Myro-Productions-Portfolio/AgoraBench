@@ -243,15 +243,34 @@ const CityMapViewport = forwardRef<CityMapHandle, CityMapViewportProps>(
       );
     }, [categories, width, height, fitTiles]);
 
+    /* Keep at least ~100px of the map inside the viewport on each axis so a
+       pan/zoom can never strand it off-screen. */
+    const clampView = useCallback(
+      (v: { scale: number; x: number; y: number }) => {
+        const c = containerRef.current;
+        if (!c) return v;
+        const mapW = width * TILE_PX * v.scale;
+        const mapH = height * TILE_PX * v.scale;
+        const keepX = Math.min(100, mapW, c.clientWidth);
+        const keepY = Math.min(100, mapH, c.clientHeight);
+        return {
+          scale: v.scale,
+          x: Math.min(Math.max(v.x, keepX - mapW), c.clientWidth - keepX),
+          y: Math.min(Math.max(v.y, keepY - mapH), c.clientHeight - keepY),
+        };
+      },
+      [width, height],
+    );
+
     const zoomAt = useCallback(
       (cx: number, cy: number, factor: number) => {
         const v = viewRef.current;
         const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
         const k = scale / v.scale;
-        viewRef.current = { scale, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k };
+        viewRef.current = clampView({ scale, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k });
         draw();
       },
-      [draw],
+      [draw, clampView],
     );
 
     useImperativeHandle(
@@ -342,7 +361,9 @@ const CityMapViewport = forwardRef<CityMapHandle, CityMapViewportProps>(
       const onWheel = (e: WheelEvent) => {
         e.preventDefault();
         const rect = canvas.getBoundingClientRect();
-        zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.0015));
+        /* deltaMode: Firefox reports lines (1), not pixels (0). */
+        const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+        zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-deltaPx * 0.0015));
       };
       /* React attaches onWheel passively — preventDefault (to stop page
          scroll) needs a native non-passive listener. */
@@ -359,7 +380,7 @@ const CityMapViewport = forwardRef<CityMapHandle, CityMapViewportProps>(
       const drag = dragRef.current;
       if (!drag || drag.pointerId !== e.pointerId) return;
       const v = viewRef.current;
-      viewRef.current = { ...v, x: v.x + (e.clientX - drag.x), y: v.y + (e.clientY - drag.y) };
+      viewRef.current = clampView({ ...v, x: v.x + (e.clientX - drag.x), y: v.y + (e.clientY - drag.y) });
       drag.x = e.clientX;
       drag.y = e.clientY;
       draw();
@@ -533,13 +554,15 @@ export function CityPage() {
         </div>
       )}
 
-      {!loading && error && (
+      {/* Full error state only before any data exists; once the map is up, a
+          failed poll keeps it mounted (stale) so the user's view survives. */}
+      {!loading && error && !data && (
         <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-5 py-4 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {!loading && !error && data && !data.started && (
+      {!loading && data && !data.started && (
         <div className="rounded-lg border border-border bg-surface px-6 py-16 text-center space-y-2">
           <h2 className="font-serif text-xl font-semibold text-stone">The city has not been founded yet</h2>
           <p className="text-sm text-text-muted max-w-md mx-auto">
@@ -549,7 +572,7 @@ export function CityPage() {
         </div>
       )}
 
-      {!loading && !error && data?.started && data.map && categories && stats && (
+      {!loading && data?.started && data.map && categories && stats && (
         <>
           <div className="rounded-lg border border-border bg-surface p-5 space-y-4">
             <div className="flex items-baseline justify-between gap-3 flex-wrap">
@@ -564,6 +587,9 @@ export function CityPage() {
                 <span className="text-xs text-text-muted tabular-nums">
                   {fmtCityTime(data.cityTimeMonths ?? 0)} · gov tick {data.tickNumber}
                 </span>
+                {error && (
+                  <span className="text-xs text-red-300/80">live update failed — retrying</span>
+                )}
               </div>
             </div>
             <CityMapViewport

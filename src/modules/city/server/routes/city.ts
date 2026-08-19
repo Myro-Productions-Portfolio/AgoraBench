@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 import { desc, eq } from 'drizzle-orm';
 import { db } from '@db/connection';
 import { cityState, citySnapshots } from '@db/schema/index';
-import { encodeTileCategories } from '../lib/tileCategories';
+import { encodeTileCategories, encodeTileIds } from '../lib/tileCategories';
 import type { CityStats } from '../../engine/types';
 
 const router = Router();
@@ -84,6 +84,9 @@ router.get('/city/state', async (_req, res, next) => {
           height: snap.map.height,
           /* base64 Uint8Array, one category code per tile, row-major. */
           categories: encodeTileCategories(snap.map.tiles),
+          /* base64 little-endian Uint16Array, masked tile ids (0-1023, no
+             flag bits), row-major — drives the client sprite renderer. */
+          tiles: encodeTileIds(snap.map.tiles),
         },
         stats,
         delta: snapshots.length >= 2 ? computeStatsDelta(stats, snapshots[1].stats) : null,

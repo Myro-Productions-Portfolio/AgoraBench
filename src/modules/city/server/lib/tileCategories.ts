@@ -1,8 +1,9 @@
 /**
- * Server-side tile -> render-category mapping (docs/specs/city-effect-layer.md
- * §2 licensing posture): raw engine tile ids and engine code never reach the
- * client — the browser only sees this small stable category enum, one byte per
- * tile. Importing the GPL engine here is fine; this module runs server-side.
+ * Server-side tile encoders (docs/specs/city-effect-layer.md §2 licensing
+ * posture): engine CODE never reaches the client. Masked tile ids are data,
+ * not code — they ship alongside the category bytes so the browser can blit
+ * the vendored tile-art sheet. Importing the GPL engine here is fine; this
+ * module runs server-side.
  */
 
 import { BIT_MASK } from '../../engine/micropolis/tileFlags';
@@ -80,4 +81,13 @@ export function encodeTileCategories(tiles: number[]): string {
   const out = new Uint8Array(tiles.length);
   for (let i = 0; i < tiles.length; i++) out[i] = categorizeTile(tiles[i]);
   return Buffer.from(out).toString('base64');
+}
+
+/** Raw tile ids masked to 0-1023 (flag bits stripped), one little-endian
+    uint16 per tile, row-major, base64. LE is the wire contract the client
+    decoder relies on. */
+export function encodeTileIds(tiles: number[]): string {
+  const buf = Buffer.alloc(tiles.length * 2);
+  for (let i = 0; i < tiles.length; i++) buf.writeUInt16LE(tiles[i] & BIT_MASK, i * 2);
+  return buf.toString('base64');
 }

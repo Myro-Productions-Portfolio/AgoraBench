@@ -1,9 +1,21 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from 'react';
 import { cityApi } from '@core/client/lib/api';
 
 /* Capitol City spectator page (city-effect-layer slice 3). Read-only, public.
-   The server sends category codes only — no engine code or raw tile ids ever
-   reach this bundle; the canvas renderer below is written from scratch. */
+   Engine CODE never reaches this bundle (GPL wall, see engine/PROVENANCE.md);
+   the server sends category codes plus masked tile ids as plain data, and the
+   tile-art sheet is a static asset with attribution beside it in
+   public/images/MICROPOLIS-TILES-ATTRIBUTION.md. */
 
 /* ── Types (client-local mirrors of the /api/city/state payload) ────────── */
 
@@ -34,7 +46,7 @@ interface CityStateData {
   tickNumber?: number;
   cityTimeMonths?: number;
   updatedAt?: string;
-  map?: { width: number; height: number; categories: string };
+  map?: { width: number; height: number; categories: string; tiles?: string };
   stats?: CityStatsView;
   delta?: CityDelta | null;
 }
@@ -65,12 +77,6 @@ const PALETTE: Array<{ hex: string; label: string }> = [
   { hex: '#a78bba', label: 'Civic buildings' },  // 20 other-special
 ];
 
-const PALETTE_RGB: Array<[number, number, number]> = PALETTE.map(({ hex }) => [
-  parseInt(hex.slice(1, 3), 16),
-  parseInt(hex.slice(3, 5), 16),
-  parseInt(hex.slice(5, 7), 16),
-]);
-
 /* Legend keeps to what a fresh city actually shows, plus disaster colors. */
 const LEGEND_CODES = [10, 11, 12, 7, 8, 9, 15, 16, 17, 1, 2, 0, 6, 5];
 
@@ -78,6 +84,16 @@ function decodeCategories(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/* Server wire contract: base64 of little-endian uint16 masked tile ids. */
+function decodeTileIds(b64: string): Uint16Array {
+  const bin = atob(b64);
+  const out = new Uint16Array(bin.length >> 1);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = bin.charCodeAt(i * 2) | (bin.charCodeAt(i * 2 + 1) << 8);
+  }
   return out;
 }
 
@@ -113,40 +129,303 @@ function buildDeltaLine(d: CityDelta): string {
   ].join(' · ');
 }
 
-/* ── Canvas renderer: 1px per tile, CSS-scaled with pixelated upsampling ── */
+/* ── Sprite sheet + zoom/pan viewport ───────────────────────────────────── */
 
-function CityCanvas({ width, height, categories }: { width: number; height: number; categories: Uint8Array }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+const TILE_PX = 16;
+const SHEET_COLS = 32;
+const TILE_SHEET_URL = '/images/micropolis-tiles.png';
+const MIN_SCALE = 0.25;
+const MAX_SCALE = 6;
+const FIT_MARGIN_TILES = 3;
 
+function useTileSheet(enabled: boolean): HTMLImageElement | null {
+  const [sheet, setSheet] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
-    const ctx = canvasRef.current?.getContext('2d');
-    if (!ctx) return; // non-browser environments (tests) render the element only
-    const img = ctx.createImageData(width, height);
-    const n = Math.min(categories.length, width * height);
-    for (let i = 0; i < n; i++) {
-      const [r, g, b] = PALETTE_RGB[categories[i]] ?? PALETTE_RGB[0];
-      img.data[i * 4] = r;
-      img.data[i * 4 + 1] = g;
-      img.data[i * 4 + 2] = b;
-      img.data[i * 4 + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-  }, [width, height, categories]);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      className="w-full h-auto rounded border border-border/60 bg-black/40"
-      style={{ imageRendering: 'pixelated' }}
-      role="img"
-      aria-label="Capitol City map"
-    />
-  );
+    if (!enabled) return;
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled) setSheet(img);
+    };
+    img.src = TILE_SHEET_URL; // load failure leaves sheet null = fallback mode
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return sheet;
 }
 
+export interface CityMapHandle {
+  zoomIn(): void;
+  zoomOut(): void;
+  fitCity(): void;
+  fullMap(): void;
+}
+
+interface CityMapViewportProps {
+  width: number;
+  height: number;
+  tileIds: Uint16Array | null;
+  categories: Uint8Array;
+  sheet: HTMLImageElement | null;
+}
+
+/* Offscreen canvas holds the full city at 16px/tile (sprite blit when tile
+   ids + sheet are available, flat category colors otherwise); the visible
+   canvas draws it through a pan/zoom transform. View state lives in refs so
+   drags/zooms never re-render React. */
+const CityMapViewport = forwardRef<CityMapHandle, CityMapViewportProps>(
+  function CityMapViewport({ width, height, tileIds, categories, sheet }, ref) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const offscreenRef = useRef<HTMLCanvasElement | null>(null);
+    const viewRef = useRef({ scale: 1, x: 0, y: 0 });
+    const fittedRef = useRef(false);
+    const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+
+    const draw = useCallback(() => {
+      const canvas = canvasRef.current;
+      const off = offscreenRef.current;
+      const ctx = canvas?.getContext('2d');
+      if (!canvas || !off || !ctx) return;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.imageSmoothingEnabled = false;
+      const v = viewRef.current;
+      ctx.setTransform(dpr * v.scale, 0, 0, dpr * v.scale, dpr * v.x, dpr * v.y);
+      ctx.drawImage(off, 0, 0);
+    }, []);
+
+    const fitTiles = useCallback(
+      (tx0: number, ty0: number, tx1: number, ty1: number) => {
+        const c = containerRef.current;
+        if (!c || !c.clientWidth || !c.clientHeight) return;
+        const wpx = (tx1 - tx0 + 1) * TILE_PX;
+        const hpx = (ty1 - ty0 + 1) * TILE_PX;
+        const scale = Math.min(
+          MAX_SCALE,
+          Math.max(MIN_SCALE, Math.min(c.clientWidth / wpx, c.clientHeight / hpx)),
+        );
+        viewRef.current = {
+          scale,
+          x: (c.clientWidth - wpx * scale) / 2 - tx0 * TILE_PX * scale,
+          y: (c.clientHeight - hpx * scale) / 2 - ty0 * TILE_PX * scale,
+        };
+        draw();
+      },
+      [draw],
+    );
+
+    const fitCity = useCallback(() => {
+      let minX = width;
+      let minY = height;
+      let maxX = -1;
+      let maxY = -1;
+      for (let i = 0; i < categories.length; i++) {
+        if (categories[i] <= 2) continue; // clear/water/trees = not built
+        const x = i % width;
+        const y = (i / width) | 0;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (maxX < 0) {
+        fitTiles(0, 0, width - 1, height - 1);
+        return;
+      }
+      fitTiles(
+        minX - FIT_MARGIN_TILES,
+        minY - FIT_MARGIN_TILES,
+        maxX + FIT_MARGIN_TILES,
+        maxY + FIT_MARGIN_TILES,
+      );
+    }, [categories, width, height, fitTiles]);
+
+    /* Keep at least ~100px of the map inside the viewport on each axis so a
+       pan/zoom can never strand it off-screen. */
+    const clampView = useCallback(
+      (v: { scale: number; x: number; y: number }) => {
+        const c = containerRef.current;
+        if (!c) return v;
+        const mapW = width * TILE_PX * v.scale;
+        const mapH = height * TILE_PX * v.scale;
+        const keepX = Math.min(100, mapW, c.clientWidth);
+        const keepY = Math.min(100, mapH, c.clientHeight);
+        return {
+          scale: v.scale,
+          x: Math.min(Math.max(v.x, keepX - mapW), c.clientWidth - keepX),
+          y: Math.min(Math.max(v.y, keepY - mapH), c.clientHeight - keepY),
+        };
+      },
+      [width, height],
+    );
+
+    const zoomAt = useCallback(
+      (cx: number, cy: number, factor: number) => {
+        const v = viewRef.current;
+        const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
+        const k = scale / v.scale;
+        viewRef.current = clampView({ scale, x: cx - (cx - v.x) * k, y: cy - (cy - v.y) * k });
+        draw();
+      },
+      [draw, clampView],
+    );
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        zoomIn: () => {
+          const c = containerRef.current;
+          if (c) zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1.5);
+        },
+        zoomOut: () => {
+          const c = containerRef.current;
+          if (c) zoomAt(c.clientWidth / 2, c.clientHeight / 2, 1 / 1.5);
+        },
+        fitCity,
+        fullMap: () => fitTiles(0, 0, width - 1, height - 1),
+      }),
+      [zoomAt, fitCity, fitTiles, width, height],
+    );
+
+    /* Redraw the offscreen city when data or the sheet arrives; the user's
+       view is preserved (fit happens only once, on first render). */
+    useEffect(() => {
+      let off = offscreenRef.current;
+      if (!off) {
+        off = document.createElement('canvas');
+        offscreenRef.current = off;
+      }
+      off.width = width * TILE_PX;
+      off.height = height * TILE_PX;
+      const ctx = off.getContext('2d');
+      if (!ctx) return;
+      const n = width * height;
+      if (tileIds && sheet) {
+        const count = Math.min(tileIds.length, n);
+        for (let i = 0; i < count; i++) {
+          const id = tileIds[i];
+          ctx.drawImage(
+            sheet,
+            (id % SHEET_COLS) * TILE_PX,
+            ((id / SHEET_COLS) | 0) * TILE_PX,
+            TILE_PX,
+            TILE_PX,
+            (i % width) * TILE_PX,
+            ((i / width) | 0) * TILE_PX,
+            TILE_PX,
+            TILE_PX,
+          );
+        }
+      } else {
+        const count = Math.min(categories.length, n);
+        for (let i = 0; i < count; i++) {
+          ctx.fillStyle = (PALETTE[categories[i]] ?? PALETTE[0]).hex;
+          ctx.fillRect((i % width) * TILE_PX, ((i / width) | 0) * TILE_PX, TILE_PX, TILE_PX);
+        }
+      }
+      if (!fittedRef.current && containerRef.current?.clientWidth) {
+        fittedRef.current = true;
+        fitCity();
+      } else {
+        draw();
+      }
+    }, [width, height, tileIds, categories, sheet, fitCity, draw]);
+
+    useEffect(() => {
+      const container = containerRef.current;
+      const canvas = canvasRef.current;
+      if (!container || !canvas) return;
+      const resize = () => {
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.round(container.clientWidth * dpr));
+        canvas.height = Math.max(1, Math.round(container.clientHeight * dpr));
+        if (!fittedRef.current && offscreenRef.current) {
+          fittedRef.current = true;
+          fitCity();
+        } else {
+          draw();
+        }
+      };
+      resize();
+      const ro = new ResizeObserver(resize);
+      ro.observe(container);
+      return () => ro.disconnect();
+    }, [fitCity, draw]);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        /* deltaMode: Firefox reports lines (1), not pixels (0). */
+        const deltaPx = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+        zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-deltaPx * 0.0015));
+      };
+      /* React attaches onWheel passively — preventDefault (to stop page
+         scroll) needs a native non-passive listener. */
+      canvas.addEventListener('wheel', onWheel, { passive: false });
+      return () => canvas.removeEventListener('wheel', onWheel);
+    }, [zoomAt]);
+
+    const onPointerDown = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      dragRef.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+      e.currentTarget.style.cursor = 'grabbing';
+    };
+    const onPointerMove = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+      const drag = dragRef.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      const v = viewRef.current;
+      viewRef.current = clampView({ ...v, x: v.x + (e.clientX - drag.x), y: v.y + (e.clientY - drag.y) });
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+      draw();
+    };
+    const endDrag = (e: ReactPointerEvent<HTMLCanvasElement>) => {
+      if (dragRef.current?.pointerId !== e.pointerId) return;
+      dragRef.current = null;
+      e.currentTarget.style.cursor = 'grab';
+    };
+
+    return (
+      <div
+        ref={containerRef}
+        className="relative h-[65vh] overflow-hidden rounded border border-border/60 bg-black/40"
+      >
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full cursor-grab"
+          style={{ imageRendering: 'pixelated', touchAction: 'none' }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+          role="img"
+          aria-label="Capitol City map"
+        />
+      </div>
+    );
+  },
+);
+
 /* ── Small presentational pieces ────────────────────────────────────────── */
+
+function MapButton({ onClick, label, children }: { onClick: () => void; label: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="rounded border border-border/60 bg-black/20 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:border-border transition-colors"
+    >
+      {children}
+    </button>
+  );
+}
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
@@ -199,6 +478,23 @@ function Legend() {
   );
 }
 
+function TileArtCredit() {
+  return (
+    <p className="text-[11px] text-text-muted">
+      Tile artwork from the Micropolis project (
+      <a
+        href="https://github.com/graememcc/micropolisJS"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline decoration-dotted hover:text-text-secondary"
+      >
+        micropolisJS
+      </a>
+      ), GPL-3.0.
+    </p>
+  );
+}
+
 /* ── Page ───────────────────────────────────────────────────────────────── */
 
 const POLL_INTERVAL_MS = 60_000;
@@ -207,6 +503,7 @@ export function CityPage() {
   const [data, setData] = useState<CityStateData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const mapRef = useRef<CityMapHandle>(null);
 
   const load = useCallback(async () => {
     try {
@@ -231,6 +528,14 @@ export function CityPage() {
     [data?.map],
   );
 
+  const tileIds = useMemo(
+    () => (data?.map?.tiles ? decodeTileIds(data.map.tiles) : null),
+    [data?.map],
+  );
+
+  const sheet = useTileSheet(!!data?.map?.tiles);
+  const spriteMode = tileIds !== null && sheet !== null;
+
   const stats = data?.stats;
 
   return (
@@ -249,13 +554,15 @@ export function CityPage() {
         </div>
       )}
 
-      {!loading && error && (
+      {/* Full error state only before any data exists; once the map is up, a
+          failed poll keeps it mounted (stale) so the user's view survives. */}
+      {!loading && error && !data && (
         <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-5 py-4 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {!loading && !error && data && !data.started && (
+      {!loading && data && !data.started && (
         <div className="rounded-lg border border-border bg-surface px-6 py-16 text-center space-y-2">
           <h2 className="font-serif text-xl font-semibold text-stone">The city has not been founded yet</h2>
           <p className="text-sm text-text-muted max-w-md mx-auto">
@@ -265,17 +572,35 @@ export function CityPage() {
         </div>
       )}
 
-      {!loading && !error && data?.started && data.map && categories && stats && (
+      {!loading && data?.started && data.map && categories && stats && (
         <>
           <div className="rounded-lg border border-border bg-surface p-5 space-y-4">
             <div className="flex items-baseline justify-between gap-3 flex-wrap">
               <h2 className="font-serif text-lg font-semibold text-stone">City Map</h2>
-              <span className="text-xs text-text-muted tabular-nums">
-                {fmtCityTime(data.cityTimeMonths ?? 0)} · gov tick {data.tickNumber}
-              </span>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <MapButton onClick={() => mapRef.current?.zoomIn()} label="Zoom in">+</MapButton>
+                  <MapButton onClick={() => mapRef.current?.zoomOut()} label="Zoom out">−</MapButton>
+                  <MapButton onClick={() => mapRef.current?.fitCity()} label="Fit city">Fit city</MapButton>
+                  <MapButton onClick={() => mapRef.current?.fullMap()} label="Full map">Full map</MapButton>
+                </div>
+                <span className="text-xs text-text-muted tabular-nums">
+                  {fmtCityTime(data.cityTimeMonths ?? 0)} · gov tick {data.tickNumber}
+                </span>
+                {error && (
+                  <span className="text-xs text-red-300/80">live update failed — retrying</span>
+                )}
+              </div>
             </div>
-            <CityCanvas width={data.map.width} height={data.map.height} categories={categories} />
-            <Legend />
+            <CityMapViewport
+              ref={mapRef}
+              width={data.map.width}
+              height={data.map.height}
+              tileIds={tileIds}
+              categories={categories}
+              sheet={sheet}
+            />
+            {spriteMode ? <TileArtCredit /> : <Legend />}
           </div>
 
           {data.delta && (

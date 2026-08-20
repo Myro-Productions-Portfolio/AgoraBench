@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { pressApi } from '@core/client/lib/api';
 import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
@@ -468,16 +468,16 @@ function fmtIssueDate(s: string): string {
   return new Date(s).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function GazetteFrontPage({ issue }: { issue: GazetteIssue }) {
+function GazetteFrontPage({ issue, paper = 'The Agora Gazette', badge = 'Current Edition' }: { issue: GazetteIssue; paper?: string; badge?: string }) {
   const paragraphs = issue.body.split(/\n+/).filter((p) => p.trim().length > 0);
 
   return (
     <article className="rounded-lg border border-border bg-surface p-6 space-y-3">
       <span className="badge border text-gold bg-yellow-900/20 border-yellow-700/30 inline-block">
-        Current Edition
+        {badge}
       </span>
       <h2 className="font-serif text-3xl font-bold text-stone leading-tight">{issue.headline}</h2>
-      <p className="text-xs text-text-muted">The Agora Gazette — {fmtIssueDate(issue.createdAt)}</p>
+      <p className="text-xs text-text-muted">{paper} — {fmtIssueDate(issue.createdAt)}</p>
       <div className="space-y-3 pt-2 border-t border-border/50">
         {paragraphs.map((p, i) => (
           <p
@@ -496,7 +496,7 @@ function GazetteFrontPage({ issue }: { issue: GazetteIssue }) {
   );
 }
 
-function GazetteIssueCard({ issue }: { issue: GazetteIssue }) {
+function GazetteIssueCard({ issue, paper = 'The Agora Gazette' }: { issue: GazetteIssue; paper?: string }) {
   const [expanded, setExpanded] = useState(false);
   const paragraphs = issue.body.split(/\n+/).filter((p) => p.trim().length > 0);
 
@@ -505,7 +505,7 @@ function GazetteIssueCard({ issue }: { issue: GazetteIssue }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <h2 className="font-serif text-xl font-semibold text-stone leading-snug">{issue.headline}</h2>
-          <p className="text-xs text-text-muted mt-1">The Agora Gazette — {fmtIssueDate(issue.createdAt)}</p>
+          <p className="text-xs text-text-muted mt-1">{paper} — {fmtIssueDate(issue.createdAt)}</p>
         </div>
         <button
           onClick={() => setExpanded((p) => !p)}
@@ -642,12 +642,136 @@ function GazetteSection() {
   );
 }
 
+/* ── ReportsSection: the Agora 10-K feed (clone of GazetteSection) ──────── */
+
+function ReportsMasthead({ latestDate }: { latestDate: string | null }) {
+  return (
+    <div className="text-center space-y-1 border-y border-border py-5">
+      <p className="text-xs uppercase tracking-[0.2em] text-text-muted">
+        The government reported like a company
+      </p>
+      <h2 className="font-serif text-4xl font-bold text-stone">The Agora 10-K</h2>
+      <div className="flex items-center justify-center gap-3 text-xs text-text-muted pt-1">
+        {latestDate && <span>{fmtIssueDate(latestDate)}</span>}
+        {latestDate && <span aria-hidden="true">·</span>}
+        <span>Sim vs reality, published on the scoreboard cadence</span>
+      </div>
+    </div>
+  );
+}
+
+function ReportsSection() {
+  const [issues, setIssues] = useState<GazetteIssue[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { subscribe } = useWebSocket();
+
+  const REPORTS_LIMIT = 20;
+
+  const fetchIssues = useCallback(async (offset: number, append = false) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await pressApi.reports(REPORTS_LIMIT, offset);
+      const data = res.data as { issues: GazetteIssue[]; total: number } | undefined;
+      const rows = data?.issues ?? [];
+      setTotal(data?.total ?? 0);
+      setIssues((prev) => (append ? [...prev, ...rows] : rows));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load 10-K reports');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchIssues(0);
+  }, [fetchIssues]);
+
+  /* New report published at tick end — refresh from the top */
+  useEffect(() => {
+    const unsub = subscribe('press:report', () => {
+      void fetchIssues(0);
+    });
+    return unsub;
+  }, [subscribe, fetchIssues]);
+
+  if (loading && issues.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <p className="text-text-muted animate-pulse">Loading reports...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-700/30 bg-red-900/10 px-5 py-4 text-sm text-red-300">
+        {error}
+      </div>
+    );
+  }
+
+  if (issues.length === 0) {
+    return (
+      <div className="space-y-4">
+        <ReportsMasthead latestDate={null} />
+        <div className="text-center py-20 text-text-muted">
+          <p className="text-lg">No 10-K reports yet — the first one publishes when the scoreboard report cadence next fires.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const [latest, ...previous] = issues;
+  const hasMore = issues.length < total;
+
+  return (
+    <div className="space-y-4">
+      <ReportsMasthead latestDate={latest.createdAt} />
+      <GazetteFrontPage issue={latest} paper="The Agora 10-K" badge="Latest Report" />
+
+      {previous.length > 0 && (
+        <>
+          <h3 className="font-serif text-lg font-semibold text-stone pt-2">Previous Reports</h3>
+          <div className="space-y-3">
+            {previous.map((issue) => (
+              <GazetteIssueCard key={issue.id} issue={issue} paper="The Agora 10-K" />
+            ))}
+          </div>
+        </>
+      )}
+
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={() => void fetchIssues(issues.length, true)}
+            disabled={loading}
+            className="px-6 py-2 rounded border border-border text-sm text-text-muted hover:text-text-secondary hover:border-border/80 transition-colors disabled:opacity-50"
+          >
+            {loading ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main Page ──────────────────────────────────────────────────────────── */
 
-type PressView = 'briefing' | 'statements' | 'gazette';
+type PressView = 'briefing' | 'statements' | 'gazette' | 'reports';
+
+const PRESS_VIEWS: PressView[] = ['briefing', 'statements', 'gazette', 'reports'];
 
 export function PressRoomPage() {
-  const [view, setView] = useState<PressView>('briefing');
+  /* ?view=reports etc. deep-links a specific tab (used by the DivergencePage
+     scoreboard cross-link); read once on mount, invalid values fall back. */
+  const [searchParams] = useSearchParams();
+  const [view, setView] = useState<PressView>(() => {
+    const requested = searchParams.get('view') as PressView | null;
+    return requested && PRESS_VIEWS.includes(requested) ? requested : 'briefing';
+  });
   const [statements, setStatements] = useState<PressStatement[]>([]);
   const [filter, setFilter] = useState<FilterOption>('all');
   const [loading, setLoading] = useState(true);
@@ -756,7 +880,9 @@ export function PressRoomPage() {
       <div className="rounded-lg border border-border bg-surface px-6 py-5">
         <h1 className="font-serif text-2xl font-semibold text-text-primary">Press Room</h1>
         <p className="text-sm text-text-muted mt-1">
-          {view === 'gazette'
+          {view === 'reports'
+            ? 'The Agora 10-K — the government reported like a company'
+            : view === 'gazette'
             ? 'The Daily Gazette — a recap of each simulation tick'
             : view === 'briefing'
             ? 'The press briefing room — where the Agora meets the record'
@@ -764,12 +890,13 @@ export function PressRoomPage() {
         </p>
       </div>
 
-      {/* View toggle: Briefing Room | Statements | Gazette */}
+      {/* View toggle: Briefing Room | Statements | Gazette | Reports */}
       <div className="flex flex-wrap gap-2">
         {([
           { value: 'briefing', label: 'Briefing Room' },
           { value: 'statements', label: 'Statements' },
           { value: 'gazette', label: 'Daily Gazette' },
+          { value: 'reports', label: 'Reports' },
         ] as Array<{ value: PressView; label: string }>).map((opt) => (
           <button
             key={opt.value}
@@ -790,6 +917,9 @@ export function PressRoomPage() {
 
       {/* Gazette view */}
       {view === 'gazette' && <GazetteSection />}
+
+      {/* 10-K Reports view */}
+      {view === 'reports' && <ReportsSection />}
 
       {/* Statements view: filter bar */}
       {view === 'statements' && (

@@ -19,6 +19,9 @@ import {
   votingShouldOpenAtTick,
   votingShouldCloseAtTick,
   wallDateForTick,
+  ELECTION_LIFECYCLE_TYPES,
+  ELECTION_OFFICE_LABEL,
+  candidacyExcludedAgentIds,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -622,6 +625,56 @@ describe('isRealCandidacyStatus', () => {
 
   it('is a plain string comparison — any unrecognized future status defaults to real (only "declined" is special-cased out)', () => {
     expect(isRealCandidacyStatus('some_future_status')).toBe(true);
+  });
+});
+
+/* ── Election cycles B2: non-presidential lifecycle ───────────────────── */
+
+describe('ELECTION_LIFECYCLE_TYPES', () => {
+  it('pins exactly the two organically-lifecycled election types', () => {
+    expect([...ELECTION_LIFECYCLE_TYPES]).toEqual(['president', 'congress_general']);
+  });
+});
+
+describe('candidacyExcludedAgentIds', () => {
+  const held = [
+    { agentId: 'pres', type: 'president' },
+    { agentId: 'justice-1', type: 'supreme_justice' },
+    { agentId: 'cabinet-1', type: 'cabinet_secretary' },
+    { agentId: 'lower-1', type: 'lower_justice' },
+    { agentId: 'chair-1', type: 'committee_chair' },
+    { agentId: 'speaker-1', type: 'speaker' },
+    { agentId: 'member-1', type: 'congress_member' },
+  ];
+
+  it('president: only sitting supreme justices are excluded (the existing rule, unchanged)', () => {
+    const excluded = candidacyExcludedAgentIds('president', held);
+    expect(excluded).toEqual(new Set(['justice-1']));
+  });
+
+  it('congress_general: holders of any office ranked above congress_member are out; chairs/speaker/sitting members stay eligible', () => {
+    const excluded = candidacyExcludedAgentIds('congress_general', held);
+    expect(excluded).toEqual(new Set(['pres', 'justice-1', 'cabinet-1', 'lower-1']));
+    expect(excluded.has('chair-1')).toBe(false);
+    expect(excluded.has('speaker-1')).toBe(false);
+    expect(excluded.has('member-1')).toBe(false);
+  });
+
+  it('unknown election type or empty/non-array positions -> empty set (defensive)', () => {
+    expect(candidacyExcludedAgentIds('supreme_court', held)).toEqual(new Set());
+    expect(candidacyExcludedAgentIds('president', [])).toEqual(new Set());
+    // @ts-expect-error defensive runtime check
+    expect(candidacyExcludedAgentIds('president', null)).toEqual(new Set());
+  });
+});
+
+describe('ELECTION_OFFICE_LABEL', () => {
+  it('covers every lifecycle type with prompt-ready copy', () => {
+    for (const t of ELECTION_LIFECYCLE_TYPES) {
+      expect(typeof ELECTION_OFFICE_LABEL[t]).toBe('string');
+      expect(ELECTION_OFFICE_LABEL[t]!.length).toBeGreaterThan(0);
+    }
+    expect(ELECTION_OFFICE_LABEL['president']).toBe('President');
   });
 });
 

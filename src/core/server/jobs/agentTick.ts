@@ -55,7 +55,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick } from '../lib/electionMath.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5476,29 +5476,30 @@ agentTickQueue.process(async () => {
       .where(eq(positions.isActive, true));
 
     const activePresident = allActivePositions.find((p) => p.type === 'president');
-    const sittingJusticeIds = new Set(allActivePositions.filter((p) => p.type === 'supreme_justice').map((p) => p.agentId));
 
     /* ---- Candidacy declarations (registration phase) ------------------ */
-    /* Elections revival minimal slice. For each presidential election in
-     * 'registration', every eligible agent who hasn't yet decided for THIS
-     * election gets one cheap LLM yes/no. Eligibility: active agents (already
-     * the activeAgents set), excluding sitting supreme justices and the
-     * incumbent (who auto-registered without an LLM call at trigger time —
-     * see the term-expiry/vacancy trigger blocks below). Mirrors the Phase 14
+    /* Elections revival minimal slice, un-gated to every lifecycle type in
+     * B2. For each president/congress_general election in 'registration',
+     * every eligible agent who hasn't yet decided for THIS election gets one
+     * cheap LLM yes/no. Eligibility: active agents (already the activeAgents
+     * set) minus candidacyExcludedAgentIds for the election's type (president:
+     * sitting justices; congress_general: holders of offices above
+     * congress_member) and minus anyone who already decided — incumbents
+     * auto-register without an LLM call at trigger time. Mirrors the Phase 14
      * ballot-casting batching pattern: Promise.allSettled, failure-isolated,
      * one agent's rejected/idle call never aborts the phase.
      *
      * Scope note (controller sign-off, review round 1): this block and the
-     * registration->campaigning transition below run for ANY presidential
-     * election in 'registration', not just term-expiry-triggered ones —
-     * that's intentional, they fix the pipeline generally (the pipeline was
-     * broken for vacancy-triggered elections too). presidentTermTicks only
-     * gates whether a term-expiry re-election gets CREATED; once any
-     * presidential election exists, it runs the same full lifecycle. */
+     * registration->campaigning transition below run for ANY lifecycle-type
+     * election in 'registration', however it was created — that's
+     * intentional, they fix the pipeline generally. presidentTermTicks /
+     * congressTermTicks only gate whether a term-expiry election gets
+     * CREATED; once one exists, it runs the same full lifecycle. Legacy
+     * 'congress'/'supreme_court' rows stay frozen (additive un-gating). */
     const electionsInRegistration = await db
       .select()
       .from(elections)
-      .where(and(eq(elections.positionType, 'president'), eq(elections.status, 'registration')));
+      .where(and(inArray(elections.positionType, [...ELECTION_LIFECYCLE_TYPES]), eq(elections.status, 'registration')));
 
     for (const election of electionsInRegistration) {
       const existingCampaigns = await db
@@ -5506,8 +5507,9 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(eq(campaigns.electionId, election.id));
       const alreadyDecided = new Set(existingCampaigns.map((c) => c.agentId));
+      const officeExcluded = candidacyExcludedAgentIds(election.positionType, allActivePositions);
 
-      const eligible = filterCandidacyEligible(activeAgents, [...alreadyDecided, ...sittingJusticeIds]);
+      const eligible = filterCandidacyEligible(activeAgents, [...alreadyDecided, ...officeExcluded]);
       if (eligible.length === 0) continue;
 
       const partyRows = await db
@@ -5517,7 +5519,8 @@ agentTickQueue.process(async () => {
         .where(inArray(partyMemberships.agentId, eligible.map((a) => a.id)));
       const partyMap = new Map(partyRows.map((p) => [p.agentId, p.partyName]));
 
-      const incumbentAgentId = activePresident?.agentId ?? null;
+      /* Incumbent-president context is presidential-race copy only. */
+      const incumbentAgentId = election.positionType === 'president' ? (activePresident?.agentId ?? null) : null;
       const incumbentRow = incumbentAgentId ? activeAgents.find((a) => a.id === incumbentAgentId) : undefined;
       const relRows = incumbentAgentId
         ? await db
@@ -5532,6 +5535,11 @@ agentTickQueue.process(async () => {
         : [];
       const relMap = new Map(relRows.map((r) => [r.agentId, r]));
 
+      const officeLabel = ELECTION_OFFICE_LABEL[election.positionType] ?? election.positionType;
+      const raceDescriptor = election.positionType === 'president'
+        ? 'A presidential election'
+        : 'A congressional general election';
+
       const results = await Promise.allSettled(
         eligible.map((candidateAgent) => {
           const fullAgent = activeAgents.find((a) => a.id === candidateAgent.id)!;
@@ -5543,9 +5551,9 @@ agentTickQueue.process(async () => {
             : '';
 
           const contextMessage =
-            `A presidential election is open for candidate registration. Your approval rating: ${fullAgent.approvalRating ?? 50}%, party: ${party}.` +
+            `${raceDescriptor} is open for candidate registration. Your approval rating: ${fullAgent.approvalRating ?? 50}%, party: ${party}.` +
             incumbentBlock +
-            ` Do you want to declare your candidacy for President?` +
+            ` Do you want to declare your candidacy for ${officeLabel}?` +
             ` Respond with exactly this JSON structure: ` +
             `{"action":"candidacy_declaration","reasoning":"one sentence","data":{"run":true}}`;
 
@@ -5633,14 +5641,14 @@ agentTickQueue.process(async () => {
             await tx.insert(campaigns).values({
               agentId: candidateAgent.id,
               electionId: election.id,
-              platform: (decision.reasoning || 'Running for President.').slice(0, 500),
+              platform: (decision.reasoning || `Running for ${officeLabel}.`).slice(0, 500),
             });
           });
 
           await db.insert(activityEvents).values({
             type: 'candidacy_declared',
             agentId: candidateAgent.id,
-            title: `${candidateAgent.displayName} declared candidacy for President`,
+            title: `${candidateAgent.displayName} declared candidacy for ${officeLabel}`,
             description: decision.reasoning,
             metadata: JSON.stringify({ electionId: election.id }),
           });
@@ -5648,7 +5656,7 @@ agentTickQueue.process(async () => {
             electionId: election.id,
             agentId: candidateAgent.id,
             agentName: candidateAgent.displayName,
-            positionType: 'president',
+            positionType: election.positionType,
           });
           declaredCount += 1;
         } catch (err) {
@@ -5688,7 +5696,12 @@ agentTickQueue.process(async () => {
 
       let campaignCount = activeCampaignRows.length;
 
-      if (campaignCount === 0 && activePresident) {
+      /* Zero-campaigns-at-deadline fallback, parameterized per office (B2):
+         president -> the incumbent; congress_general -> every sitting member
+         (the chamber stands for re-election by default). Fee-if-affordable
+         in both cases — an incumbent is never blocked from the ballot by an
+         unpaid fee. */
+      if (campaignCount === 0 && election.positionType === 'president' && activePresident) {
         const [incumbentAgent] = await db
           .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
           .from(agents)
@@ -5718,6 +5731,40 @@ agentTickQueue.process(async () => {
           });
           campaignCount = 1;
           console.warn(`[SIMULATION] Phase 14: zero candidates at registration deadline — auto-registered incumbent ${incumbentAgent.displayName}`);
+        }
+      } else if (campaignCount === 0 && election.positionType === 'congress_general') {
+        const sittingMemberIds = allActivePositions
+          .filter((p) => p.type === 'congress_member')
+          .map((p) => p.agentId);
+        if (sittingMemberIds.length > 0) {
+          const sittingMembers = await db
+            .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
+            .from(agents)
+            .where(inArray(agents.id, sittingMemberIds));
+          for (const member of sittingMembers) {
+            const filingFee = rc.campaignFilingFee;
+            const canAfford = filingFee > 0 && member.balance >= filingFee;
+            await db.transaction(async (tx) => {
+              if (canAfford) {
+                await tx.update(agents).set({ balance: sql`${agents.balance} - ${filingFee}` }).where(eq(agents.id, member.id));
+                await tx.insert(transactions).values({
+                  fromAgentId: member.id,
+                  toAgentId: undefined,
+                  amount: filingFee,
+                  type: 'fee',
+                  description: 'Campaign filing fee (sitting member re-election, auto-registered — zero-candidate registration deadline)',
+                  balanceAfter: member.balance - filingFee,
+                });
+              }
+              await tx.insert(campaigns).values({
+                agentId: member.id,
+                electionId: election.id,
+                platform: 'Standing for re-election to the Legislature.',
+              });
+            });
+            campaignCount += 1;
+          }
+          console.warn(`[SIMULATION] Phase 14: zero candidates at registration deadline — auto-registered ${campaignCount} sitting member(s) for the congressional general`);
         }
       }
 
@@ -6498,8 +6545,22 @@ agentTickQueue.process(async () => {
         eligibleCampaigns.push(campaign);
       }
 
+      /* Per-agent speech cap applied BEFORE the LLM batch (B2 cost fix):
+         under concurrent elections an agent campaigning in several races
+         used to get one LLM call per campaign with the post-call cap
+         discarding the extras — pure inference waste. The post-call cap
+         below stays as the enforcement backstop. */
+      const speechBudget15 = new Map<string, number>();
+      const cappedCampaigns15: typeof eligibleCampaigns = [];
+      for (const campaign of eligibleCampaigns) {
+        const used = speechBudget15.get(campaign.agentId) ?? 0;
+        if (used >= rc.maxCampaignSpeechesPerTick) continue;
+        speechBudget15.set(campaign.agentId, used + 1);
+        cappedCampaigns15.push(campaign);
+      }
+
       const results = await Promise.allSettled(
-        eligibleCampaigns.map((campaign) => {
+        cappedCampaigns15.map((campaign) => {
           const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
           const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId)!;
 

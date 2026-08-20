@@ -473,6 +473,54 @@ export function registrationShouldClose(now: Date | string | number, registratio
 }
 
 /* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B2) — non-presidential lifecycle
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The election position types the organic Phase 14 lifecycle (candidacy
+ * declarations, registration close, campaigning, voting, certification)
+ * runs for. Legacy 'congress'/'supreme_court' rows created by the old admin
+ * trigger select stay frozen in 'registration' — additive un-gating only.
+ */
+export const ELECTION_LIFECYCLE_TYPES = ['president', 'congress_general'] as const;
+
+/** Prompt/display copy per lifecycle type ("declare your candidacy for X"). */
+export const ELECTION_OFFICE_LABEL: Record<string, string> = {
+  president: 'President',
+  congress_general: 'a seat in the Legislature',
+};
+
+/** Minimal shape of an active office holding for candidacy exclusion. */
+export interface OfficeHolding {
+  agentId: string;
+  type: string;
+}
+
+/**
+ * Which sitting officeholders may NOT be offered a candidacy for this
+ * election type. President: sitting supreme justices (the pre-existing
+ * rule, unchanged). congress_general: holders of any office ranked above
+ * congress_member (president/justices/cabinet) — chairs, the speaker and
+ * sitting members all stay eligible (their seat IS the office at stake).
+ * Unknown types exclude nobody (such elections have no lifecycle anyway).
+ */
+export function candidacyExcludedAgentIds(positionType: string, heldPositions: OfficeHolding[]): Set<string> {
+  const excluded = new Set<string>();
+  if (!Array.isArray(heldPositions) || heldPositions.length === 0) return excluded;
+  if (positionType === 'president') {
+    for (const p of heldPositions) {
+      if (p && p.type === 'supreme_justice' && typeof p.agentId === 'string') excluded.add(p.agentId);
+    }
+  } else if (positionType === 'congress_general') {
+    const seatRank = officeRank('congress_member');
+    for (const p of heldPositions) {
+      if (p && typeof p.agentId === 'string' && officeRank(p.type) > seatRank) excluded.add(p.agentId);
+    }
+  }
+  return excluded;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
  * Election cycles (B1) — tick-anchored scheduling
  *
  * Elections created after migration 0034 carry tick anchors (created_tick,

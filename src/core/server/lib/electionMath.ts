@@ -174,6 +174,10 @@ const OFFICE_RANK: Record<string, number> = {
      wins the Speakership keeps their congress seat (equal rank never vacates),
      and winning a HIGHER office (president) vacates the speaker seat too. */
   speaker: 50,
+  /* Winning a congress_general election ≡ winning a congress seat (B3) —
+     same legislative rank, so a chair/speaker/member who wins is never
+     auto-vacated out of those equal-rank seats by getSeatsToVacate. */
+  congress_general: 50,
 };
 
 /** Numeric rank of a position type. Unknown types rank 0 (lowest, never vacates anything). */
@@ -425,6 +429,27 @@ export function tenureTicks(startDate: Date | string | number, now: Date | strin
 }
 
 /**
+ * Tick-based tenure (B4): prefer the seat's tick anchor (tickNumber −
+ * startTick, downtime- and interval-change-proof) and fall back to the
+ * wall-clock tenureTicks derivation for legacy rows seated before migration
+ * 0034 (NULL startTick). The sitting president predating the column means
+ * the first presidentTermTicks enable still fires on wall-derived tenure
+ * (inaugural cycle — accepted); every later officeholder is tick-anchored.
+ */
+export function tenureTicksPreferred(
+  startTick: number | null | undefined,
+  tickNumber: number,
+  startDate: Date | string | number,
+  now: Date | string | number,
+  tickIntervalMs: number,
+): number {
+  if (typeof startTick === 'number' && Number.isFinite(startTick) && Number.isFinite(tickNumber)) {
+    return Math.max(0, tickNumber - startTick);
+  }
+  return tenureTicks(startDate, now, tickIntervalMs);
+}
+
+/**
  * True when a president's term has expired: term limit enabled (> 0) and
  * elapsed tenure has reached or exceeded it. termLimitTicks <= 0 means
  * disabled — always false, preserving today's suppress-while-seated
@@ -470,6 +495,203 @@ export function registrationShouldClose(now: Date | string | number, registratio
   const current = new Date(now).getTime();
   if (!Number.isFinite(deadline) || !Number.isFinite(current)) return false;
   return current >= deadline && activeCampaignCount > 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B2) — non-presidential lifecycle
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The election position types the organic Phase 14 lifecycle (candidacy
+ * declarations, registration close, campaigning, voting, certification)
+ * runs for. Legacy 'congress'/'supreme_court' rows created by the old admin
+ * trigger select stay frozen in 'registration' — additive un-gating only.
+ */
+export const ELECTION_LIFECYCLE_TYPES = ['president', 'congress_general'] as const;
+
+/** Prompt/display copy per lifecycle type ("declare your candidacy for X"). */
+export const ELECTION_OFFICE_LABEL: Record<string, string> = {
+  president: 'President',
+  congress_general: 'a seat in the Legislature',
+};
+
+/** Minimal shape of an active office holding for candidacy exclusion. */
+export interface OfficeHolding {
+  agentId: string;
+  type: string;
+}
+
+/**
+ * Which sitting officeholders may NOT be offered a candidacy for this
+ * election type. President: sitting supreme justices (the pre-existing
+ * rule, unchanged). congress_general: holders of any office ranked above
+ * congress_member (president/justices/cabinet) — chairs, the speaker and
+ * sitting members all stay eligible (their seat IS the office at stake).
+ * Unknown types exclude nobody (such elections have no lifecycle anyway).
+ */
+export function candidacyExcludedAgentIds(positionType: string, heldPositions: OfficeHolding[]): Set<string> {
+  const excluded = new Set<string>();
+  if (!Array.isArray(heldPositions) || heldPositions.length === 0) return excluded;
+  if (positionType === 'president') {
+    for (const p of heldPositions) {
+      if (p && p.type === 'supreme_justice' && typeof p.agentId === 'string') excluded.add(p.agentId);
+    }
+  } else if (positionType === 'congress_general') {
+    const seatRank = officeRank('congress_member');
+    for (const p of heldPositions) {
+      if (p && typeof p.agentId === 'string' && officeRank(p.type) > seatRank) excluded.add(p.agentId);
+    }
+  }
+  return excluded;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B3) — congressional general elections
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Recurring congressional-general trigger: fires when congressTermTicks is
+ * enabled (> 0) and the last certified general's creation tick is at least
+ * one term behind. A null anchor (no certified congress_general exists yet)
+ * fires immediately on first enable — stated and accepted: the inaugural
+ * chamber was seated by appointment, not election, so the first enable
+ * calls the first real general right away.
+ */
+export function congressGeneralDue(
+  anchorCreatedTick: number | null | undefined,
+  tickNumber: number,
+  congressTermTicks: number,
+): boolean {
+  if (!Number.isFinite(congressTermTicks) || congressTermTicks <= 0) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  if (typeof anchorCreatedTick !== 'number' || !Number.isFinite(anchorCreatedTick)) return true;
+  return tickNumber >= anchorCreatedTick + congressTermTicks;
+}
+
+/**
+ * Multi-seat winner selection: rank candidates by votes desc, ties by
+ * contributions desc, then registration order (orderCandidates — startDate
+ * then campaignId) — a fully deterministic chain, so re-tallying shuffled
+ * input always seats the same N. The zero-ballot election degenerates to
+ * the contributions -> registration chain, the same fallback doctrine the
+ * single-winner path uses. Returns min(n, candidates) agentIds, top
+ * vote-getter first.
+ */
+export function selectTopNWinners(
+  candidates: CandidateStanding[],
+  voteCounts: Record<string, number>,
+  n: number,
+): string[] {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  const seats = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  if (seats === 0) return [];
+  const counts = voteCounts && typeof voteCounts === 'object' ? voteCounts : {};
+  const regRank = new Map(orderCandidates(candidates).map((id, i) => [id, i]));
+  const contribByAgent = new Map(candidates.map((c) => [c.agentId, Number(c.totalContributions ?? 0)]));
+  return candidates
+    .map((c) => c.agentId)
+    .sort((a, b) => {
+      const votes = (counts[b] ?? 0) - (counts[a] ?? 0);
+      if (votes !== 0) return votes;
+      const contrib = (contribByAgent.get(b) ?? 0) - (contribByAgent.get(a) ?? 0);
+      if (contrib !== 0) return contrib;
+      return (regRank.get(a) ?? Infinity) - (regRank.get(b) ?? Infinity);
+    })
+    .slice(0, seats);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B1) — tick-anchored scheduling
+ *
+ * Elections created after migration 0034 carry tick anchors (created_tick,
+ * registration_ends_tick, voting_start_tick, voting_end_tick) and their
+ * phase transitions gate on tick number, immune to tick-interval changes
+ * and server downtime (the PR #47 "tick numbers, not timestamps" lesson).
+ * Legacy rows have NULL anchors and keep the wall-clock gates — every
+ * helper here is null-defensive and returns false for a missing anchor so
+ * a legacy row can never accidentally match a tick gate.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface ElectionTickSchedule {
+  registrationEndsTick: number;
+  votingStartTick: number;
+  votingEndTick: number;
+}
+
+/**
+ * Sequential phase windows from the creation tick: registration closes at
+ * created + registrationTicks, voting opens campaignTicks later, closes
+ * votingTicks after that. Durations floor to integers and clamp to >= 1 so
+ * a misconfigured 0/negative window can never produce a schedule that is
+ * already past at creation.
+ */
+export function electionTickSchedule(
+  createdTick: number,
+  registrationTicks: number,
+  campaignTicks: number,
+  votingTicks: number,
+): ElectionTickSchedule {
+  const base = Number.isFinite(createdTick) ? Math.max(1, Math.floor(createdTick)) : 1;
+  const dur = (v: number): number => (Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1);
+  const registrationEndsTick = base + dur(registrationTicks);
+  const votingStartTick = registrationEndsTick + dur(campaignTicks);
+  const votingEndTick = votingStartTick + dur(votingTicks);
+  return { registrationEndsTick, votingStartTick, votingEndTick };
+}
+
+/**
+ * Tick-anchored registration -> campaigning gate. KEEPS the >=1-campaign
+ * AND from registrationShouldClose: a zero-candidate deadline resolves via
+ * the caller's incumbent/sitting-member auto-registration fallback, never
+ * by extending the deadline.
+ */
+export function registrationShouldCloseAtTick(
+  tickNumber: number,
+  registrationEndsTick: number | null | undefined,
+  activeCampaignCount: number,
+): boolean {
+  if (typeof registrationEndsTick !== 'number' || !Number.isFinite(registrationEndsTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= registrationEndsTick && activeCampaignCount > 0;
+}
+
+/** Tick-anchored campaigning -> voting gate. Null/non-finite anchor -> false. */
+export function votingShouldOpenAtTick(tickNumber: number, votingStartTick: number | null | undefined): boolean {
+  if (typeof votingStartTick !== 'number' || !Number.isFinite(votingStartTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= votingStartTick;
+}
+
+/** Tick-anchored voting -> certified gate. Null/non-finite anchor -> false. */
+export function votingShouldCloseAtTick(tickNumber: number, votingEndTick: number | null | undefined): boolean {
+  if (typeof votingEndTick !== 'number' || !Number.isFinite(votingEndTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= votingEndTick;
+}
+
+/**
+ * Project a future tick anchor onto a display wall date at the current tick
+ * interval: now + (targetTick - tickNumber) * tickIntervalMs, clamped to now
+ * for past/current ticks. Display-only — phase gates read the tick anchors,
+ * never these derived dates; refreshed at each transition so countdowns stay
+ * honest across interval changes with zero UI edits.
+ */
+export function wallDateForTick(
+  targetTick: number,
+  tickNumber: number,
+  now: Date | string | number,
+  tickIntervalMs: number,
+): Date {
+  const nowMs = new Date(now).getTime();
+  if (
+    !Number.isFinite(targetTick) ||
+    !Number.isFinite(tickNumber) ||
+    !Number.isFinite(tickIntervalMs) ||
+    tickIntervalMs <= 0
+  ) {
+    return new Date(nowMs);
+  }
+  return new Date(nowMs + Math.max(0, targetTick - tickNumber) * tickIntervalMs);
 }
 
 /**

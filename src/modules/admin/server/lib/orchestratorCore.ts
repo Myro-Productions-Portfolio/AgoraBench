@@ -8,6 +8,8 @@ import {
 import { eq, desc, sql, gte, and, inArray } from 'drizzle-orm';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath.js';
+import { electionTickSchedule, wallDateForTick, ELECTION_LIFECYCLE_TYPES } from '@core/server/lib/electionMath.js';
+import { getCurrentTickNumber } from '@core/server/lib/tickClock.js';
 
 export type InterventionInput = {
   type: 'personality_mod' | 'inject_event' | 'config_change' | 'agent_toggle' | 'trigger_election';
@@ -260,12 +262,27 @@ export async function executeIntervention(input: InterventionInput) {
     case 'trigger_election': {
       const { positionType } = payload as { positionType: string };
       if (!positionType) throw new Error('positionType required');
+      /* Only lifecycle-managed types — anything else mints a row Phase 14
+         can never advance (frozen in 'registration' forever). */
+      if (!(ELECTION_LIFECYCLE_TYPES as readonly string[]).includes(positionType)) {
+        throw new Error(`positionType must be one of: ${ELECTION_LIFECYCLE_TYPES.join(', ')}`);
+      }
       const rc = getRuntimeConfig();
       const now = new Date();
-      const registrationDeadline = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-      const votingStartDate = new Date(now.getTime() + rc.campaignDurationDays * 24 * 60 * 60 * 1000);
-      const votingEndDate = new Date(votingStartDate.getTime() + rc.votingDurationHours * 60 * 60 * 1000);
-      const [election] = await db.insert(elections).values({ positionType, status: 'registration', scheduledDate: now, registrationDeadline, votingStartDate, votingEndDate }).returning();
+      /* Tick-anchored schedule (B1) — tick columns gate the phases; the
+         timestamp columns are derived display dates. */
+      const tickNumber = await getCurrentTickNumber();
+      const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+      const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+      const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+      const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
+      const [election] = await db.insert(elections).values({
+        positionType, status: 'registration', scheduledDate: now, registrationDeadline, votingStartDate, votingEndDate,
+        createdTick: tickNumber,
+        registrationEndsTick: sched.registrationEndsTick,
+        votingStartTick: sched.votingStartTick,
+        votingEndTick: sched.votingEndTick,
+      }).returning();
       await db.insert(activityEvents).values({ type: 'election_called', agentId: null, title: `${positionType} election called by orchestrator`, description: reasoning ?? `Emergency election for ${positionType}` });
       result = { electionId: election.id, positionType, status: 'registration' };
       break;

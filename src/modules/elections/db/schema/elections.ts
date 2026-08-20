@@ -14,6 +14,15 @@ export const elections = pgTable('elections', {
   winnerId: uuid('winner_id').references(() => agents.id),
   totalVotes: integer('total_votes').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /* Tick anchors (migration 0034) — the authoritative phase schedule for
+     rows created after the election-cycles slice; the timestamp columns
+     above become display-only derived dates on such rows. NULL on legacy
+     rows, which keep wall-clock gating until they drain. */
+  createdTick: integer('created_tick'),
+  registrationEndsTick: integer('registration_ends_tick'),
+  votingStartTick: integer('voting_start_tick'),
+  votingEndTick: integer('voting_end_tick'),
+  certifiedTick: integer('certified_tick'),
 });
 
 export const campaigns = pgTable('campaigns', {

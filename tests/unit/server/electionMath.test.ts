@@ -14,6 +14,17 @@ import {
   filterCandidacyEligible,
   registrationShouldClose,
   isRealCandidacyStatus,
+  electionTickSchedule,
+  registrationShouldCloseAtTick,
+  votingShouldOpenAtTick,
+  votingShouldCloseAtTick,
+  wallDateForTick,
+  ELECTION_LIFECYCLE_TYPES,
+  ELECTION_OFFICE_LABEL,
+  candidacyExcludedAgentIds,
+  tenureTicksPreferred,
+  congressGeneralDue,
+  selectTopNWinners,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -617,5 +628,250 @@ describe('isRealCandidacyStatus', () => {
 
   it('is a plain string comparison — any unrecognized future status defaults to real (only "declined" is special-cased out)', () => {
     expect(isRealCandidacyStatus('some_future_status')).toBe(true);
+  });
+});
+
+/* ── Election cycles B2: non-presidential lifecycle ───────────────────── */
+
+describe('ELECTION_LIFECYCLE_TYPES', () => {
+  it('pins exactly the two organically-lifecycled election types', () => {
+    expect([...ELECTION_LIFECYCLE_TYPES]).toEqual(['president', 'congress_general']);
+  });
+});
+
+describe('candidacyExcludedAgentIds', () => {
+  const held = [
+    { agentId: 'pres', type: 'president' },
+    { agentId: 'justice-1', type: 'supreme_justice' },
+    { agentId: 'cabinet-1', type: 'cabinet_secretary' },
+    { agentId: 'lower-1', type: 'lower_justice' },
+    { agentId: 'chair-1', type: 'committee_chair' },
+    { agentId: 'speaker-1', type: 'speaker' },
+    { agentId: 'member-1', type: 'congress_member' },
+  ];
+
+  it('president: only sitting supreme justices are excluded (the existing rule, unchanged)', () => {
+    const excluded = candidacyExcludedAgentIds('president', held);
+    expect(excluded).toEqual(new Set(['justice-1']));
+  });
+
+  it('congress_general: holders of any office ranked above congress_member are out; chairs/speaker/sitting members stay eligible', () => {
+    const excluded = candidacyExcludedAgentIds('congress_general', held);
+    expect(excluded).toEqual(new Set(['pres', 'justice-1', 'cabinet-1', 'lower-1']));
+    expect(excluded.has('chair-1')).toBe(false);
+    expect(excluded.has('speaker-1')).toBe(false);
+    expect(excluded.has('member-1')).toBe(false);
+  });
+
+  it('unknown election type or empty/non-array positions -> empty set (defensive)', () => {
+    expect(candidacyExcludedAgentIds('supreme_court', held)).toEqual(new Set());
+    expect(candidacyExcludedAgentIds('president', [])).toEqual(new Set());
+    // @ts-expect-error defensive runtime check
+    expect(candidacyExcludedAgentIds('president', null)).toEqual(new Set());
+  });
+});
+
+describe('ELECTION_OFFICE_LABEL', () => {
+  it('covers every lifecycle type with prompt-ready copy', () => {
+    for (const t of ELECTION_LIFECYCLE_TYPES) {
+      expect(typeof ELECTION_OFFICE_LABEL[t]).toBe('string');
+      expect(ELECTION_OFFICE_LABEL[t]!.length).toBeGreaterThan(0);
+    }
+    expect(ELECTION_OFFICE_LABEL['president']).toBe('President');
+  });
+});
+
+/* ── Election cycles B1: tick-anchored scheduling ─────────────────────── */
+
+describe('electionTickSchedule', () => {
+  it('lays out sequential windows: created -> +registration -> +campaign -> +voting', () => {
+    expect(electionTickSchedule(100, 7, 30, 6)).toEqual({
+      registrationEndsTick: 107,
+      votingStartTick: 137,
+      votingEndTick: 143,
+    });
+  });
+
+  it('floors fractional durations and clamps each window to at least 1 tick', () => {
+    expect(electionTickSchedule(1, 0, -5, 2.9)).toEqual({
+      registrationEndsTick: 2,
+      votingStartTick: 3,
+      votingEndTick: 5,
+    });
+  });
+
+  it('is defensive on non-finite createdTick (treated as tick 1)', () => {
+    expect(electionTickSchedule(NaN, 1, 1, 1)).toEqual({
+      registrationEndsTick: 2,
+      votingStartTick: 3,
+      votingEndTick: 4,
+    });
+  });
+});
+
+describe('registrationShouldCloseAtTick', () => {
+  it('false before the deadline tick regardless of campaign count', () => {
+    expect(registrationShouldCloseAtTick(106, 107, 5)).toBe(false);
+  });
+
+  it('keeps the >=1-campaign AND: false at/after the deadline with zero campaigns', () => {
+    expect(registrationShouldCloseAtTick(107, 107, 0)).toBe(false);
+    expect(registrationShouldCloseAtTick(999, 107, 0)).toBe(false);
+  });
+
+  it('true at the boundary (>=) and after, with >=1 campaign', () => {
+    expect(registrationShouldCloseAtTick(107, 107, 1)).toBe(true);
+    expect(registrationShouldCloseAtTick(108, 107, 3)).toBe(true);
+  });
+
+  it('null/undefined/non-finite anchor -> false (legacy wall-clock rows never match)', () => {
+    expect(registrationShouldCloseAtTick(107, null, 1)).toBe(false);
+    expect(registrationShouldCloseAtTick(107, undefined, 1)).toBe(false);
+    expect(registrationShouldCloseAtTick(107, NaN, 1)).toBe(false);
+  });
+});
+
+describe('votingShouldOpenAtTick / votingShouldCloseAtTick', () => {
+  it('boundary is >= (opens/closes ON the anchor tick)', () => {
+    expect(votingShouldOpenAtTick(137, 137)).toBe(true);
+    expect(votingShouldOpenAtTick(136, 137)).toBe(false);
+    expect(votingShouldCloseAtTick(143, 143)).toBe(true);
+    expect(votingShouldCloseAtTick(142, 143)).toBe(false);
+  });
+
+  it('null-defensive: null/undefined/NaN anchors never open or close', () => {
+    expect(votingShouldOpenAtTick(999, null)).toBe(false);
+    expect(votingShouldOpenAtTick(999, undefined)).toBe(false);
+    expect(votingShouldCloseAtTick(999, null)).toBe(false);
+    expect(votingShouldCloseAtTick(999, NaN)).toBe(false);
+  });
+});
+
+/* ── Election cycles B3: congressional general elections ─────────────── */
+
+describe('officeRank — congress_general (B3)', () => {
+  it('ranks 50, equal to the legislative-branch seats (winning one ≡ winning a congress seat; chairs/speaker are never auto-vacated by it)', () => {
+    expect(officeRank('congress_general')).toBe(50);
+    expect(officeRank('congress_general')).toBe(officeRank('congress_member'));
+    expect(officeRank('congress_general')).toBe(officeRank('committee_chair'));
+    expect(officeRank('congress_general')).toBe(officeRank('speaker'));
+    /* Equal rank -> strict < in getSeatsToVacate never vacates them. */
+    const held: HeldPosition[] = [
+      { id: 'p1', type: 'congress_member' },
+      { id: 'p2', type: 'committee_chair' },
+      { id: 'p3', type: 'speaker' },
+    ];
+    expect(getSeatsToVacate(held, 'congress_general')).toEqual([]);
+  });
+});
+
+describe('congressGeneralDue', () => {
+  it('disabled (0 or negative congressTermTicks) never fires', () => {
+    expect(congressGeneralDue(100, 999999, 0)).toBe(false);
+    expect(congressGeneralDue(null, 999999, 0)).toBe(false);
+    expect(congressGeneralDue(100, 999999, -10)).toBe(false);
+  });
+
+  it('null/undefined anchor fires immediately on first enable (no prior certified general)', () => {
+    expect(congressGeneralDue(null, 1, 730)).toBe(true);
+    expect(congressGeneralDue(undefined, 1, 730)).toBe(true);
+  });
+
+  it('boundary is >= anchor + term', () => {
+    expect(congressGeneralDue(100, 829, 730)).toBe(false);
+    expect(congressGeneralDue(100, 830, 730)).toBe(true);
+    expect(congressGeneralDue(100, 831, 730)).toBe(true);
+  });
+
+  it('non-finite tickNumber never fires', () => {
+    expect(congressGeneralDue(100, NaN, 730)).toBe(false);
+  });
+});
+
+describe('selectTopNWinners', () => {
+  const candidates: CandidateStanding[] = [
+    standing({ agentId: 'a', totalContributions: 10, startDate: '2026-01-01T00:00:00Z', campaignId: 'c1' }),
+    standing({ agentId: 'b', totalContributions: 30, startDate: '2026-01-02T00:00:00Z', campaignId: 'c2' }),
+    standing({ agentId: 'c', totalContributions: 20, startDate: '2026-01-03T00:00:00Z', campaignId: 'c3' }),
+    standing({ agentId: 'd', totalContributions: 20, startDate: '2026-01-04T00:00:00Z', campaignId: 'c4' }),
+  ];
+
+  it('ranks by votes desc first, returns exactly n, top vote-getter first', () => {
+    const votes = { a: 5, b: 1, c: 3, d: 2 };
+    expect(selectTopNWinners(candidates, votes, 2)).toEqual(['a', 'c']);
+    expect(selectTopNWinners(candidates, votes, 3)).toEqual(['a', 'c', 'd']);
+  });
+
+  it('vote ties break by contributions desc, then registration order', () => {
+    /* a and b tie on votes: b has more contributions -> b first.
+       c and d tie on votes AND contributions -> earlier registration (c) first. */
+    const votes = { a: 2, b: 2, c: 1, d: 1 };
+    expect(selectTopNWinners(candidates, votes, 4)).toEqual(['b', 'a', 'c', 'd']);
+  });
+
+  it('zero-ballot chain: no votes at all -> contributions desc -> registration order', () => {
+    expect(selectTopNWinners(candidates, {}, 3)).toEqual(['b', 'c', 'd']);
+  });
+
+  it('is deterministic under shuffled input order', () => {
+    const votes = { a: 1, b: 1, c: 1, d: 1 };
+    const shuffled = [candidates[3]!, candidates[1]!, candidates[0]!, candidates[2]!];
+    expect(selectTopNWinners(shuffled, votes, 4)).toEqual(selectTopNWinners(candidates, votes, 4));
+  });
+
+  it('n greater than the candidate pool seats everyone; n <= 0 or empty pool seats nobody', () => {
+    expect(selectTopNWinners(candidates, { a: 1 }, 50)).toHaveLength(4);
+    expect(selectTopNWinners(candidates, { a: 1 }, 0)).toEqual([]);
+    expect(selectTopNWinners([], { a: 1 }, 3)).toEqual([]);
+  });
+});
+
+/* ── Election cycles B4: tick-based tenure ────────────────────────────── */
+
+describe('tenureTicksPreferred', () => {
+  const HOUR = 60 * 60 * 1000;
+  const start = new Date('2026-08-01T00:00:00Z');
+  const now = new Date('2026-08-01T10:00:00Z'); // 10 wall-ticks at 1h interval
+
+  it('prefers the tick anchor when present: tickNumber - startTick', () => {
+    expect(tenureTicksPreferred(100, 130, start, now, HOUR)).toBe(30);
+  });
+
+  it('clamps a future/equal startTick to 0 tenure', () => {
+    expect(tenureTicksPreferred(130, 130, start, now, HOUR)).toBe(0);
+    expect(tenureTicksPreferred(140, 130, start, now, HOUR)).toBe(0);
+  });
+
+  it('falls back to wall-clock tenureTicks when the anchor is null/undefined/NaN', () => {
+    expect(tenureTicksPreferred(null, 130, start, now, HOUR)).toBe(10);
+    expect(tenureTicksPreferred(undefined, 130, start, now, HOUR)).toBe(10);
+    expect(tenureTicksPreferred(NaN, 130, start, now, HOUR)).toBe(10);
+  });
+
+  it('falls back to wall-clock when tickNumber itself is non-finite', () => {
+    expect(tenureTicksPreferred(100, NaN, start, now, HOUR)).toBe(10);
+  });
+
+  it('tick-anchored tenure is immune to the interval used for the wall fallback', () => {
+    expect(tenureTicksPreferred(100, 130, start, now, 1)).toBe(30);
+  });
+});
+
+describe('wallDateForTick', () => {
+  const now = new Date('2026-08-20T00:00:00Z');
+  const HOUR = 60 * 60 * 1000;
+
+  it('projects future ticks onto wall time at the current interval', () => {
+    expect(wallDateForTick(107, 100, now, HOUR).getTime()).toBe(now.getTime() + 7 * HOUR);
+  });
+
+  it('clamps past/current ticks to now (a countdown never shows negative)', () => {
+    expect(wallDateForTick(100, 100, now, HOUR).getTime()).toBe(now.getTime());
+    expect(wallDateForTick(95, 100, now, HOUR).getTime()).toBe(now.getTime());
+  });
+
+  it('non-positive/non-finite interval degrades to now instead of NaN dates', () => {
+    expect(wallDateForTick(107, 100, now, 0).getTime()).toBe(now.getTime());
+    expect(wallDateForTick(107, 100, now, NaN).getTime()).toBe(now.getTime());
   });
 });

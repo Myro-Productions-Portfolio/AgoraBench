@@ -241,6 +241,11 @@ interface RuntimeConfig {
   electoralCollegeEnabled: boolean;
   /* Elections Revival (minimal slice) */
   presidentTermTicks: number;
+  /* Election Cycles (tick-anchored schedule) */
+  electionRegistrationTicks: number;
+  electionCampaignTicks: number;
+  electionVotingTicks: number;
+  congressTermTicks: number;
   /* Capitol City (effect layer) */
   cityEnabled: boolean;
   cityMonthsPerTick: number;
@@ -3723,9 +3728,11 @@ export function AdminPage() {
                         onChange={(e) => setElectionTriggerType(e.target.value)}
                         className="bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
                       >
+                        {/* Only the two lifecycle-supported types — the old
+                            'congress'/'supreme_court' options created rows no
+                            lifecycle code recognizes (frozen in registration). */}
                         <option value="president">President</option>
-                        <option value="congress">Congress</option>
-                        <option value="supreme_court">Supreme Court</option>
+                        <option value="congress_general">Congress (General)</option>
                       </select>
                       <button
                         disabled={electionWorking}
@@ -3771,7 +3778,7 @@ export function AdminPage() {
                           <tbody>
                             {activeElections.map((el) => (
                               <tr key={el.id} className="border-b border-border/50 last:border-0">
-                                <td className="px-3 py-2 text-text-primary capitalize">{el.positionType.replace('_', ' ')}</td>
+                                <td className="px-3 py-2 text-text-primary capitalize">{el.positionType.replace(/_/g, ' ')}</td>
                                 <td className="px-3 py-2">
                                   <span className="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-gold/10 text-gold border border-gold/20">
                                     {el.status}
@@ -3822,7 +3829,66 @@ export function AdminPage() {
                       onBlur={() => void saveConfig({ presidentTermTicks: simConfig.presidentTermTicks })}
                       className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                     />
-                    <p className="text-xs text-text-muted">Incumbent tenure limit in ticks, derived from wall-clock time since inauguration. 0 = disabled; recommended 1460 ≈ 4 sim-years. When enabled and the sitting president's tenure reaches this limit, a new presidential election is triggered automatically instead of being suppressed — the incumbent stays seated until certification.</p>
+                    <p className="text-xs text-text-muted">Incumbent tenure limit in ticks, counted from the tick the president was seated (presidents seated before the tick-anchor migration fall back to wall-clock-derived tenure, so the first enable triggers an election immediately). 0 = disabled; recommended 1460 ≈ 4 sim-years. When enabled and the sitting president's tenure reaches this limit, a new presidential election is triggered automatically instead of being suppressed — the incumbent stays seated until certification.</p>
+                  </div>
+
+                  {/* Election Cycles — tick-anchored phase schedule (1 tick = 1 sim-day) */}
+                  <div className="space-y-4 border-t border-border pt-4">
+                    <p className="text-xs font-medium text-text-secondary uppercase tracking-widest">Election Cycle Windows (ticks)</p>
+                    <p className="text-xs text-text-muted">Phase schedule for elections created after the tick-anchor migration; 1 tick = 1 sim-day. Legacy in-flight elections keep the wall-clock Campaign Duration / Voting Window settings below until they finish.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Registration</label>
+                          <span className="text-sm text-gold font-mono">{simConfig.electionRegistrationTicks} ticks</span>
+                        </div>
+                        <input type="number" min={1} max={365} step={1}
+                          value={simConfig.electionRegistrationTicks}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, electionRegistrationTicks: parseInt(e.target.value) || 1 } : c)}
+                          onBlur={() => void saveConfig({ electionRegistrationTicks: simConfig.electionRegistrationTicks })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Campaigning</label>
+                          <span className="text-sm text-gold font-mono">{simConfig.electionCampaignTicks} ticks</span>
+                        </div>
+                        <input type="number" min={1} max={730} step={1}
+                          value={simConfig.electionCampaignTicks}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, electionCampaignTicks: parseInt(e.target.value) || 1 } : c)}
+                          onBlur={() => void saveConfig({ electionCampaignTicks: simConfig.electionCampaignTicks })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-text-secondary">Voting</label>
+                          <span className="text-sm text-gold font-mono">{simConfig.electionVotingTicks} ticks</span>
+                        </div>
+                        <input type="number" min={1} max={90} step={1}
+                          value={simConfig.electionVotingTicks}
+                          onChange={(e) => setSimConfig((c) => c ? { ...c, electionVotingTicks: parseInt(e.target.value) || 1 } : c)}
+                          onBlur={() => void saveConfig({ electionVotingTicks: simConfig.electionVotingTicks })}
+                          className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Congressional general election cadence — 0 = disabled, deploy dark */}
+                  <div className="space-y-2 border-t border-border pt-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Congress Term Length</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.congressTermTicks === 0 ? 'disabled' : `${simConfig.congressTermTicks} ticks`}</span>
+                    </div>
+                    <input type="number" min={0} max={100000} step={1}
+                      value={simConfig.congressTermTicks}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, congressTermTicks: parseInt(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ congressTermTicks: simConfig.congressTermTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Congressional general election cadence in ticks. 0 = disabled; recommended 730 ≈ 2 sim-years. When enabled, a chamber-wide general election recurs on this cadence (fires immediately on first enable); every seat is contested and the whole chamber turns over at certification. For contested races keep Congress Seats below the active-agent count.</p>
                   </div>
 
                   {/* Timing config */}

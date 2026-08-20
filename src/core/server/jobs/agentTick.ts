@@ -55,7 +55,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose } from '../lib/electionMath.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -181,8 +181,6 @@ agentTickQueue.process(async () => {
   let vetoedByPresidentThisTick: (typeof bills.$inferSelect)[] = [];
   /* Populated by Phase 2c, read by Phase 11.5 */
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
-  /* Election results from Phase 14, read by Phase 11.5 */
-  let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
   /* Government spending this tick (net paychecks + one-time appropriations +
      recurring program debits) — accumulated by Phases 9 and 12, written to
      fiscal_tick_summaries by Phase 13. Integer dollars. */
@@ -346,6 +344,7 @@ agentTickQueue.process(async () => {
         title: `${committee} Committee Chair`,
         startDate: new Date(),
         isActive: true,
+        startTick: tickNumber,
       });
       sittingChairIds05.add(chairAgent.id);
 
@@ -3338,6 +3337,7 @@ agentTickQueue.process(async () => {
               candidates: candidates10,
               confirmVoterIds: seatedCongress10.map((c) => c.agentId),
               confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
+              tickNumber,
             });
             console.warn(`[SIMULATION] Phase 10: justice appointment cycle — ${result10.status}.`);
           }
@@ -3354,6 +3354,7 @@ agentTickQueue.process(async () => {
               title: 'Supreme Court Justice',
               startDate: new Date(),
               isActive: true,
+              startTick: tickNumber,
             });
 
             await db.insert(activityEvents).values({
@@ -4959,12 +4960,91 @@ agentTickQueue.process(async () => {
         }
       }
 
-      /* election_won / election_lost — from Phase 14 */
-      for (const result of electionResultsThisTick) {
-        triggers115.push({ agentId: result.winnerId, triggerType: 'election_won', triggerElectionId: result.electionId });
-        for (const loserId of result.loserIds) {
-          triggers115.push({ agentId: loserId, triggerType: 'election_lost', triggerElectionId: result.electionId });
+      /* election_won / election_lost — elections certified LAST tick (B5).
+         Phase 11.5 runs BEFORE Phase 14 in the tick order, so the old
+         in-memory electionResultsThisTick carry was always empty when read
+         (the acknowledged ordering bug) — election statements could never
+         fire. Now: exact certified_tick = tickNumber - 1 window (gap-free,
+         no wall-clock fragility; legacy pre-0034 certifications carry NULL
+         and never match). No-double-fire guard: a tick that crashed after
+         this phase re-runs with the same tickNumber, so any election that
+         already has a win/loss statement row is skipped. Inner try so a
+         failure here never silences the other statement triggers. */
+      try {
+        const certifiedLastTick = await db
+          .select({ id: elections.id, winnerId: elections.winnerId, certifiedDate: elections.certifiedDate })
+          .from(elections)
+          .where(and(eq(elections.certifiedTick, tickNumber - 1), isNotNull(elections.winnerId)));
+
+        if (certifiedLastTick.length > 0) {
+          const electionIds115 = certifiedLastTick.map((e) => e.id);
+          const priorStatements = await db
+            .select({ triggerElectionId: agentStatements.triggerElectionId })
+            .from(agentStatements)
+            .where(and(
+              inArray(agentStatements.triggerElectionId, electionIds115),
+              inArray(agentStatements.triggerType, ['election_won', 'election_lost']),
+            ));
+          const alreadyFired115 = new Set(priorStatements.map((s) => s.triggerElectionId));
+
+          /* winnerIds/loserIds persist in the election_completed activity
+             metadata (finalizeElection writes both sets). Bounded fetch:
+             the events were written at certification, so createdAt >= the
+             batch's earliest certifiedDate (1h slack for clock skew). */
+          const earliestCertified115 = certifiedLastTick.reduce<Date | null>((min, e) => {
+            if (!e.certifiedDate) return min;
+            return !min || e.certifiedDate < min ? e.certifiedDate : min;
+          }, null);
+          const metaByElection115 = new Map<string, { winnerIds: string[]; loserIds: string[] }>();
+          if (earliestCertified115) {
+            const completionEvents = await db
+              .select({ metadata: activityEvents.metadata })
+              .from(activityEvents)
+              .where(and(
+                eq(activityEvents.type, 'election_completed'),
+                gte(activityEvents.createdAt, new Date(earliestCertified115.getTime() - 60 * 60 * 1000)),
+              ));
+            for (const ev of completionEvents) {
+              try {
+                const meta = JSON.parse(ev.metadata) as { electionId?: string; winnerIds?: unknown; loserIds?: unknown };
+                if (typeof meta.electionId === 'string' && Array.isArray(meta.winnerIds)) {
+                  metaByElection115.set(meta.electionId, {
+                    winnerIds: meta.winnerIds.filter((v): v is string => typeof v === 'string'),
+                    loserIds: Array.isArray(meta.loserIds) ? meta.loserIds.filter((v): v is string => typeof v === 'string') : [],
+                  });
+                }
+              } catch {
+                /* unparseable metadata — the legacy re-derivation below covers it */
+              }
+            }
+          }
+
+          for (const certifiedElection of certifiedLastTick) {
+            if (alreadyFired115.has(certifiedElection.id)) continue;
+            const fromMeta = metaByElection115.get(certifiedElection.id);
+            let winnerIds115 = fromMeta?.winnerIds;
+            let loserIds115 = fromMeta?.loserIds;
+            if (!winnerIds115 || winnerIds115.length === 0) {
+              /* Legacy re-derivation: winner from the election row, losers
+                 from its real (non-declined) campaigns. */
+              winnerIds115 = certifiedElection.winnerId ? [certifiedElection.winnerId] : [];
+              const campaignRows115 = await db
+                .select({ agentId: campaigns.agentId })
+                .from(campaigns)
+                .where(and(eq(campaigns.electionId, certifiedElection.id), ne(campaigns.status, 'declined')));
+              const winnerSet115 = new Set(winnerIds115);
+              loserIds115 = [...new Set(campaignRows115.map((c) => c.agentId))].filter((id) => !winnerSet115.has(id));
+            }
+            for (const wid of winnerIds115) {
+              triggers115.push({ agentId: wid, triggerType: 'election_won', triggerElectionId: certifiedElection.id });
+            }
+            for (const lid of loserIds115 ?? []) {
+              triggers115.push({ agentId: lid, triggerType: 'election_lost', triggerElectionId: certifiedElection.id });
+            }
+          }
         }
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 11.5: election statement window failed (other triggers unaffected):', err);
       }
 
       /* deal_broken — from Phase 2c */
@@ -5476,29 +5556,30 @@ agentTickQueue.process(async () => {
       .where(eq(positions.isActive, true));
 
     const activePresident = allActivePositions.find((p) => p.type === 'president');
-    const sittingJusticeIds = new Set(allActivePositions.filter((p) => p.type === 'supreme_justice').map((p) => p.agentId));
 
     /* ---- Candidacy declarations (registration phase) ------------------ */
-    /* Elections revival minimal slice. For each presidential election in
-     * 'registration', every eligible agent who hasn't yet decided for THIS
-     * election gets one cheap LLM yes/no. Eligibility: active agents (already
-     * the activeAgents set), excluding sitting supreme justices and the
-     * incumbent (who auto-registered without an LLM call at trigger time —
-     * see the term-expiry/vacancy trigger blocks below). Mirrors the Phase 14
+    /* Elections revival minimal slice, un-gated to every lifecycle type in
+     * B2. For each president/congress_general election in 'registration',
+     * every eligible agent who hasn't yet decided for THIS election gets one
+     * cheap LLM yes/no. Eligibility: active agents (already the activeAgents
+     * set) minus candidacyExcludedAgentIds for the election's type (president:
+     * sitting justices; congress_general: holders of offices above
+     * congress_member) and minus anyone who already decided — incumbents
+     * auto-register without an LLM call at trigger time. Mirrors the Phase 14
      * ballot-casting batching pattern: Promise.allSettled, failure-isolated,
      * one agent's rejected/idle call never aborts the phase.
      *
      * Scope note (controller sign-off, review round 1): this block and the
-     * registration->campaigning transition below run for ANY presidential
-     * election in 'registration', not just term-expiry-triggered ones —
-     * that's intentional, they fix the pipeline generally (the pipeline was
-     * broken for vacancy-triggered elections too). presidentTermTicks only
-     * gates whether a term-expiry re-election gets CREATED; once any
-     * presidential election exists, it runs the same full lifecycle. */
+     * registration->campaigning transition below run for ANY lifecycle-type
+     * election in 'registration', however it was created — that's
+     * intentional, they fix the pipeline generally. presidentTermTicks /
+     * congressTermTicks only gate whether a term-expiry election gets
+     * CREATED; once one exists, it runs the same full lifecycle. Legacy
+     * 'congress'/'supreme_court' rows stay frozen (additive un-gating). */
     const electionsInRegistration = await db
       .select()
       .from(elections)
-      .where(and(eq(elections.positionType, 'president'), eq(elections.status, 'registration')));
+      .where(and(inArray(elections.positionType, [...ELECTION_LIFECYCLE_TYPES]), eq(elections.status, 'registration')));
 
     for (const election of electionsInRegistration) {
       const existingCampaigns = await db
@@ -5506,8 +5587,9 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(eq(campaigns.electionId, election.id));
       const alreadyDecided = new Set(existingCampaigns.map((c) => c.agentId));
+      const officeExcluded = candidacyExcludedAgentIds(election.positionType, allActivePositions);
 
-      const eligible = filterCandidacyEligible(activeAgents, [...alreadyDecided, ...sittingJusticeIds]);
+      const eligible = filterCandidacyEligible(activeAgents, [...alreadyDecided, ...officeExcluded]);
       if (eligible.length === 0) continue;
 
       const partyRows = await db
@@ -5517,7 +5599,8 @@ agentTickQueue.process(async () => {
         .where(inArray(partyMemberships.agentId, eligible.map((a) => a.id)));
       const partyMap = new Map(partyRows.map((p) => [p.agentId, p.partyName]));
 
-      const incumbentAgentId = activePresident?.agentId ?? null;
+      /* Incumbent-president context is presidential-race copy only. */
+      const incumbentAgentId = election.positionType === 'president' ? (activePresident?.agentId ?? null) : null;
       const incumbentRow = incumbentAgentId ? activeAgents.find((a) => a.id === incumbentAgentId) : undefined;
       const relRows = incumbentAgentId
         ? await db
@@ -5532,6 +5615,11 @@ agentTickQueue.process(async () => {
         : [];
       const relMap = new Map(relRows.map((r) => [r.agentId, r]));
 
+      const officeLabel = ELECTION_OFFICE_LABEL[election.positionType] ?? election.positionType;
+      const raceDescriptor = election.positionType === 'president'
+        ? 'A presidential election'
+        : 'A congressional general election';
+
       const results = await Promise.allSettled(
         eligible.map((candidateAgent) => {
           const fullAgent = activeAgents.find((a) => a.id === candidateAgent.id)!;
@@ -5543,9 +5631,9 @@ agentTickQueue.process(async () => {
             : '';
 
           const contextMessage =
-            `A presidential election is open for candidate registration. Your approval rating: ${fullAgent.approvalRating ?? 50}%, party: ${party}.` +
+            `${raceDescriptor} is open for candidate registration. Your approval rating: ${fullAgent.approvalRating ?? 50}%, party: ${party}.` +
             incumbentBlock +
-            ` Do you want to declare your candidacy for President?` +
+            ` Do you want to declare your candidacy for ${officeLabel}?` +
             ` Respond with exactly this JSON structure: ` +
             `{"action":"candidacy_declaration","reasoning":"one sentence","data":{"run":true}}`;
 
@@ -5633,14 +5721,14 @@ agentTickQueue.process(async () => {
             await tx.insert(campaigns).values({
               agentId: candidateAgent.id,
               electionId: election.id,
-              platform: (decision.reasoning || 'Running for President.').slice(0, 500),
+              platform: (decision.reasoning || `Running for ${officeLabel}.`).slice(0, 500),
             });
           });
 
           await db.insert(activityEvents).values({
             type: 'candidacy_declared',
             agentId: candidateAgent.id,
-            title: `${candidateAgent.displayName} declared candidacy for President`,
+            title: `${candidateAgent.displayName} declared candidacy for ${officeLabel}`,
             description: decision.reasoning,
             metadata: JSON.stringify({ electionId: election.id }),
           });
@@ -5648,7 +5736,7 @@ agentTickQueue.process(async () => {
             electionId: election.id,
             agentId: candidateAgent.id,
             agentName: candidateAgent.displayName,
-            positionType: 'president',
+            positionType: election.positionType,
           });
           declaredCount += 1;
         } catch (err) {
@@ -5669,13 +5757,18 @@ agentTickQueue.process(async () => {
      * incumbent is a single idempotent action that always resolves the
      * election). If there is no incumbent either (open-seat election with
      * zero takers), registration is left open — it will pick up any
-     * candidacy declared next tick with no data loss. */
-    const electionsPastRegistration = await db
-      .select()
-      .from(elections)
-      .where(and(eq(elections.positionType, 'president'), eq(elections.status, 'registration'), lte(elections.registrationDeadline, now)));
-
-    for (const election of electionsPastRegistration) {
+     * candidacy declared next tick with no data loss.
+     *
+     * Deadline gating is per-row in JS, tick-first with wall fallback (B1):
+     * rows with a registrationEndsTick anchor gate on tickNumber; legacy
+     * NULL-anchor rows keep the wall-clock lte(registrationDeadline) check.
+     * Reuses electionsInRegistration from the candidacy block above — the
+     * old separate query differed only by the wall filter this replaces. */
+    for (const election of electionsInRegistration) {
+      const deadlineReached = election.registrationEndsTick != null
+        ? tickNumber >= election.registrationEndsTick
+        : new Date(election.registrationDeadline).getTime() <= now.getTime();
+      if (!deadlineReached) continue;
       const activeCampaignRows = await db
         .select({ agentId: campaigns.agentId })
         .from(campaigns)
@@ -5683,7 +5776,12 @@ agentTickQueue.process(async () => {
 
       let campaignCount = activeCampaignRows.length;
 
-      if (campaignCount === 0 && activePresident) {
+      /* Zero-campaigns-at-deadline fallback, parameterized per office (B2):
+         president -> the incumbent; congress_general -> every sitting member
+         (the chamber stands for re-election by default). Fee-if-affordable
+         in both cases — an incumbent is never blocked from the ballot by an
+         unpaid fee. */
+      if (campaignCount === 0 && election.positionType === 'president' && activePresident) {
         const [incumbentAgent] = await db
           .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
           .from(agents)
@@ -5714,11 +5812,58 @@ agentTickQueue.process(async () => {
           campaignCount = 1;
           console.warn(`[SIMULATION] Phase 14: zero candidates at registration deadline — auto-registered incumbent ${incumbentAgent.displayName}`);
         }
+      } else if (campaignCount === 0 && election.positionType === 'congress_general') {
+        const sittingMemberIds = allActivePositions
+          .filter((p) => p.type === 'congress_member')
+          .map((p) => p.agentId);
+        if (sittingMemberIds.length > 0) {
+          const sittingMembers = await db
+            .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
+            .from(agents)
+            .where(inArray(agents.id, sittingMemberIds));
+          for (const member of sittingMembers) {
+            const filingFee = rc.campaignFilingFee;
+            const canAfford = filingFee > 0 && member.balance >= filingFee;
+            await db.transaction(async (tx) => {
+              if (canAfford) {
+                await tx.update(agents).set({ balance: sql`${agents.balance} - ${filingFee}` }).where(eq(agents.id, member.id));
+                await tx.insert(transactions).values({
+                  fromAgentId: member.id,
+                  toAgentId: undefined,
+                  amount: filingFee,
+                  type: 'fee',
+                  description: 'Campaign filing fee (sitting member re-election, auto-registered — zero-candidate registration deadline)',
+                  balanceAfter: member.balance - filingFee,
+                });
+              }
+              await tx.insert(campaigns).values({
+                agentId: member.id,
+                electionId: election.id,
+                platform: 'Standing for re-election to the Legislature.',
+              });
+            });
+            campaignCount += 1;
+          }
+          console.warn(`[SIMULATION] Phase 14: zero candidates at registration deadline — auto-registered ${campaignCount} sitting member(s) for the congressional general`);
+        }
       }
 
-      if (!registrationShouldClose(now, election.registrationDeadline, campaignCount)) continue;
+      const shouldClose = election.registrationEndsTick != null
+        ? registrationShouldCloseAtTick(tickNumber, election.registrationEndsTick, campaignCount)
+        : registrationShouldClose(now, election.registrationDeadline, campaignCount);
+      if (!shouldClose) continue;
 
-      await db.update(elections).set({ status: 'campaigning' }).where(eq(elections.id, election.id));
+      /* Tick-anchored rows refresh their derived display dates at the
+         transition so banner countdowns stay honest across interval changes
+         (the tick columns stay authoritative; zero UI edits needed). */
+      const displayRefresh = election.votingStartTick != null && election.votingEndTick != null
+        ? {
+            registrationDeadline: now,
+            votingStartDate: wallDateForTick(election.votingStartTick, tickNumber, now, rc.tickIntervalMs),
+            votingEndDate: wallDateForTick(election.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+          }
+        : {};
+      await db.update(elections).set({ status: 'campaigning', ...displayRefresh }).where(eq(elections.id, election.id));
 
       await db.insert(activityEvents).values({
         type: 'election_campaigning_started',
@@ -5734,16 +5879,28 @@ agentTickQueue.process(async () => {
       console.warn(`[SIMULATION] Phase 14: Election ${election.id} moved registration -> campaigning (${campaignCount} candidate(s))`);
     }
 
-    /* campaigning -> voting */
-    const electionsThatShouldBeginVoting = await db
+    /* campaigning -> voting — per-row tick-first gate, wall fallback (B1) */
+    const electionsCampaigning = await db
       .select()
       .from(elections)
-      .where(and(eq(elections.status, 'campaigning'), lte(elections.votingStartDate, now)));
+      .where(eq(elections.status, 'campaigning'));
 
-    for (const election of electionsThatShouldBeginVoting) {
+    for (const election of electionsCampaigning) {
+      const shouldOpen = election.votingStartTick != null
+        ? votingShouldOpenAtTick(tickNumber, election.votingStartTick)
+        : election.votingStartDate != null && new Date(election.votingStartDate).getTime() <= now.getTime();
+      if (!shouldOpen) continue;
+
+      /* Display-date refresh at the transition (tick-anchored rows only). */
+      const votingDisplayRefresh = election.votingEndTick != null
+        ? {
+            votingStartDate: now,
+            votingEndDate: wallDateForTick(election.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+          }
+        : {};
       await db
         .update(elections)
-        .set({ status: 'voting' })
+        .set({ status: 'voting', ...votingDisplayRefresh })
         .where(eq(elections.id, election.id));
 
       await db.insert(activityEvents).values({
@@ -5979,23 +6136,22 @@ agentTickQueue.process(async () => {
       }
     }
 
-    /* voting -> certified (via shared finalizeElection helper) */
-    const electionsToComplete = await db
-      .select()
-      .from(elections)
-      .where(and(eq(elections.status, 'voting'), lte(elections.votingEndDate, now)));
+    /* voting -> certified (via shared finalizeElection helper) — per-row
+       tick-first gate, wall fallback (B1). Reuses electionsCurrentlyVoting
+       from the ballot pass above (no status writes happen in between; the
+       old separate query differed only by the wall filter this replaces). */
+    const electionsToComplete = electionsCurrentlyVoting.filter((election) =>
+      election.votingEndTick != null
+        ? votingShouldCloseAtTick(tickNumber, election.votingEndTick)
+        : election.votingEndDate != null && new Date(election.votingEndDate).getTime() <= now.getTime(),
+    );
 
+    /* Win/loss press statements fire NEXT tick: Phase 11.5 (which runs
+       before Phase 14 in the tick order) reads certified_tick = its
+       tickNumber - 1 — no in-memory carry (B5). */
     for (const election of electionsToComplete) {
-      const result = await finalizeElection(election.id);
-      if (result.status === 'ok' && result.winnerId) {
-        /* Track for Phase 11.5 public statements (already-consumed this tick —
-           see known ordering quirk; left intact for future tick v2 refactor) */
-        electionResultsThisTick.push({
-          electionId: election.id,
-          winnerId: result.winnerId,
-          loserIds: result.loserIds ?? [],
-        });
-      } else if (result.status === 'no_campaigns') {
+      const result = await finalizeElection(election.id, tickNumber);
+      if (result.status === 'no_campaigns') {
         console.warn(`[SIMULATION] Election ${election.id} had no campaigns — skipping finalize.`);
       }
     }
@@ -6015,7 +6171,7 @@ agentTickQueue.process(async () => {
      * fetch, not the stale top-of-phase snapshot, or a same-tick winner can
      * be double-seated / re-elected against themselves. */
     const freshOfficePositions14 = await db
-      .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate })
+      .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate, startTick: positions.startTick })
       .from(positions)
       .where(eq(positions.isActive, true));
     const freshActiveCongress14 = freshOfficePositions14.filter((p) => p.type === 'congress_member');
@@ -6044,6 +6200,7 @@ agentTickQueue.process(async () => {
           startDate: now,
           endDate: termEnd,
           isActive: true,
+          startTick: tickNumber,
         });
 
         await db.insert(activityEvents).values({
@@ -6075,9 +6232,11 @@ agentTickQueue.process(async () => {
 
       if (!inflightPresElection) {
         console.warn('[SIMULATION] Phase 14: No sitting president and no election in flight — triggering new election');
-        const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        const votingStartDate = new Date(now.getTime() + (rc.campaignDurationDays ?? 14) * 24 * 60 * 60 * 1000);
-        const votingEndDate = new Date(votingStartDate.getTime() + (rc.votingDurationHours ?? 48) * 60 * 60 * 1000);
+        /* Tick-anchored schedule (B1); timestamps become derived display dates. */
+        const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+        const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+        const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+        const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
 
         const [newElection] = await db
           .insert(elections)
@@ -6088,6 +6247,10 @@ agentTickQueue.process(async () => {
             registrationDeadline,
             votingStartDate,
             votingEndDate,
+            createdTick: tickNumber,
+            registrationEndsTick: sched.registrationEndsTick,
+            votingStartTick: sched.votingStartTick,
+            votingEndTick: sched.votingEndTick,
           })
           .returning({ id: elections.id });
 
@@ -6109,10 +6272,11 @@ agentTickQueue.process(async () => {
        * stays seated (no interregnum) — the election runs its normal
        * registration -> campaigning -> voting -> certified lifecycle and
        * finalizeElection's existing vacate rule + E3 voting handle the
-       * transfer once a winner is certified. Tenure is wall-clock-derived
-       * from positions.startDate (see electionMath.tenureTicks) — no
-       * tick-stamped column added this slice; documented caveat: server
-       * downtime does not pause tenure the way a tick-count would.
+       * transfer once a winner is certified. Tenure is tick-anchored (B4:
+       * positions.startTick, downtime/interval-change-proof) with the
+       * wall-clock derivation as the legacy fallback for pre-0034 rows —
+       * the sitting president predates the column, so the first enable
+       * still fires on wall-derived tenure (inaugural cycle, accepted).
        *
        * Uses freshActivePresident14, not the top-of-phase activePresident:
        * a presidential election certified by finalizeElection earlier in
@@ -6121,7 +6285,7 @@ agentTickQueue.process(async () => {
        * president's startDate — since exceeded tenure is why the election
        * was triggered in the first place, that immediately re-triggers a
        * second election against the brand-new incumbent. */
-      const tenure = tenureTicks(freshActivePresident14.startDate, now, rc.tickIntervalMs);
+      const tenure = tenureTicksPreferred(freshActivePresident14.startTick, tickNumber, freshActivePresident14.startDate, now, rc.tickIntervalMs);
       if (presidentTermExpired(tenure, rc.presidentTermTicks)) {
         const [inflightPresElection] = await db
           .select({ id: elections.id })
@@ -6136,9 +6300,11 @@ agentTickQueue.process(async () => {
 
         if (!inflightPresElection) {
           console.warn(`[SIMULATION] Phase 14: President term expired (${Math.round(tenure)}/${rc.presidentTermTicks} ticks) — triggering re-election`);
-          const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-          const votingStartDate = new Date(now.getTime() + (rc.campaignDurationDays ?? 14) * 24 * 60 * 60 * 1000);
-          const votingEndDate = new Date(votingStartDate.getTime() + (rc.votingDurationHours ?? 48) * 60 * 60 * 1000);
+          /* Tick-anchored schedule (B1); timestamps become derived display dates. */
+          const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+          const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+          const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+          const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
 
           const [newElection] = await db
             .insert(elections)
@@ -6149,6 +6315,10 @@ agentTickQueue.process(async () => {
               registrationDeadline,
               votingStartDate,
               votingEndDate,
+              createdTick: tickNumber,
+              registrationEndsTick: sched.registrationEndsTick,
+              votingStartTick: sched.votingStartTick,
+              votingEndTick: sched.votingEndTick,
             })
             .returning({ id: elections.id });
 
@@ -6199,6 +6369,112 @@ agentTickQueue.process(async () => {
           broadcast('election:triggered', {
             electionId: newElection?.id,
             positionType: 'president',
+          });
+        }
+      }
+    }
+
+    /* ---- Congressional general election trigger (B3) ------------------ */
+    /* Recurring chamber-wide general on the congressTermTicks cadence.
+     * Anchor = max(created_tick) of certified congress_generals — a null
+     * anchor (no general has ever run) fires immediately on first enable,
+     * stated and accepted. Suppressed while any congress_general is in
+     * flight. All sitting members auto-register at trigger time (no LLM
+     * ask, fee-if-affordable); challengers declare through the normal
+     * candidacy pipeline during registration.
+     *
+     * Documented electorate edge: candidates cannot vote in their own race,
+     * so if nearly all ~30 active agents run, the electorate shrinks toward
+     * zero and the deterministic contributions -> registration fallback
+     * chain decides the seats. The levers are congressSeats < agent pool
+     * and the filing fee; letting candidates vote is an owner-decision
+     * follow-up (it would change presidential physics too). */
+    if (rc.congressTermTicks > 0) {
+      const [inflightCongressGeneral] = await db
+        .select({ id: elections.id })
+        .from(elections)
+        .where(
+          and(
+            eq(elections.positionType, 'congress_general'),
+            inArray(elections.status, ['scheduled', 'registration', 'campaigning', 'voting']),
+          ),
+        )
+        .limit(1);
+
+      if (!inflightCongressGeneral) {
+        const [anchorRow] = await db
+          .select({ anchor: sql<number | null>`max(${elections.createdTick})` })
+          .from(elections)
+          .where(and(eq(elections.positionType, 'congress_general'), eq(elections.status, 'certified')));
+        const anchorTick = anchorRow?.anchor == null ? null : Number(anchorRow.anchor);
+
+        if (congressGeneralDue(anchorTick, tickNumber, rc.congressTermTicks)) {
+          console.warn(`[SIMULATION] Phase 14: Congressional general due (anchor ${anchorTick ?? 'none'}, term ${rc.congressTermTicks} ticks) — triggering`);
+          const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+          const [newElection] = await db
+            .insert(elections)
+            .values({
+              positionType: 'congress_general',
+              status: 'registration',
+              scheduledDate: now,
+              registrationDeadline: wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs),
+              votingStartDate: wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs),
+              votingEndDate: wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+              createdTick: tickNumber,
+              registrationEndsTick: sched.registrationEndsTick,
+              votingStartTick: sched.votingStartTick,
+              votingEndTick: sched.votingEndTick,
+            })
+            .returning({ id: elections.id });
+
+          if (newElection) {
+            const sittingMemberIds = freshOfficePositions14
+              .filter((p) => p.type === 'congress_member')
+              .map((p) => p.agentId);
+            if (sittingMemberIds.length > 0) {
+              const sittingMembers = await db
+                .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
+                .from(agents)
+                .where(inArray(agents.id, sittingMemberIds));
+              for (const member of sittingMembers) {
+                const filingFee = rc.campaignFilingFee;
+                const canAfford = filingFee > 0 && member.balance >= filingFee;
+                await db.transaction(async (tx) => {
+                  if (canAfford) {
+                    await tx.update(agents).set({ balance: sql`${agents.balance} - ${filingFee}` }).where(eq(agents.id, member.id));
+                    await tx.insert(transactions).values({
+                      fromAgentId: member.id,
+                      toAgentId: undefined,
+                      amount: filingFee,
+                      type: 'fee',
+                      description: 'Campaign filing fee (sitting member re-election, auto-registered)',
+                      balanceAfter: member.balance - filingFee,
+                    });
+                  }
+                  await tx.insert(campaigns).values({
+                    agentId: member.id,
+                    electionId: newElection.id,
+                    platform: 'Standing for re-election to the Legislature.',
+                  });
+                });
+              }
+              console.warn(`[SIMULATION] Phase 14: auto-registered ${sittingMembers.length} sitting member(s) for the congressional general`);
+            }
+          }
+
+          await db.insert(activityEvents).values({
+            type: 'election_triggered',
+            agentId: null,
+            title: 'Congressional general election triggered',
+            description: anchorTick == null
+              ? 'First congressional general election called — every seat in the Legislature is up'
+              : `Congressional term expired (${rc.congressTermTicks} ticks) — a chamber-wide general election has been called`,
+            metadata: JSON.stringify({ electionId: newElection?.id, positionType: 'congress_general', reason: anchorTick == null ? 'first_enable' : 'term_expired' }),
+          });
+
+          broadcast('election:triggered', {
+            electionId: newElection?.id,
+            positionType: 'congress_general',
           });
         }
       }
@@ -6316,6 +6592,7 @@ agentTickQueue.process(async () => {
                 type: 'speaker',
                 title: 'Speaker of the Legislature',
                 startDate: new Date(),
+                startTick: tickNumber,
                 /* No endDate — the Speaker serves until they lose their congress
                    seat (which cascades to the speaker seat via getSeatsToVacate
                    ranking) or a new term forces a re-vote. Deliberately NOT
@@ -6389,6 +6666,7 @@ agentTickQueue.process(async () => {
             confirmVoterIds: seatedCongress146.map((c) => c.agentId),
             confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
             seatDescriptor: `The role is ${vacantRole}.`,
+            tickNumber,
           });
           console.warn(`[SIMULATION] Phase 14.6: cabinet (${vacantRole}) appointment cycle — ${result146.status}.`);
         }
@@ -6452,8 +6730,22 @@ agentTickQueue.process(async () => {
         eligibleCampaigns.push(campaign);
       }
 
+      /* Per-agent speech cap applied BEFORE the LLM batch (B2 cost fix):
+         under concurrent elections an agent campaigning in several races
+         used to get one LLM call per campaign with the post-call cap
+         discarding the extras — pure inference waste. The post-call cap
+         below stays as the enforcement backstop. */
+      const speechBudget15 = new Map<string, number>();
+      const cappedCampaigns15: typeof eligibleCampaigns = [];
+      for (const campaign of eligibleCampaigns) {
+        const used = speechBudget15.get(campaign.agentId) ?? 0;
+        if (used >= rc.maxCampaignSpeechesPerTick) continue;
+        speechBudget15.set(campaign.agentId, used + 1);
+        cappedCampaigns15.push(campaign);
+      }
+
       const results = await Promise.allSettled(
-        eligibleCampaigns.map((campaign) => {
+        cappedCampaigns15.map((campaign) => {
           const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
           const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId)!;
 
@@ -7070,12 +7362,20 @@ agentTickQueue.process(async () => {
         .orderBy(asc(activityEvents.createdAt))
         .limit(40);
 
+      /* Elections certified THIS tick (B5: the in-memory carry is gone —
+         Phase 14 stamps certifiedTick on every finalize, so the same-tick
+         query replaces it exactly for this tail-of-tick consumer). */
+      const certifiedThisTickGz = await db
+        .select({ winnerId: elections.winnerId })
+        .from(elections)
+        .where(and(eq(elections.certifiedTick, tickNumber), isNotNull(elections.winnerId)));
+
       const agentNameById = new Map(activeAgents.map((a) => [a.id, a.displayName]));
       const digest = buildGazetteDigest({
         passedBills: passedBillsThisTick.map((b) => ({ title: b.title })),
         failedBills: failedBillsThisTick.map((b) => ({ title: b.title })),
         vetoedBills: vetoedByPresidentThisTick.map((b) => ({ title: b.title })),
-        electionWinners: electionResultsThisTick.map((r) => agentNameById.get(r.winnerId) ?? 'a challenger'),
+        electionWinners: certifiedThisTickGz.map((r) => (r.winnerId ? agentNameById.get(r.winnerId) ?? 'a challenger' : 'a challenger')),
         brokenDeals: brokenDealsThisTick.map((d) => ({ wrongedPartyName: d.wrongedPartyName })),
         events: gazetteEvents,
       });

@@ -12,6 +12,9 @@ export const positions = pgTable('positions', {
   startDate: timestamp('start_date', { withTimezone: true }).notNull().defaultNow(),
   endDate: timestamp('end_date', { withTimezone: true }),
   isActive: boolean('is_active').notNull().default(true),
+  /* Tick the holder was seated (migration 0034). Tenure math prefers this
+     over wall-clock startDate when present; NULL on legacy rows. */
+  startTick: integer('start_tick'),
 });
 
 export const activityEvents = pgTable('activity_events', {

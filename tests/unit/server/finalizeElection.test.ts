@@ -244,6 +244,58 @@ describe('finalizeElection — presidential outgoing-incumbent handoff', () => {
     expect(challengerApproval?.eventType).toBe('election_won');
   });
 
+  it('B4: passing tickNumber stamps startTick on the winner row and certifiedTick on the election', async () => {
+    const electionId = 'election-tick';
+    const winnerId = 'agent-winner';
+
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 742);
+    expect(result.status).toBe('ok');
+
+    const positionInsert = insertedRows.find(
+      (r) => r.values['isActive'] === true && r.values['type'] === 'president',
+    );
+    expect(positionInsert!.values['startTick']).toBe(742);
+
+    const certifyUpdate = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certifyUpdate!.values['certifiedTick']).toBe(742);
+  });
+
+  it('B4: omitting tickNumber (legacy/out-of-tick callers without a clock) stamps null anchors — wall-clock behavior preserved', async () => {
+    const electionId = 'election-no-tick';
+    const winnerId = 'agent-winner';
+
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId);
+    expect(result.status).toBe('ok');
+
+    const positionInsert = insertedRows.find(
+      (r) => r.values['isActive'] === true && r.values['type'] === 'president',
+    );
+    expect(positionInsert!.values['startTick']).toBeNull();
+
+    const certifyUpdate = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certifyUpdate!.values['certifiedTick']).toBeNull();
+  });
+
   it('non-presidential election (congress_member): no outgoing-handoff query, only the double-position vacate path applies', async () => {
     const electionId = 'election-3';
     const winnerId = 'agent-winner';
@@ -265,5 +317,240 @@ describe('finalizeElection — presidential outgoing-incumbent handoff', () => {
        has anything to close. */
     const isActiveFalseUpdates = updatedCalls.filter((c) => c.values['isActive'] === false);
     expect(isActiveFalseUpdates).toHaveLength(0);
+  });
+});
+
+/* Queues the select sequence the congress_general multi-seat branch makes
+   (status not yet 'certified'):
+   1. election row
+   2. campaignTotals
+   3. castBallots
+   4. winnerAgents (batch)
+   5. winnersPriorPositions (batch, after the chamber close) */
+function queueCongressSelects(opts: {
+  election: Record<string, unknown>;
+  campaignTotals: Record<string, unknown>[];
+  castBallots: Record<string, unknown>[];
+  winnerAgents: Record<string, unknown>[];
+  winnersPriorPositions: Record<string, unknown>[];
+}) {
+  selectResults.push(
+    [opts.election],
+    opts.campaignTotals,
+    opts.castBallots,
+    opts.winnerAgents,
+    opts.winnersPriorPositions,
+  );
+}
+
+describe('finalizeElection — congress_general multi-seat (B3)', () => {
+  const electionId = 'election-cg';
+  const threeCandidates = [
+    { agentId: 'c1', totalContributions: 100, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' },
+    { agentId: 'c2', totalContributions: 300, startDate: '2026-01-02T00:00:00Z', campaignId: 'camp-2' },
+    { agentId: 'c3', totalContributions: 200, startDate: '2026-01-03T00:00:00Z', campaignId: 'camp-3' },
+  ];
+
+  it('seats exactly congressSeats winners as congress_member rows with startTick; chamber+speaker close fires once; certify update carries winnerId=top vote-getter and certifiedTick', async () => {
+    rc['congressSeats'] = 2;
+    queueCongressSelects({
+      election: { id: electionId, positionType: 'congress_general', winnerId: null, status: 'voting' },
+      campaignTotals: threeCandidates,
+      castBallots: [
+        { candidateId: 'c1', voterId: 'v1' },
+        { candidateId: 'c1', voterId: 'v2' },
+        { candidateId: 'c1', voterId: 'v3' },
+        { candidateId: 'c3', voterId: 'v4' },
+        { candidateId: 'c3', voterId: 'v5' },
+        { candidateId: 'c2', voterId: 'v6' },
+      ],
+      winnerAgents: [
+        { id: 'c1', displayName: 'Winner One' },
+        { id: 'c3', displayName: 'Winner Three' },
+      ],
+      winnersPriorPositions: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 900);
+
+    expect(result.status).toBe('ok');
+    expect(result.winnerId).toBe('c1'); // top vote-getter (display compat)
+    expect(result.loserIds).toEqual(['c2']);
+    expect(result.totalVotes).toBe(6);
+
+    /* Exactly N seat inserts, all congress_member with tick-stamped startTick. */
+    const seatInserts = insertedRows.filter((r) => r.values['type'] === 'congress_member');
+    expect(seatInserts).toHaveLength(2);
+    for (const seat of seatInserts) {
+      expect(seat.values['isActive']).toBe(true);
+      expect(seat.values['startTick']).toBe(900);
+    }
+    expect(seatInserts.map((s) => s.values['agentId']).sort()).toEqual(['c1', 'c3']);
+
+    /* The chamber ends with the term: exactly ONE isActive:false update (the
+       congress_member+speaker close — winnersPriorPositions holds nothing
+       ranked below the seat, so the per-winner vacate adds no second one). */
+    const closes = updatedCalls.filter((c) => c.values['isActive'] === false);
+    expect(closes).toHaveLength(1);
+
+    /* Terminal certify update: status/winnerId/certifiedTick — written LAST
+       so the status==='certified' idempotency check only passes on a
+       completed run. */
+    const certify = updatedCalls[updatedCalls.length - 1]!;
+    expect(certify.values['status']).toBe('certified');
+    expect(certify.values['winnerId']).toBe('c1');
+    expect(certify.values['certifiedTick']).toBe(900);
+
+    /* Activity metadata carries the full winner/loser sets for Phase 11.5. */
+    const activity = insertedRows.find((r) => typeof r.values['metadata'] === 'string' && String(r.values['metadata']).includes('winnerIds'));
+    expect(activity).toBeDefined();
+    const meta = JSON.parse(String(activity!.values['metadata'])) as Record<string, unknown>;
+    expect(meta['winnerIds']).toEqual(['c1', 'c3']);
+    expect(meta['loserIds']).toEqual(['c2']);
+
+    /* Cascades per set. */
+    expect(updateApprovalCalls.filter((c) => c.eventType === 'election_won').map((c) => c.agentId).sort()).toEqual(['c1', 'c3']);
+    expect(updateApprovalCalls.filter((c) => c.eventType === 'election_lost').map((c) => c.agentId)).toEqual(['c2']);
+  });
+
+  it('EC is structurally impossible for congress_general: even with electoralCollegeEnabled the popular ranking decides and no electoralCollege note is written', async () => {
+    rc['congressSeats'] = 1;
+    rc['electoralCollegeEnabled'] = true;
+    queueCongressSelects({
+      election: { id: electionId, positionType: 'congress_general', winnerId: null, status: 'voting' },
+      campaignTotals: threeCandidates,
+      castBallots: [
+        { candidateId: 'c2', voterId: 'v1' },
+        { candidateId: 'c2', voterId: 'v2' },
+        { candidateId: 'c1', voterId: 'v3' },
+      ],
+      winnerAgents: [{ id: 'c2', displayName: 'Winner Two' }],
+      winnersPriorPositions: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 901);
+
+    expect(result.status).toBe('ok');
+    expect(result.winnerId).toBe('c2');
+    for (const row of insertedRows) {
+      if (typeof row.values['metadata'] === 'string') {
+        expect(String(row.values['metadata'])).not.toContain('electoralCollege');
+      }
+    }
+  });
+
+  it('zero ballots: winners come from the contributions -> registration-order chain; seats min(N, candidates)', async () => {
+    rc['congressSeats'] = 5; // more seats than candidates
+    queueCongressSelects({
+      election: { id: electionId, positionType: 'congress_general', winnerId: null, status: 'voting' },
+      campaignTotals: threeCandidates,
+      castBallots: [],
+      winnerAgents: [
+        { id: 'c2', displayName: 'Winner Two' },
+        { id: 'c3', displayName: 'Winner Three' },
+        { id: 'c1', displayName: 'Winner One' },
+      ],
+      winnersPriorPositions: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 902);
+
+    expect(result.status).toBe('ok');
+    expect(result.winnerId).toBe('c2'); // highest contributions
+    const seatInserts = insertedRows.filter((r) => r.values['type'] === 'congress_member');
+    expect(seatInserts).toHaveLength(3);
+  });
+
+  it('idempotency: an already-certified congress_general returns already_finalized with zero side effects', async () => {
+    selectResults.push(
+      [{ id: electionId, positionType: 'congress_general', winnerId: 'c1', status: 'certified' }],
+    );
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 903);
+
+    expect(result.status).toBe('already_finalized');
+    expect(insertedRows).toHaveLength(0);
+    expect(updatedCalls).toHaveLength(0);
+  });
+
+  /* B-1 (review round 2): campaigns must be concluded only in the terminal
+     write group. Closing them first wedged a crashed half-run forever: the
+     rerun's active-campaigns query came back empty -> no_campaigns bail with
+     the election stuck in 'voting', suppressing every future general. */
+  it('B-1 rerun safety: campaigns conclude only in the terminal write group, and a crash-rerun (still voting, campaigns still active) re-certifies cleanly', async () => {
+    rc['congressSeats'] = 2;
+    const opts = {
+      election: { id: electionId, positionType: 'congress_general', winnerId: null, status: 'voting' },
+      campaignTotals: threeCandidates,
+      castBallots: [
+        { candidateId: 'c1', voterId: 'v1' },
+        { candidateId: 'c1', voterId: 'v2' },
+        { candidateId: 'c3', voterId: 'v3' },
+      ],
+      winnerAgents: [
+        { id: 'c1', displayName: 'Winner One' },
+        { id: 'c3', displayName: 'Winner Three' },
+      ],
+      winnersPriorPositions: [],
+    };
+    queueCongressSelects(opts);
+
+    const { finalizeElection } = await loadFinalize();
+    const first = await finalizeElection(electionId, 910);
+    expect(first.status).toBe('ok');
+
+    const concludedIdx = updatedCalls.findIndex((c) => c.values['status'] === 'concluded');
+    const certifyIdx = updatedCalls.findIndex((c) => c.values['status'] === 'certified');
+    const chamberCloseIdx = updatedCalls.findIndex((c) => c.values['isActive'] === false);
+    expect(concludedIdx).toBe(updatedCalls.length - 2);
+    expect(certifyIdx).toBe(updatedCalls.length - 1);
+    expect(chamberCloseIdx).toBeGreaterThanOrEqual(0);
+    expect(chamberCloseIdx).toBeLessThan(concludedIdx);
+
+    /* Crash-rerun: any crash before the terminal group leaves the election
+       'voting' with ACTIVE campaigns (chamber close / seat inserts may have
+       happened — the rerun's chamber close before re-seating converges).
+       The rerun must certify, never bail no_campaigns. */
+    updatedCalls = [];
+    insertedRows = [];
+    updateApprovalCalls = [];
+    broadcastCalls = [];
+    queueCongressSelects(opts);
+
+    const rerun = await finalizeElection(electionId, 910);
+    expect(rerun.status).toBe('ok');
+    expect(updatedCalls[updatedCalls.length - 1]!.values['status']).toBe('certified');
+    expect(updatedCalls[updatedCalls.length - 2]!.values['status']).toBe('concluded');
+    const rerunSeats = insertedRows.filter((r) => r.values['type'] === 'congress_member');
+    expect(rerunSeats).toHaveLength(2);
+  });
+});
+
+describe('finalizeElection — presidential path regression pins (B3)', () => {
+  it('presidential single-winner select order and behavior are unchanged by the multi-seat branch (same queue as before B3)', async () => {
+    const electionId = 'election-pin';
+    const winnerId = 'agent-winner';
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 904);
+
+    expect(result.status).toBe('ok');
+    expect(result.winnerId).toBe(winnerId);
+    const presInsert = insertedRows.find((r) => r.values['type'] === 'president');
+    expect(presInsert).toBeDefined();
+    /* Exactly one winner seat — never a multi-seat batch. */
+    expect(insertedRows.filter((r) => r.values['type'] === 'president')).toHaveLength(1);
   });
 });

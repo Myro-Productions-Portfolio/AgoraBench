@@ -23,6 +23,8 @@ import {
   ELECTION_OFFICE_LABEL,
   candidacyExcludedAgentIds,
   tenureTicksPreferred,
+  congressGeneralDue,
+  selectTopNWinners,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -742,6 +744,85 @@ describe('votingShouldOpenAtTick / votingShouldCloseAtTick', () => {
     expect(votingShouldOpenAtTick(999, undefined)).toBe(false);
     expect(votingShouldCloseAtTick(999, null)).toBe(false);
     expect(votingShouldCloseAtTick(999, NaN)).toBe(false);
+  });
+});
+
+/* ── Election cycles B3: congressional general elections ─────────────── */
+
+describe('officeRank — congress_general (B3)', () => {
+  it('ranks 50, equal to the legislative-branch seats (winning one ≡ winning a congress seat; chairs/speaker are never auto-vacated by it)', () => {
+    expect(officeRank('congress_general')).toBe(50);
+    expect(officeRank('congress_general')).toBe(officeRank('congress_member'));
+    expect(officeRank('congress_general')).toBe(officeRank('committee_chair'));
+    expect(officeRank('congress_general')).toBe(officeRank('speaker'));
+    /* Equal rank -> strict < in getSeatsToVacate never vacates them. */
+    const held: HeldPosition[] = [
+      { id: 'p1', type: 'congress_member' },
+      { id: 'p2', type: 'committee_chair' },
+      { id: 'p3', type: 'speaker' },
+    ];
+    expect(getSeatsToVacate(held, 'congress_general')).toEqual([]);
+  });
+});
+
+describe('congressGeneralDue', () => {
+  it('disabled (0 or negative congressTermTicks) never fires', () => {
+    expect(congressGeneralDue(100, 999999, 0)).toBe(false);
+    expect(congressGeneralDue(null, 999999, 0)).toBe(false);
+    expect(congressGeneralDue(100, 999999, -10)).toBe(false);
+  });
+
+  it('null/undefined anchor fires immediately on first enable (no prior certified general)', () => {
+    expect(congressGeneralDue(null, 1, 730)).toBe(true);
+    expect(congressGeneralDue(undefined, 1, 730)).toBe(true);
+  });
+
+  it('boundary is >= anchor + term', () => {
+    expect(congressGeneralDue(100, 829, 730)).toBe(false);
+    expect(congressGeneralDue(100, 830, 730)).toBe(true);
+    expect(congressGeneralDue(100, 831, 730)).toBe(true);
+  });
+
+  it('non-finite tickNumber never fires', () => {
+    expect(congressGeneralDue(100, NaN, 730)).toBe(false);
+  });
+});
+
+describe('selectTopNWinners', () => {
+  const candidates: CandidateStanding[] = [
+    standing({ agentId: 'a', totalContributions: 10, startDate: '2026-01-01T00:00:00Z', campaignId: 'c1' }),
+    standing({ agentId: 'b', totalContributions: 30, startDate: '2026-01-02T00:00:00Z', campaignId: 'c2' }),
+    standing({ agentId: 'c', totalContributions: 20, startDate: '2026-01-03T00:00:00Z', campaignId: 'c3' }),
+    standing({ agentId: 'd', totalContributions: 20, startDate: '2026-01-04T00:00:00Z', campaignId: 'c4' }),
+  ];
+
+  it('ranks by votes desc first, returns exactly n, top vote-getter first', () => {
+    const votes = { a: 5, b: 1, c: 3, d: 2 };
+    expect(selectTopNWinners(candidates, votes, 2)).toEqual(['a', 'c']);
+    expect(selectTopNWinners(candidates, votes, 3)).toEqual(['a', 'c', 'd']);
+  });
+
+  it('vote ties break by contributions desc, then registration order', () => {
+    /* a and b tie on votes: b has more contributions -> b first.
+       c and d tie on votes AND contributions -> earlier registration (c) first. */
+    const votes = { a: 2, b: 2, c: 1, d: 1 };
+    expect(selectTopNWinners(candidates, votes, 4)).toEqual(['b', 'a', 'c', 'd']);
+  });
+
+  it('zero-ballot chain: no votes at all -> contributions desc -> registration order', () => {
+    expect(selectTopNWinners(candidates, {}, 3)).toEqual(['b', 'c', 'd']);
+  });
+
+  it('is deterministic under shuffled input order', () => {
+    const votes = { a: 1, b: 1, c: 1, d: 1 };
+    const shuffled = [candidates[3]!, candidates[1]!, candidates[0]!, candidates[2]!];
+    expect(selectTopNWinners(shuffled, votes, 4)).toEqual(selectTopNWinners(candidates, votes, 4));
+  });
+
+  it('n greater than the candidate pool seats everyone; n <= 0 or empty pool seats nobody', () => {
+    expect(selectTopNWinners(candidates, { a: 1 }, 50)).toHaveLength(4);
+    expect(selectTopNWinners(candidates, { a: 1 }, 0)).toEqual([]);
+    expect(selectTopNWinners([], { a: 1 }, 3)).toEqual([]);
   });
 });
 

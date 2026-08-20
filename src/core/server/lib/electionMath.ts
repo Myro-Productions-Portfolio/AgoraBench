@@ -174,6 +174,10 @@ const OFFICE_RANK: Record<string, number> = {
      wins the Speakership keeps their congress seat (equal rank never vacates),
      and winning a HIGHER office (president) vacates the speaker seat too. */
   speaker: 50,
+  /* Winning a congress_general election ≡ winning a congress seat (B3) —
+     same legislative rank, so a chair/speaker/member who wins is never
+     auto-vacated out of those equal-rank seats by getSeatsToVacate. */
+  congress_general: 50,
 };
 
 /** Numeric rank of a position type. Unknown types rank 0 (lowest, never vacates anything). */
@@ -539,6 +543,61 @@ export function candidacyExcludedAgentIds(positionType: string, heldPositions: O
     }
   }
   return excluded;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B3) — congressional general elections
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Recurring congressional-general trigger: fires when congressTermTicks is
+ * enabled (> 0) and the last certified general's creation tick is at least
+ * one term behind. A null anchor (no certified congress_general exists yet)
+ * fires immediately on first enable — stated and accepted: the inaugural
+ * chamber was seated by appointment, not election, so the first enable
+ * calls the first real general right away.
+ */
+export function congressGeneralDue(
+  anchorCreatedTick: number | null | undefined,
+  tickNumber: number,
+  congressTermTicks: number,
+): boolean {
+  if (!Number.isFinite(congressTermTicks) || congressTermTicks <= 0) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  if (typeof anchorCreatedTick !== 'number' || !Number.isFinite(anchorCreatedTick)) return true;
+  return tickNumber >= anchorCreatedTick + congressTermTicks;
+}
+
+/**
+ * Multi-seat winner selection: rank candidates by votes desc, ties by
+ * contributions desc, then registration order (orderCandidates — startDate
+ * then campaignId) — a fully deterministic chain, so re-tallying shuffled
+ * input always seats the same N. The zero-ballot election degenerates to
+ * the contributions -> registration chain, the same fallback doctrine the
+ * single-winner path uses. Returns min(n, candidates) agentIds, top
+ * vote-getter first.
+ */
+export function selectTopNWinners(
+  candidates: CandidateStanding[],
+  voteCounts: Record<string, number>,
+  n: number,
+): string[] {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  const seats = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  if (seats === 0) return [];
+  const counts = voteCounts && typeof voteCounts === 'object' ? voteCounts : {};
+  const regRank = new Map(orderCandidates(candidates).map((id, i) => [id, i]));
+  const contribByAgent = new Map(candidates.map((c) => [c.agentId, Number(c.totalContributions ?? 0)]));
+  return candidates
+    .map((c) => c.agentId)
+    .sort((a, b) => {
+      const votes = (counts[b] ?? 0) - (counts[a] ?? 0);
+      if (votes !== 0) return votes;
+      const contrib = (contribByAgent.get(b) ?? 0) - (contribByAgent.get(a) ?? 0);
+      if (contrib !== 0) return contrib;
+      return (regRank.get(a) ?? Infinity) - (regRank.get(b) ?? Infinity);
+    })
+    .slice(0, seats);
 }
 
 /* ────────────────────────────────────────────────────────────────────────

@@ -3728,9 +3728,11 @@ export function AdminPage() {
                         onChange={(e) => setElectionTriggerType(e.target.value)}
                         className="bg-white/5 border border-border rounded px-2 py-1.5 text-xs text-text-primary focus:outline-none focus:border-gold/50"
                       >
+                        {/* Only the two lifecycle-supported types — the old
+                            'congress'/'supreme_court' options created rows no
+                            lifecycle code recognizes (frozen in registration). */}
                         <option value="president">President</option>
-                        <option value="congress">Congress</option>
-                        <option value="supreme_court">Supreme Court</option>
+                        <option value="congress_general">Congress (General)</option>
                       </select>
                       <button
                         disabled={electionWorking}
@@ -3776,7 +3778,7 @@ export function AdminPage() {
                           <tbody>
                             {activeElections.map((el) => (
                               <tr key={el.id} className="border-b border-border/50 last:border-0">
-                                <td className="px-3 py-2 text-text-primary capitalize">{el.positionType.replace('_', ' ')}</td>
+                                <td className="px-3 py-2 text-text-primary capitalize">{el.positionType.replace(/_/g, ' ')}</td>
                                 <td className="px-3 py-2">
                                   <span className="px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide bg-gold/10 text-gold border border-gold/20">
                                     {el.status}

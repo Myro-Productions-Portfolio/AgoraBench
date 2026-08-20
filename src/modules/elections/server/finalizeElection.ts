@@ -32,10 +32,10 @@ import {
   positions,
   votes,
 } from '@db/schema/index';
-import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
+import { getRuntimeConfig, type RuntimeConfig } from '@core/server/runtimeConfig.js';
 import { broadcast } from '@core/server/websocket.js';
 import { updateApproval } from '@core/server/jobs/agentTick.js';
-import { tallyElectionVotes, getSeatsToVacate, orderCandidates, pickContributionsFallback, tallyElectoralCollege, assignVoterState, type StateResult } from '@core/server/lib/electionMath.js';
+import { tallyElectionVotes, getSeatsToVacate, orderCandidates, pickContributionsFallback, selectTopNWinners, tallyElectoralCollege, assignVoterState, type StateResult, type TallyResult, type CandidateStanding } from '@core/server/lib/electionMath.js';
 import { ELECTORAL_VOTES, STATE_ORDER, EC_MAJORITY } from '@core/server/lib/electoralCollege.js';
 
 export interface FinalizeElectionResult {
@@ -56,6 +56,9 @@ const POSITION_TITLE_BY_TYPE: Record<string, string> = {
   supreme_justice: 'Supreme Court Justice',
   lower_justice: 'Court Justice',
   speaker: 'Speaker of the Legislature',
+  /* congress_general is an ELECTION type, not a seat type — winning it seats
+     a congress_member; this entry only labels the race in broadcasts. */
+  congress_general: 'Member of the Legislature',
 };
 
 /**
@@ -87,8 +90,18 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
     return { status: 'not_found', electionId };
   }
 
+  /* Multi-seat idempotency (B3): a congress_general is finalized iff its
+     status reached 'certified' — the certify update is the LAST write of
+     the multi-seat branch, so a crashed half-run stays 'voting' and re-runs
+     cleanly (the chamber close before re-seating makes the redo converge).
+     The single-winner winnerId check below is skipped for this type: its
+     one-active-position probe can't represent N seats. */
+  if (election.positionType === 'congress_general' && election.status === 'certified') {
+    return { status: 'already_finalized', electionId, winnerId: election.winnerId ?? undefined };
+  }
+
   /* Idempotency: already finalized cleanly */
-  if (election.winnerId) {
+  if (election.positionType !== 'congress_general' && election.winnerId) {
     const [existingPos] = await db
       .select({ id: positions.id })
       .from(positions)
@@ -211,6 +224,15 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
          House contingent election is a later refinement (spec §2.4). */
       console.warn(`[FINALIZE] EC: no candidate reached ${EC_MAJORITY} of ${ec.totalEvAllocated} EV allocated — contingent-election deadlock; seating the national plurality leader ${tally.winnerId} as the documented fallback.`);
     }
+  }
+
+  /* Congressional general (B3): the one multi-seat election type. Every
+     seat is up at once; the tally above still supplies voteCounts/
+     totalVotes, but winner selection, seating and cascades diverge enough
+     to live in their own branch. The Electoral College block above is
+     structurally impossible here (gated president-only — pinned by test). */
+  if (election.positionType === 'congress_general') {
+    return finalizeCongressGeneral(electionId, rc, now, startTick, standings, tally);
   }
 
   const winnerCandidateTotal = campaignTotals.find((c) => c.agentId === tally.winnerId);
@@ -388,6 +410,12 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
     })
     .where(eq(agents.id, winner.agentId));
 
+  /* Losers precomputed so the activity metadata can carry the full sets —
+     Phase 11.5's press-statement pass reads winnerIds/loserIds from here. */
+  const loserIds: string[] = campaignTotals
+    .filter((c) => c.agentId !== winner.agentId)
+    .map((c) => c.agentId);
+
   /* Activity event */
   await db.insert(activityEvents).values({
     type: 'election_completed',
@@ -398,6 +426,8 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
       electionId,
       positionType: election.positionType,
       winnerId: winner.agentId,
+      winnerIds: [winner.agentId],
+      loserIds,
       totalVotes: tally.totalVotes,
       usedFallback: tally.usedFallback,
       winnerContributions: Number(winner.totalContributions ?? 0),
@@ -427,10 +457,8 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
   );
 
   /* Approval: losers — scaled by how badly they lost */
-  const loserIds: string[] = [];
   for (const candidate of campaignTotals) {
     if (candidate.agentId === winner.agentId) continue;
-    loserIds.push(candidate.agentId);
     const loserContributions = Number(candidate.totalContributions ?? 0);
     const loserShare = totalContributions > 0 ? loserContributions / totalContributions : 0;
     const lossApprovalDelta = -Math.round(15 * (1 - loserShare * candidateCount));
@@ -490,5 +518,230 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
     loserIds,
     totalVotes: tally.totalVotes,
     positionId: insertedPosition?.id,
+  };
+}
+
+/**
+ * Multi-seat certification for a congressional general (B3). The whole
+ * chamber turns over: ALL sitting congress_member seats AND the speaker
+ * close at certification (the chamber ends with the term — Phase 14.5
+ * re-elects a Speaker next tick when enabled), then the top-N vote-getters
+ * (selectTopNWinners: votes -> contributions -> registration order) are
+ * seated with fresh startTick rows — a re-elected sitting member gets a
+ * fresh row exactly like the presidential re-election pattern. Seat
+ * shortfall (fewer candidates than congressSeats) auto-fills the same tick
+ * via Phase 14's existing reputation-rank backstop, which runs after this
+ * and re-fetches positions — a faithful appointment backstop.
+ *
+ * elections.winnerId carries the top vote-getter for display compatibility;
+ * the full sets persist in the election_completed activity metadata
+ * (winnerIds/loserIds) for Phase 11.5. The certify update is deliberately
+ * the LAST write — see the status-based idempotency check in
+ * finalizeElection.
+ */
+async function finalizeCongressGeneral(
+  electionId: string,
+  rc: Readonly<RuntimeConfig>,
+  now: Date,
+  startTick: number | null,
+  standings: CandidateStanding[],
+  tally: TallyResult,
+): Promise<FinalizeElectionResult> {
+  const seats = Math.max(1, Math.floor(rc.congressSeats ?? 1));
+  const winnerIds = selectTopNWinners(standings, tally.voteCounts, seats);
+  if (winnerIds.length === 0) {
+    console.warn(`[FINALIZE] Congress general ${electionId} produced no winners — nothing to certify.`);
+    return { status: 'no_campaigns', electionId };
+  }
+  const topWinnerId = winnerIds[0]!;
+  const winnerIdSet = new Set(winnerIds);
+  const loserIds = standings.map((s) => s.agentId).filter((id) => !winnerIdSet.has(id));
+
+  const winnerAgents = await db
+    .select({ id: agents.id, displayName: agents.displayName })
+    .from(agents)
+    .where(inArray(agents.id, winnerIds));
+  const nameById = new Map(winnerAgents.map((a) => [a.id, a.displayName]));
+  const topWinnerName = nameById.get(topWinnerId) ?? 'Unknown';
+
+  /* Close out campaigns first (same as the single-winner path). */
+  await db
+    .update(campaigns)
+    .set({ status: 'concluded', endDate: now })
+    .where(eq(campaigns.electionId, electionId));
+
+  /* The chamber ends with the term: every sitting member AND the speaker
+     vacate at certification (re-elected members get fresh rows below). */
+  await db
+    .update(positions)
+    .set({ isActive: false, endDate: now })
+    .where(and(inArray(positions.type, ['congress_member', 'speaker']), eq(positions.isActive, true)));
+
+  /* Per-winner lower-office vacate (the double-position rule). Queried
+     AFTER the chamber close so member/speaker rows are already gone; with
+     congress_general ranked 50 nothing currently ranks below it, so this is
+     future-proofing, not a live path. */
+  const winnersPriorPositions = await db
+    .select({ id: positions.id, agentId: positions.agentId, type: positions.type })
+    .from(positions)
+    .where(and(inArray(positions.agentId, winnerIds), eq(positions.isActive, true)));
+  const vacateIds: string[] = [];
+  for (const wid of winnerIds) {
+    const held = winnersPriorPositions
+      .filter((p) => p.agentId === wid)
+      .map((p) => ({ id: p.id, type: p.type }));
+    vacateIds.push(...getSeatsToVacate(held, 'congress_general'));
+  }
+  if (vacateIds.length > 0) {
+    await db
+      .update(positions)
+      .set({ isActive: false, endDate: now })
+      .where(inArray(positions.id, vacateIds));
+  }
+
+  /* Seat the winners. Display endDate follows the tick cadence when the
+     cycle is enabled; endDate is read by nothing (recon) — display only. */
+  const termEndDate = rc.congressTermTicks > 0
+    ? new Date(now.getTime() + rc.congressTermTicks * rc.tickIntervalMs)
+    : new Date(now.getTime() + (rc.congressTermDays ?? 60) * 24 * 60 * 60 * 1000);
+  let firstSeatId: string | undefined;
+  for (const wid of winnerIds) {
+    const [seat] = await db
+      .insert(positions)
+      .values({
+        agentId: wid,
+        type: 'congress_member',
+        title: POSITION_TITLE_BY_TYPE['congress_member']!,
+        startDate: now,
+        endDate: termEndDate,
+        isActive: true,
+        startTick,
+      })
+      .returning({ id: positions.id });
+    if (!firstSeatId) firstSeatId = seat?.id;
+  }
+
+  await db
+    .update(agents)
+    .set({ reputation: sql`${agents.reputation} + 200` })
+    .where(inArray(agents.id, winnerIds));
+
+  await db.insert(activityEvents).values({
+    type: 'election_completed',
+    agentId: topWinnerId,
+    title: 'Congressional general election completed',
+    description: `${winnerIds.length} member(s) elected to the Legislature; ${topWinnerName} led the field`,
+    metadata: JSON.stringify({
+      electionId,
+      positionType: 'congress_general',
+      winnerId: topWinnerId,
+      winnerIds,
+      loserIds,
+      totalVotes: tally.totalVotes,
+      usedFallback: tally.usedFallback,
+      seats: winnerIds.length,
+    }),
+  });
+
+  broadcast('election:completed', {
+    electionId,
+    positionType: 'congress_general',
+    winnerId: topWinnerId,
+    winnerName: topWinnerName,
+    positionTitle: POSITION_TITLE_BY_TYPE['congress_general'],
+    seatsWon: winnerIds.length,
+  });
+
+  console.warn(
+    `[FINALIZE] Congress general ${electionId}: seated ${winnerIds.length}/${seats} member(s), ${topWinnerName} top of the field (${tally.totalVotes} ballots${tally.usedFallback ? ', contributions fallback' : ''})`,
+  );
+
+  /* Approval cascades per set — same margin math as the single-winner path,
+     applied per winner/loser. */
+  const candidateCount = standings.length;
+  const totalContributions = standings.reduce((sum, s) => sum + Number(s.totalContributions ?? 0), 0);
+  const contribByAgent = new Map(standings.map((s) => [s.agentId, Number(s.totalContributions ?? 0)]));
+  const marginFactorFor = (agentId: string): number => {
+    if (!tally.usedFallback && tally.totalVotes > 0) {
+      return Math.min(1.5, ((tally.voteCounts[agentId] ?? 0) / tally.totalVotes) * candidateCount);
+    }
+    const contrib = contribByAgent.get(agentId) ?? 0;
+    return totalContributions > 0 ? Math.min(1.5, (contrib / totalContributions) * candidateCount) : 1.0;
+  };
+
+  for (const wid of winnerIds) {
+    await updateApproval(
+      wid,
+      Math.round(15 * marginFactorFor(wid)),
+      'election_won',
+      `Won a seat in the congressional general election (margin factor ${marginFactorFor(wid).toFixed(2)})`,
+    );
+  }
+  for (const lid of loserIds) {
+    const loserShare = totalContributions > 0 ? (contribByAgent.get(lid) ?? 0) / totalContributions : 0;
+    await updateApproval(
+      lid,
+      Math.max(-25, -Math.round(15 * (1 - loserShare * candidateCount))),
+      'election_lost',
+      `Lost the congressional general election (share ${loserShare.toFixed(2)})`,
+    );
+  }
+
+  if (rc.electionPostOutcomeCascade ?? true) {
+    for (const wid of winnerIds) {
+      await db.update(agents)
+        .set({
+          personalityMod: 'riding a wave of electoral confidence, emboldened to push their agenda',
+          personalityModAt: now,
+        })
+        .where(eq(agents.id, wid));
+    }
+    for (const lid of loserIds) {
+      await db.update(agents)
+        .set({
+          personalityMod: 'reeling from an electoral defeat, recalibrating their platform',
+          personalityModAt: now,
+        })
+        .where(eq(agents.id, lid));
+      /* Sentiment drift toward the TOP winner only — N×M upserts across a
+         full chamber would flood agent_relationships for one event. */
+      await db.insert(agentRelationships)
+        .values({
+          agentId: lid,
+          targetAgentId: topWinnerId,
+          voteAlignment: 0.5,
+          sentiment: 0.5,
+          forumInteractions: 0,
+        })
+        .onConflictDoUpdate({
+          target: [agentRelationships.agentId, agentRelationships.targetAgentId],
+          set: {
+            sentiment: sql`GREATEST(0.0, ${agentRelationships.sentiment} - 0.06)`,
+            updatedAt: now,
+          },
+        });
+    }
+  }
+
+  /* Terminal write LAST — the status flip is the idempotency marker. */
+  await db
+    .update(elections)
+    .set({
+      status: 'certified',
+      winnerId: topWinnerId,
+      totalVotes: tally.totalVotes,
+      certifiedDate: now,
+      certifiedTick: startTick,
+    })
+    .where(eq(elections.id, electionId));
+
+  return {
+    status: 'ok',
+    electionId,
+    winnerId: topWinnerId,
+    winnerName: topWinnerName,
+    loserIds,
+    totalVotes: tally.totalVotes,
+    positionId: firstSeatId,
   };
 }

@@ -18,7 +18,7 @@ import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfi
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
 import { requireOwner } from '@core/server/middleware/auth.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { electionTickSchedule, wallDateForTick } from '@core/server/lib/electionMath.js';
+import { electionTickSchedule, wallDateForTick, ELECTION_LIFECYCLE_TYPES } from '@core/server/lib/electionMath.js';
 import { getCurrentTickNumber } from '@core/server/lib/tickClock.js';
 import healthRouter from './health.js';
 
@@ -1262,8 +1262,10 @@ const ELECTION_PHASE_ORDER = ['scheduled', 'registration', 'campaigning', 'votin
 router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => {
   try {
     const { positionType } = req.body as { positionType?: string };
-    if (!positionType) {
-      res.status(400).json({ success: false, error: 'positionType required' });
+    /* Value whitelist (Rule 4): only lifecycle-supported types — anything
+       else created rows Phase 14 never advances (frozen in registration). */
+    if (!positionType || !(ELECTION_LIFECYCLE_TYPES as readonly string[]).includes(positionType)) {
+      res.status(400).json({ success: false, error: `positionType must be one of: ${ELECTION_LIFECYCLE_TYPES.join(', ')}` });
       return;
     }
     const rc = getRuntimeConfig();

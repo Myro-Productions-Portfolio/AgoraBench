@@ -55,7 +55,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds } from '../lib/electionMath.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -6297,6 +6297,112 @@ agentTickQueue.process(async () => {
           broadcast('election:triggered', {
             electionId: newElection?.id,
             positionType: 'president',
+          });
+        }
+      }
+    }
+
+    /* ---- Congressional general election trigger (B3) ------------------ */
+    /* Recurring chamber-wide general on the congressTermTicks cadence.
+     * Anchor = max(created_tick) of certified congress_generals — a null
+     * anchor (no general has ever run) fires immediately on first enable,
+     * stated and accepted. Suppressed while any congress_general is in
+     * flight. All sitting members auto-register at trigger time (no LLM
+     * ask, fee-if-affordable); challengers declare through the normal
+     * candidacy pipeline during registration.
+     *
+     * Documented electorate edge: candidates cannot vote in their own race,
+     * so if nearly all ~30 active agents run, the electorate shrinks toward
+     * zero and the deterministic contributions -> registration fallback
+     * chain decides the seats. The levers are congressSeats < agent pool
+     * and the filing fee; letting candidates vote is an owner-decision
+     * follow-up (it would change presidential physics too). */
+    if (rc.congressTermTicks > 0) {
+      const [inflightCongressGeneral] = await db
+        .select({ id: elections.id })
+        .from(elections)
+        .where(
+          and(
+            eq(elections.positionType, 'congress_general'),
+            inArray(elections.status, ['scheduled', 'registration', 'campaigning', 'voting']),
+          ),
+        )
+        .limit(1);
+
+      if (!inflightCongressGeneral) {
+        const [anchorRow] = await db
+          .select({ anchor: sql<number | null>`max(${elections.createdTick})` })
+          .from(elections)
+          .where(and(eq(elections.positionType, 'congress_general'), eq(elections.status, 'certified')));
+        const anchorTick = anchorRow?.anchor == null ? null : Number(anchorRow.anchor);
+
+        if (congressGeneralDue(anchorTick, tickNumber, rc.congressTermTicks)) {
+          console.warn(`[SIMULATION] Phase 14: Congressional general due (anchor ${anchorTick ?? 'none'}, term ${rc.congressTermTicks} ticks) — triggering`);
+          const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+          const [newElection] = await db
+            .insert(elections)
+            .values({
+              positionType: 'congress_general',
+              status: 'registration',
+              scheduledDate: now,
+              registrationDeadline: wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs),
+              votingStartDate: wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs),
+              votingEndDate: wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+              createdTick: tickNumber,
+              registrationEndsTick: sched.registrationEndsTick,
+              votingStartTick: sched.votingStartTick,
+              votingEndTick: sched.votingEndTick,
+            })
+            .returning({ id: elections.id });
+
+          if (newElection) {
+            const sittingMemberIds = freshOfficePositions14
+              .filter((p) => p.type === 'congress_member')
+              .map((p) => p.agentId);
+            if (sittingMemberIds.length > 0) {
+              const sittingMembers = await db
+                .select({ id: agents.id, balance: agents.balance, displayName: agents.displayName })
+                .from(agents)
+                .where(inArray(agents.id, sittingMemberIds));
+              for (const member of sittingMembers) {
+                const filingFee = rc.campaignFilingFee;
+                const canAfford = filingFee > 0 && member.balance >= filingFee;
+                await db.transaction(async (tx) => {
+                  if (canAfford) {
+                    await tx.update(agents).set({ balance: sql`${agents.balance} - ${filingFee}` }).where(eq(agents.id, member.id));
+                    await tx.insert(transactions).values({
+                      fromAgentId: member.id,
+                      toAgentId: undefined,
+                      amount: filingFee,
+                      type: 'fee',
+                      description: 'Campaign filing fee (sitting member re-election, auto-registered)',
+                      balanceAfter: member.balance - filingFee,
+                    });
+                  }
+                  await tx.insert(campaigns).values({
+                    agentId: member.id,
+                    electionId: newElection.id,
+                    platform: 'Standing for re-election to the Legislature.',
+                  });
+                });
+              }
+              console.warn(`[SIMULATION] Phase 14: auto-registered ${sittingMembers.length} sitting member(s) for the congressional general`);
+            }
+          }
+
+          await db.insert(activityEvents).values({
+            type: 'election_triggered',
+            agentId: null,
+            title: 'Congressional general election triggered',
+            description: anchorTick == null
+              ? 'First congressional general election called — every seat in the Legislature is up'
+              : `Congressional term expired (${rc.congressTermTicks} ticks) — a chamber-wide general election has been called`,
+            metadata: JSON.stringify({ electionId: newElection?.id, positionType: 'congress_general', reason: anchorTick == null ? 'first_enable' : 'term_expired' }),
+          });
+
+          broadcast('election:triggered', {
+            electionId: newElection?.id,
+            positionType: 'congress_general',
           });
         }
       }

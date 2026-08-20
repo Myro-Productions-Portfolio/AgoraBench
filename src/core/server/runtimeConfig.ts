@@ -249,6 +249,7 @@ export interface RuntimeConfig {
   fredAdapterEnabled: boolean;               // FRED reality adapter (UNRATE/CPIAUCSL/GDP, Tier C); needs FRED_API_KEY in env (warn-and-degrade)
   congressStatsAdapterEnabled: boolean;      // Congress.gov stats adapter (throughput + time-to-passage); needs CONGRESS_API_KEY in env (warn-and-degrade)
   approvalScrapeEnabled: boolean;            // congressional-approval page scrape (Ballotpedia Polling Index); tolerant parser + staleness warn
+  tenKReportCadenceTicks: number;            // publish the Agora 10-K (LLM narrative over the scoreboard) every N ticks; 0 = off (deploy dark); also gated by scoreboardEnabled
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -487,6 +488,7 @@ const DEFAULTS: RuntimeConfig = {
   fredAdapterEnabled: false,
   congressStatsAdapterEnabled: false,
   approvalScrapeEnabled: false,
+  tenKReportCadenceTicks: 0,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

@@ -38,7 +38,7 @@ import {
   fiscalTickSummaries,
   metricSnapshots,
 } from '@db/schema/index';
-import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle } from '../services/ai.js';
+import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle, generateTenKReport } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
 import { pickTopCommittees, selectChair, tallyWeightedRatification, type CanonicalCommittee } from '../lib/committeeAssignment.js';
 import { excludedOfficeHolderIds, excludeOfficeHolders } from '../lib/officeExclusivity.js';
@@ -65,6 +65,8 @@ import { stepCityEngine } from '@modules/city/server/lib/cityTick.js';
 import { staleRepeatableKeys } from '../lib/tickReconcile.js';
 import { floorExpiryCutoff, selectExpiredFloorBills } from '../lib/billExpiryMath.js';
 import { simTierAValues, medianPassageTicks, throughputPerSession, averageApproval, simDateForTick, METRIC_KEYS, type MetricValue } from '../lib/scoreboardMath.js';
+import { buildScoreboardDigest } from '../lib/scoreboardDigest.js';
+import { buildScoreboardMetrics } from '@modules/government/server/lib/scoreboardReport.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -7404,6 +7406,80 @@ agentTickQueue.process(async () => {
       }
     } catch (err) {
       console.warn('[SIMULATION] Gazette error (non-fatal):', err);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* The Agora 10-K — periodic LLM report over the scoreboard             */
+  /* (Workstream A5). The government reported like a company: what the   */
+  /* sim did, what reality did, where they diverged. DOCTRINE: this is    */
+  /* the only tick path where the reality comparison meets an LLM, and    */
+  /* the row lands as kind='ten_k', which buildRecentNewsBlock and the    */
+  /* gazette routes filter OUT — the reality frame never enters agent     */
+  /* prompts. Failure-soft like the Gazette: deterministic digest, the    */
+  /* writer returns null instead of throwing, whole block try/caught —    */
+  /* a failed report never fails the tick.                                */
+  /* ------------------------------------------------------------------ */
+  if (rc.scoreboardEnabled && rc.tenKReportCadenceTicks > 0 && tickNumber % rc.tenKReportCadenceTicks === 0) {
+    try {
+      /* Previous 10-K's tick number bounds the "moved since last report"
+         window. tick_log stores no numbers, so recover it with the
+         project's COUNT(completed) formula: completed ticks fired at or
+         before the previous report's tick = that tick's number (the
+         current tick is not completed yet, so it never inflates this). */
+      const [prevReport] = await db
+        .select({ firedAt: tickLog.firedAt })
+        .from(gazetteIssues)
+        .innerJoin(tickLog, eq(gazetteIssues.tickId, tickLog.id))
+        .where(eq(gazetteIssues.kind, 'ten_k'))
+        .orderBy(desc(gazetteIssues.createdAt))
+        .limit(1);
+      let previousReportTick: number | null = null;
+      if (prevReport) {
+        const [row] = await db
+          .select({ n: sql<number>`COUNT(*) FILTER (WHERE ${tickLog.completedAt} IS NOT NULL)` })
+          .from(tickLog)
+          .where(lte(tickLog.firedAt, prevReport.firedAt));
+        previousReportTick = Number(row?.n ?? 0) > 0 ? Number(row?.n) : null;
+      }
+
+      const { metrics } = await buildScoreboardMetrics();
+      const simDate = simDateForTick(
+        tickNumber,
+        rc.divergenceT0Tick,
+        rc.divergenceT0Date,
+        new Date().toISOString().slice(0, 10),
+      );
+      const periodLabel = previousReportTick !== null
+        ? `sim date ${simDate}, tick ${tickNumber} — covering ticks ${previousReportTick + 1}-${tickNumber}`
+        : `sim date ${simDate}, tick ${tickNumber} — inaugural report`;
+
+      const digest = buildScoreboardDigest(metrics, previousReportTick, periodLabel);
+      if (!digest) {
+        console.warn('[SIMULATION] 10-K: scoreboard has no reportable sim data yet — skipping report');
+      } else {
+        const report = await generateTenKReport(digest, periodLabel);
+        if (!report) {
+          console.warn('[SIMULATION] 10-K: report generation failed or invalid — skipping');
+        } else {
+          const [issue] = await db.insert(gazetteIssues).values({
+            tickId: currentTick?.id ?? null,
+            kind: 'ten_k',
+            headline: report.headline,
+            body: report.body,
+            digest,
+          }).returning({ id: gazetteIssues.id, createdAt: gazetteIssues.createdAt });
+
+          broadcast('press:report', {
+            id: issue?.id,
+            headline: report.headline,
+            createdAt: issue?.createdAt,
+          });
+          console.warn(`[SIMULATION] 10-K published: "${report.headline}"`);
+        }
+      }
+    } catch (err) {
+      console.warn('[SIMULATION] 10-K error (non-fatal):', err);
     }
   }
 

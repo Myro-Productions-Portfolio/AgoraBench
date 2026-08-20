@@ -1,0 +1,22 @@
+{
+ "bill": {
+  "congress": 119,
+  "introducedDate": "2025-01-15",
+  "latestAction": {
+   "actionDate": "2026-05-11",
+   "text": "Became Public Law No: 119-89."
+  },
+  "number": "98",
+  "originChamber": "Senate",
+  "title": "Rural Broadband Protection Act of 2025",
+  "type": "S",
+  "updateDate": "2026-08-07T16:27:54Z"
+ },
+ "request": {
+  "billNumber": "98",
+  "billType": "s",
+  "congress": "119",
+  "contentType": "application/json",
+  "format": "json"
+ }
+}

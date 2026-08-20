@@ -246,6 +246,9 @@ interface RuntimeConfig {
   cityMonthsPerTick: number;
   /* Scoreboard (E4) */
   scoreboardEnabled: boolean;
+  fredAdapterEnabled: boolean;
+  congressStatsAdapterEnabled: boolean;
+  approvalScrapeEnabled: boolean;
 }
 
 interface EconomySettings {
@@ -3318,7 +3321,37 @@ export function AdminPage() {
                       onBlur={() => void saveConfig({ scoreboardEnabled: simConfig.scoreboardEnabled })}
                     />
                   </label>
-                  <p className="text-xs text-text-muted">When off, no metric snapshots are written at all — sim exporter and reality bridge are both unreachable.</p>
+                  <p className="text-xs text-text-muted">When off, no metric snapshots are written at all — sim exporter and reality adapters are both unreachable.</p>
+                </div>
+
+                <div className="border-t border-border pt-4 space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">FRED Adapter (UNRATE / CPI / GDP)</span>
+                    <input type="checkbox"
+                      checked={simConfig.fredAdapterEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, fredAdapterEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ fredAdapterEnabled: simConfig.fredAdapterEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">Tier C reality series. Needs FRED_API_KEY in the server env — skips with a log warning if unset.</p>
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Congress.gov Stats Adapter</span>
+                    <input type="checkbox"
+                      checked={simConfig.congressStatsAdapterEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, congressStatsAdapterEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ congressStatsAdapterEnabled: simConfig.congressStatsAdapterEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">Reality-side legislative throughput + median time-to-passage (119th Congress). Needs CONGRESS_API_KEY.</p>
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Approval Scrape (Ballotpedia)</span>
+                    <input type="checkbox"
+                      checked={simConfig.approvalScrapeEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, approvalScrapeEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ approvalScrapeEnabled: simConfig.approvalScrapeEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">Congressional-approval page scrape — tolerant parser; staleness surfaces in logs and /api/admin/reality/status.</p>
                 </div>
               </CollapsibleSection>
             )}

@@ -58,6 +58,7 @@ import { finalizeElection } from '@modules/elections/server/finalizeElection.js'
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
+import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
 import { stepCityEngine } from '@modules/city/server/lib/cityTick.js';
@@ -6750,6 +6751,27 @@ agentTickQueue.process(async () => {
       );
     } catch (err) {
       console.warn('[SIMULATION] Reality pool error:', err);
+    }
+
+    /* Scoreboard reality side (E4 slice 2): Tier A bridge over the rows
+       just pulled above + FRED / Congress-stats / approval-scrape adapters
+       (each behind its own flag). pullScoreboardReality never throws;
+       try/caught anyway so a future change can never take down a tick. */
+    if (rc.scoreboardEnabled) {
+      try {
+        const sb = await pullScoreboardReality({
+          fredAdapterEnabled: rc.fredAdapterEnabled,
+          congressStatsAdapterEnabled: rc.congressStatsAdapterEnabled,
+          approvalScrapeEnabled: rc.approvalScrapeEnabled,
+          gdpAnnual: rc.gdpAnnual,
+        });
+        console.warn(
+          `[SIMULATION] Scoreboard reality: wrote ${sb.written} metric snapshot(s)` +
+          (sb.errors.length > 0 ? ` (${sb.errors.length} adapter error(s): ${sb.errors.join('; ')})` : ''),
+        );
+      } catch (err) {
+        console.warn('[SIMULATION] Scoreboard reality error:', err);
+      }
     }
   }
 

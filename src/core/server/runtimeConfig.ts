@@ -238,6 +238,9 @@ export interface RuntimeConfig {
 
   /* ---- Scoreboard (E4) — deployed dark, off by default ---- */
   scoreboardEnabled: boolean;                // master switch: sim exporter + reality bridge write metric_snapshots; false = zero scoreboard writes (deploy dark)
+  fredAdapterEnabled: boolean;               // FRED reality adapter (UNRATE/CPIAUCSL/GDP, Tier C); needs FRED_API_KEY in env (warn-and-degrade)
+  congressStatsAdapterEnabled: boolean;      // Congress.gov stats adapter (throughput + time-to-passage); needs CONGRESS_API_KEY in env (warn-and-degrade)
+  approvalScrapeEnabled: boolean;            // congressional-approval page scrape (Ballotpedia Polling Index); tolerant parser + staleness warn
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -467,6 +470,9 @@ const DEFAULTS: RuntimeConfig = {
 
   /* Scoreboard (E4) — deployed dark */
   scoreboardEnabled: false,
+  fredAdapterEnabled: false,
+  congressStatsAdapterEnabled: false,
+  approvalScrapeEnabled: false,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

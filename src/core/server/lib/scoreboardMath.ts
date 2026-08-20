@@ -16,7 +16,9 @@ import { debtToGdpPct, annualizedShareOfGdpPct } from '@modules/government/serve
    two-year Congress, not the one-year calendar session. */
 export const SIM_SESSION_TICKS = 730;
 
-/* Registry keys (migration 0033 seed) the sim exporter writes each tick. */
+/* Registry keys (migration 0033 seed). The first seven are written by the
+   sim exporter each tick; the Tier C keys are reality-only until world-model
+   Layer 2+ (scoreboardFeed.ts FRED adapter writes their reality side). */
 export const METRIC_KEYS = {
   deficitPerDay: 'deficit_per_day',
   debtToGdp: 'debt_to_gdp',
@@ -25,6 +27,9 @@ export const METRIC_KEYS = {
   legislativeThroughput: 'legislative_throughput',
   timeToPassage: 'time_to_passage',
   approvalTrend: 'approval_trend',
+  unemploymentRate: 'unemployment_rate',
+  inflationRate: 'inflation_rate',
+  gdpGrowth: 'gdp_growth',
 } as const;
 
 export interface MetricValue {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { realitySnapshots } from '@db/schema/index';
-import { sql } from 'drizzle-orm';
+import { realitySnapshots, metricSnapshots } from '@db/schema/index';
+import { eq, sql } from 'drizzle-orm';
 import { requireOwner } from '@core/server/middleware/auth.js';
 
 const router = Router();
@@ -12,7 +12,9 @@ const router = Router();
    (later slice); this just lets the owner confirm the puller is working. */
 router.use('/admin/reality', requireOwner);
 
-/* GET /api/admin/reality/status — row counts + latest record_date by source */
+/* GET /api/admin/reality/status — row counts + latest record_date by source,
+   plus the scoreboard's reality-side metric ages (E4 slice 2: the approval
+   scrape's staleness alarm surfaces here as ageHours on approval_trend). */
 router.get('/admin/reality/status', async (_req, res, next) => {
   try {
     const rows = await db
@@ -30,7 +32,28 @@ router.get('/admin/reality/status', async (_req, res, next) => {
       latestRecordDate: r.latestRecordDate,
     }));
 
-    res.json({ success: true, data: { bySource } });
+    const metricRows = await db
+      .select({
+        metricKey: metricSnapshots.metricKey,
+        count: sql<number>`COUNT(*)`,
+        latestAtDate: sql<string | null>`MAX(${metricSnapshots.atDate})`,
+        latestWriteAt: sql<string | null>`MAX(${metricSnapshots.createdAt})`,
+      })
+      .from(metricSnapshots)
+      .where(eq(metricSnapshots.side, 'reality'))
+      .groupBy(metricSnapshots.metricKey);
+
+    const scoreboardReality = metricRows.map((r) => {
+      const latestWriteMs = r.latestWriteAt ? new Date(r.latestWriteAt).getTime() : NaN;
+      return {
+        metricKey: r.metricKey,
+        count: Number(r.count),
+        latestAtDate: r.latestAtDate,
+        ageHours: Number.isFinite(latestWriteMs) ? Math.round((Date.now() - latestWriteMs) / 3_600_000) : null,
+      };
+    });
+
+    res.json({ success: true, data: { bySource, scoreboardReality } });
   } catch (error) {
     next(error);
   }

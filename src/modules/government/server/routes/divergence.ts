@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { governmentSettings, laws, fiscalTickSummaries, realitySnapshots, tickLog } from '@db/schema/index';
+import { governmentSettings, laws, fiscalTickSummaries, realitySnapshots, tickLog, metricDefinitions, metricSnapshots } from '@db/schema/index';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { mandatoryEffectiveAmount, tickInterest } from '@core/server/lib/fiscalMath.js';
@@ -16,6 +16,111 @@ import {
 } from '../lib/divergenceMath.js';
 
 const router = Router();
+
+/* Spec order of the registry rows (observability-and-metrics.md §launch
+   metrics). The registry drives everything else about the response; this
+   array only pins presentation order (insert order isn't a SQL concept).
+   Keys not listed (future metrics) append after, alphabetically. */
+const METRIC_SPEC_ORDER = [
+  'deficit_per_day',
+  'debt_to_gdp',
+  'spending_pct_gdp',
+  'tax_burden_pct_gdp',
+  'legislative_throughput',
+  'time_to_passage',
+  'approval_trend',
+  'shutdown_days',
+  'unemployment_rate',
+  'inflation_rate',
+  'gdp_growth',
+  'poverty_uninsured_rate',
+];
+
+const SCOREBOARD_SERIES_CAP = 500;
+
+/* GET /api/divergence/scoreboard -- E4 registry-driven scoreboard. Public
+   read-only, same posture as GET /api/divergence below. Each metric row =
+   registry definition + latest value and capped series per side + gap +
+   "comparable since" (the later of the two sides' first snapshot dates).
+   A metric with data on only one side (metric 8, Tier C) reports status
+   'pending' -- visible-but-pending beats silently absent, per the spec. */
+router.get('/divergence/scoreboard', async (_req, res, next) => {
+  try {
+    const rc = getRuntimeConfig();
+    const t0 = rc.divergenceT0Tick > 0
+      ? { tick: rc.divergenceT0Tick, date: rc.divergenceT0Date }
+      : null;
+
+    const definitions = await db.select().from(metricDefinitions);
+    definitions.sort((a, b) => {
+      const ai = METRIC_SPEC_ORDER.indexOf(a.key);
+      const bi = METRIC_SPEC_ORDER.indexOf(b.key);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return a.key.localeCompare(b.key);
+    });
+
+    /* First-snapshot date per (metric, side) in one grouped query --
+       series below are tail-capped, so earliest dates need their own scan. */
+    const bounds = await db
+      .select({
+        metricKey: metricSnapshots.metricKey,
+        side: metricSnapshots.side,
+        firstDate: sql<string | null>`MIN(${metricSnapshots.atDate})`,
+      })
+      .from(metricSnapshots)
+      .groupBy(metricSnapshots.metricKey, metricSnapshots.side);
+    const firstDateBySide = new Map(bounds.map((b) => [`${b.metricKey}|${b.side}`, b.firstDate]));
+
+    const metrics = [];
+    for (const def of definitions) {
+      const fetchSeries = async (side: 'sim' | 'reality') => {
+        const rows = await db
+          .select({ value: metricSnapshots.value, atDate: metricSnapshots.atDate, atTick: metricSnapshots.atTick })
+          .from(metricSnapshots)
+          .where(and(eq(metricSnapshots.metricKey, def.key), eq(metricSnapshots.side, side)))
+          .orderBy(desc(metricSnapshots.atDate), desc(metricSnapshots.atTick))
+          .limit(SCOREBOARD_SERIES_CAP);
+        return rows.reverse();
+      };
+      const [simSeries, realitySeries] = await Promise.all([fetchSeries('sim'), fetchSeries('reality')]);
+
+      const latestSim = simSeries.length > 0 ? simSeries[simSeries.length - 1] : null;
+      const latestReality = realitySeries.length > 0 ? realitySeries[realitySeries.length - 1] : null;
+
+      const firstSim = firstDateBySide.get(`${def.key}|sim`) ?? null;
+      const firstReality = firstDateBySide.get(`${def.key}|reality`) ?? null;
+      const comparableSince = firstSim && firstReality
+        ? (firstSim > firstReality ? firstSim : firstReality)
+        : null;
+
+      metrics.push({
+        key: def.key,
+        name: def.name,
+        unit: def.unit,
+        direction: def.direction,
+        tier: def.tier,
+        cadence: def.cadence,
+        simSource: def.simSource,
+        realitySource: def.realitySource,
+        sim: latestSim ? { value: latestSim.value, atDate: latestSim.atDate, atTick: latestSim.atTick } : null,
+        reality: latestReality ? { value: latestReality.value, atDate: latestReality.atDate } : null,
+        gap: latestSim && latestReality ? latestSim.value - latestReality.value : null,
+        comparableSince,
+        status: comparableSince ? 'comparable' as const : 'pending' as const,
+        series: {
+          sim: simSeries.map((p) => ({ atDate: p.atDate, atTick: p.atTick, value: p.value })),
+          reality: realitySeries.map((p) => ({ atDate: p.atDate, value: p.value })),
+        },
+      });
+    }
+
+    res.json({ success: true, data: { t0, metrics } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /* GET /api/divergence -- Sim vs Reality scoreboard (Divergence experiment,
    E1 slice 4, docs/DIVERGENCE_EXPERIMENT.md §2.4). Public, read-only, same

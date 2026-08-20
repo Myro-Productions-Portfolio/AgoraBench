@@ -4,6 +4,7 @@ import { divergenceApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { formatMoney } from '@core/client/lib/formatMoney';
 import { EmptyState } from '@core/client/components/EmptyState';
+import { Sparkline } from '@core/client/components/Sparkline';
 
 /* ── Types (mirror GET /api/divergence) ─────────────────────────────────── */
 
@@ -53,7 +54,50 @@ interface DivergenceData {
   programContinuity: ProgramContinuity[];
 }
 
+/* ── Types (mirror GET /api/divergence/scoreboard) ─────────────────────── */
+
+interface ScoreboardSeriesPoint { atDate: string; atTick?: number | null; value: number; }
+
+interface ScoreboardMetric {
+  key: string;
+  name: string;
+  unit: string;
+  direction: 'lower' | 'higher' | 'context';
+  tier: string;
+  cadence: string;
+  simSource: string;
+  realitySource: string;
+  sim: { value: number; atDate: string; atTick: number | null } | null;
+  reality: { value: number; atDate: string } | null;
+  gap: number | null;
+  comparableSince: string | null;
+  status: 'comparable' | 'pending';
+  series: { sim: ScoreboardSeriesPoint[]; reality: ScoreboardSeriesPoint[] };
+}
+
+interface ScoreboardData {
+  t0: { tick: number; date: string } | null;
+  metrics: ScoreboardMetric[];
+}
+
 const fmtM = (v: number): string => formatMoney(v, { compact: true });
+
+function formatMetricValue(unit: string, value: number): string {
+  if (unit.startsWith('$')) return `${fmtM(value)}/day`;
+  if (unit.includes('%')) return `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+  if (unit.startsWith('days')) return `${Number.isInteger(value) ? value : value.toFixed(1)} days`;
+  return `${Math.round(value * 10) / 10}`;
+}
+
+/* "Not yet comparable: <reason>" registry sources carry the pending reason. */
+function pendingReason(m: ScoreboardMetric): string {
+  const src = [m.simSource, m.realitySource].find((s) => s.toLowerCase().startsWith('not yet comparable'));
+  if (src) {
+    const colon = src.indexOf(':');
+    return colon !== -1 ? src.slice(colon + 1).trim() : src;
+  }
+  return 'no snapshots on both sides yet';
+}
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
@@ -68,30 +112,101 @@ function Section({ title, subtitle, children }: { title: string; subtitle?: stri
 }
 
 function CompareStatCard({
-  label, simValue, realityValue, simSub, realitySub,
+  label, simValue, realityValue, simSub, realitySub, aside,
 }: {
-  label: string;
+  label: React.ReactNode;
   simValue: React.ReactNode;
   realityValue: React.ReactNode;
   simSub?: React.ReactNode;
   realitySub?: React.ReactNode;
+  aside?: React.ReactNode;
 }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-5">
-      <p className="text-badge text-text-muted uppercase tracking-widest mb-3">{label}</p>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="text-badge text-text-muted uppercase tracking-widest">{label}</div>
+        {aside}
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <p className="text-[10px] uppercase tracking-widest text-gold/70 mb-0.5">Sim (AI)</p>
           <p className="font-mono text-lg font-semibold text-gold">{simValue}</p>
-          {simSub && <p className="text-[11px] text-text-muted mt-0.5">{simSub}</p>}
+          {simSub && <div className="text-[11px] text-text-muted mt-0.5">{simSub}</div>}
         </div>
         <div>
           <p className="text-[10px] uppercase tracking-widest text-text-muted mb-0.5">Reality</p>
           <p className="font-mono text-lg font-semibold text-text-secondary">{realityValue}</p>
-          {realitySub && <p className="text-[11px] text-text-muted mt-0.5">{realitySub}</p>}
+          {realitySub && <div className="text-[11px] text-text-muted mt-0.5">{realitySub}</div>}
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── Scoreboard rows (E4): registry-driven, CompareStatCard as template ─── */
+
+const TIER_CHIP: Record<string, string> = {
+  A: 'text-green-400 bg-green-900/20 border-green-700/30',
+  B: 'text-gold bg-gold/10 border-gold/30',
+  C: 'text-text-muted bg-white/[0.03] border-border',
+};
+
+function GapBadge({ m }: { m: ScoreboardMetric }) {
+  if (m.gap === null) return null;
+  const better = m.direction === 'lower' ? m.gap < 0 : m.direction === 'higher' ? m.gap > 0 : null;
+  const cls = better === null || m.gap === 0 ? 'text-text-muted' : better ? 'text-green-400' : 'text-red-400';
+  const sign = m.gap > 0 ? '+' : m.gap < 0 ? '−' : '';
+  return (
+    <span className={`font-mono text-xs ${cls}`} title={m.direction === 'context' ? 'gap (no better/worse direction)' : `direction: ${m.direction} is better`}>
+      Δ {sign}{formatMetricValue(m.unit, Math.abs(m.gap))}
+      {better !== null && m.gap !== 0 && <span className="ml-1">{better ? '· AI ahead' : '· Reality ahead'}</span>}
+    </span>
+  );
+}
+
+function ScoreboardRow({ m }: { m: ScoreboardMetric }) {
+  const simValues = m.series.sim.map((p) => p.value);
+  const realityValues = m.series.reality.map((p) => p.value);
+  return (
+    <CompareStatCard
+      label={
+        <span className="flex items-center gap-2 flex-wrap normal-case tracking-normal">
+          <span className="text-sm font-medium text-stone">{m.name}</span>
+          <span className={`badge border text-[9px] uppercase tracking-widest px-1.5 ${TIER_CHIP[m.tier] ?? TIER_CHIP.C}`}>Tier {m.tier}</span>
+          <span className="text-[10px] text-text-muted">{m.unit}</span>
+        </span>
+      }
+      aside={
+        <div className="text-right space-y-0.5 shrink-0">
+          <GapBadge m={m} />
+          <p className="text-[10px] text-text-muted">
+            {m.status === 'comparable' ? `comparable since ${m.comparableSince}` : 'not yet comparable'}
+          </p>
+        </div>
+      }
+      simValue={m.sim ? formatMetricValue(m.unit, m.sim.value) : '—'}
+      realityValue={m.reality ? formatMetricValue(m.unit, m.reality.value) : '—'}
+      simSub={
+        m.sim ? (
+          <span className="flex items-center gap-2">
+            <Sparkline values={simValues} stroke="#B8956A" />
+            <span>tick {m.sim.atTick ?? '—'}</span>
+          </span>
+        ) : (
+          <span>{pendingReason(m)}</span>
+        )
+      }
+      realitySub={
+        m.reality ? (
+          <span className="flex items-center gap-2">
+            <Sparkline values={realityValues} stroke="#9CA3AF" />
+            <span>as of {m.reality.atDate}</span>
+          </span>
+        ) : (
+          <span>no reality series yet</span>
+        )
+      }
+    />
   );
 }
 
@@ -188,6 +303,7 @@ function DeficitChart({
 
 export function DivergencePage() {
   const [data, setData] = useState<DivergenceData | null>(null);
+  const [scoreboard, setScoreboard] = useState<ScoreboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const { subscribe } = useWebSocket();
@@ -200,6 +316,10 @@ export function DivergencePage() {
       })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
+    /* Scoreboard is additive — a failure here never blanks the page. */
+    divergenceApi.scoreboard()
+      .then((res) => { if (res.data) setScoreboard(res.data as ScoreboardData); })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => { fetchDivergence(); }, [fetchDivergence]);
@@ -275,6 +395,22 @@ export function DivergencePage() {
           Reality reference data is still backfilling — comparisons below show sim state only until the first pull completes.
         </div>
       )}
+
+      {/* Scoreboard (E4) — registry-driven, the hero of the page */}
+      <Section
+        title="Scoreboard"
+        subtitle="Two governments, same line items — the AI government's 10-K next to the real one's. A metric appears here only when both sides can produce the same number; the rest are visible-but-pending. No composite winner score, deliberately."
+      >
+        {scoreboard && scoreboard.metrics.length > 0 ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {scoreboard.metrics.map((m) => <ScoreboardRow key={m.key} m={m} />)}
+          </div>
+        ) : (
+          <p className="text-sm text-text-muted py-6 text-center">
+            The metric registry has no snapshots yet — rows appear once the scoreboard exporter is switched on.
+          </p>
+        )}
+      </Section>
 
       {/* Headline tiles */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

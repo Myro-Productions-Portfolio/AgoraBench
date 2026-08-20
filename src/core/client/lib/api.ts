@@ -148,6 +148,8 @@ export const governmentApi = {
 export const divergenceApi = {
   get: () =>
     request('/divergence'),
+  scoreboard: () =>
+    request('/divergence/scoreboard'),
 };
 
 /* Exogenous world-events feed endpoints (E2 slice 1) + state-summary aggregate */

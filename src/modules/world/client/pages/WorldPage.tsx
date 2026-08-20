@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { worldApi } from '@core/client/lib/api';
 import { EmptyState } from '@core/client/components/EmptyState';
 import { severityTier, SEVERITY_COLORS, SEVERITY_LABELS, type SeverityTier } from '@modules/world/client/lib/severityClient';
-import { US_STATE_PATHS, US_STATE_CENTROIDS, US_MAP_VIEWBOX, FIPS_TO_STATE } from '@modules/world/client/lib/usStatePaths';
+import { FIPS_TO_STATE } from '@modules/world/client/lib/usStatePaths';
+import { ChoroplethMap } from '@modules/world/client/components/ChoroplethMap';
 
 /* ── Types (mirror GET /api/world/events and GET /api/world/state-summary) ── */
 
@@ -131,84 +132,6 @@ function EventRow({ event }: { event: WorldEvent }) {
   );
 }
 
-/* ── Map ──────────────────────────────────────────────────────────────────── */
-
-interface ChoroplethMapProps {
-  states: Record<string, StateAgg>;
-  selectedFips: string | null;
-  onSelect: (fips: string) => void;
-}
-
-function ChoroplethMap({ states, selectedFips, onSelect }: ChoroplethMapProps) {
-  return (
-    <svg
-      viewBox={US_MAP_VIEWBOX}
-      role="group"
-      aria-label="US severity map of active world events"
-      className="w-full h-auto motion-reduce:transition-none"
-    >
-      {Object.entries(US_STATE_PATHS).map(([fips, d]) => {
-        const agg = states[fips];
-        const tier = severityTier(agg?.maxSeverity ?? null);
-        const meta = FIPS_TO_STATE[fips];
-        const isSelected = selectedFips === fips;
-        return (
-          <path
-            key={fips}
-            d={d}
-            role="button"
-            tabIndex={0}
-            aria-label={meta ? `${meta.name}: ${SEVERITY_LABELS[tier]}${agg ? `, ${agg.count} alert${agg.count === 1 ? '' : 's'}` : ''}` : fips}
-            aria-pressed={isSelected}
-            fill={SEVERITY_COLORS[tier]}
-            stroke="#15161A"
-            strokeWidth={0.6}
-            className="cursor-pointer transition-colors duration-150 motion-reduce:transition-none hover:opacity-80 [&:focus]:outline-none [&:focus-visible]:stroke-gold-bright [&:focus-visible]:[stroke-width:2px]"
-            onClick={() => onSelect(fips)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(fips);
-              }
-            }}
-          />
-        );
-      })}
-      {/* Selected state re-drawn last so its border sits above every neighbor
-          (SVG has no z-index — paint order is DOM order). Non-interactive
-          overlay; the base path underneath keeps click/keyboard handling. */}
-      {selectedFips && US_STATE_PATHS[selectedFips] && (
-        <path
-          d={US_STATE_PATHS[selectedFips]}
-          fill="none"
-          stroke="#D4AF6A"
-          strokeWidth={2}
-          className="pointer-events-none"
-          style={{ paintOrder: 'stroke', filter: 'drop-shadow(0 0 4px rgba(212,175,106,0.65))' }}
-        />
-      )}
-      {Object.entries(US_STATE_CENTROIDS).map(([fips, [x, y]]) => {
-        const agg = states[fips];
-        if (!agg) return null;
-        const meta = FIPS_TO_STATE[fips];
-        return (
-          <text
-            key={fips}
-            x={x}
-            y={y}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            className="pointer-events-none select-none fill-white text-[8px] font-mono font-semibold"
-            style={{ paintOrder: 'stroke', stroke: 'rgba(0,0,0,0.55)', strokeWidth: 2 }}
-          >
-            {meta?.abbr ?? fips} {agg.count}
-          </text>
-        );
-      })}
-    </svg>
-  );
-}
-
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 
 export function WorldPage() {
@@ -333,7 +256,24 @@ export function WorldPage() {
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
             <div className="space-y-4 min-w-0">
               <div className="rounded-lg border border-border bg-surface p-4">
-                <ChoroplethMap states={statesByFips} selectedFips={selectedFips} onSelect={selectState} />
+                <ChoroplethMap
+                  ariaLabel="US severity map of active world events"
+                  colorForState={(fips) => SEVERITY_COLORS[severityTier(statesByFips[fips]?.maxSeverity ?? null)]}
+                  labelForState={(fips) => {
+                    const agg = statesByFips[fips];
+                    return agg ? `${FIPS_TO_STATE[fips]?.abbr ?? fips} ${agg.count}` : null;
+                  }}
+                  ariaForState={(fips) => {
+                    const agg = statesByFips[fips];
+                    const tier = severityTier(agg?.maxSeverity ?? null);
+                    const meta = FIPS_TO_STATE[fips];
+                    return meta
+                      ? `${meta.name}: ${SEVERITY_LABELS[tier]}${agg ? `, ${agg.count} alert${agg.count === 1 ? '' : 's'}` : ''}`
+                      : fips;
+                  }}
+                  selectedFips={selectedFips}
+                  onSelect={selectState}
+                />
               </div>
 
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">

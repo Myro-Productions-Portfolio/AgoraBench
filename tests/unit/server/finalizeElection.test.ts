@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { assignVoterState } from '@core/server/lib/electionMath';
+import { ELECTORAL_VOTES, STATE_ORDER } from '@core/server/lib/electoralCollege';
 
 /* finalizeElection.ts is DB-coupled (not pure like electionMath.ts), so this
    mocks @db/connection with the repo's established FIFO-select-results
@@ -527,6 +529,73 @@ describe('finalizeElection — congress_general multi-seat (B3)', () => {
     expect(updatedCalls[updatedCalls.length - 2]!.values['status']).toBe('concluded');
     const rerunSeats = insertedRows.filter((r) => r.values['type'] === 'congress_member');
     expect(rerunSeats).toHaveLength(2);
+  });
+});
+
+describe('finalizeElection — EC persistence (broadcast slice 1, migration 0036)', () => {
+  it('EC-enabled presidential certification persists stateResults + electoralVotes in the certify update', async () => {
+    rc['electoralCollegeEnabled'] = true;
+    const electionId = 'election-ec';
+    const candidateId = 'agent-a';
+    const voterIds = ['voter-ec-1', 'voter-ec-2', 'voter-ec-3'];
+
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: candidateId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: voterIds.map((v) => ({ candidateId, voterId: v })),
+      winnerAgent: [{ id: candidateId, displayName: 'Sole Candidate' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 1000);
+    expect(result.status).toBe('ok');
+    expect(result.winnerId).toBe(candidateId);
+
+    /* Expected map from the SAME pure primitives the engine uses — a sole
+       candidate wins every ballot-carrying state. */
+    const expectedStates: Record<string, string> = {};
+    for (const v of voterIds) {
+      const st = assignVoterState(v, ELECTORAL_VOTES, [...STATE_ORDER]);
+      expect(st).toBeTruthy();
+      expectedStates[st!] = candidateId;
+    }
+    const expectedEv = Object.keys(expectedStates).reduce((sum, st) => sum + (ELECTORAL_VOTES[st] ?? 0), 0);
+
+    const certify = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certify).toBeDefined();
+    expect(certify!.values['stateResults']).toEqual(expectedStates);
+    /* Well under 270 EV allocated -> honest contingent shape: reachedMajority
+       false and EC winnerId null, while the election's winner falls back to
+       the national plurality leader. */
+    expect(certify!.values['electoralVotes']).toEqual({
+      winnerId: null,
+      totalEvAllocated: expectedEv,
+      evByCandidate: { [candidateId]: expectedEv },
+      reachedMajority: false,
+    });
+  });
+
+  it('flag OFF (dark default): presidential certification writes explicit nulls for both EC columns', async () => {
+    const electionId = 'election-dark';
+    const winnerId = 'agent-winner';
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 1001);
+    expect(result.status).toBe('ok');
+
+    const certify = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certify!.values['stateResults']).toBeNull();
+    expect(certify!.values['electoralVotes']).toBeNull();
   });
 });
 

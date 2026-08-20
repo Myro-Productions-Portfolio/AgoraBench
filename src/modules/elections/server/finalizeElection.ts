@@ -31,6 +31,7 @@ import {
   campaigns,
   positions,
   votes,
+  type ElectionElectoralVotes,
 } from '@db/schema/index';
 import { getRuntimeConfig, type RuntimeConfig } from '@core/server/runtimeConfig.js';
 import { broadcast } from '@core/server/websocket.js';
@@ -192,7 +193,10 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
      national `tally` above still supplies voteCounts/totalVotes for the margin
      calc and the roll call — only the WINNER is replaced. This can diverge from
      the popular winner; that is the faithful mechanic, not a bug. */
-  let electoralResultNote: { winnerId: string | null; totalEvAllocated: number; evByCandidate: Record<string, number>; reachedMajority: boolean } | null = null;
+  let electoralResultNote: ElectionElectoralVotes | null = null;
+  /* Persisted per-state winner map (broadcast slice 1, migration 0036) —
+     decided states only; null whenever the EC path does not run. */
+  let stateWinners: Record<string, string> | null = null;
   if (rc.electoralCollegeEnabled && election.positionType === 'president' && !tally.usedFallback && tally.totalVotes > 0) {
     const ballotsByState = new Map<string, { candidateId: string | null }[]>();
     for (const b of castBallots) {
@@ -213,6 +217,10 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
       evByCandidate: ec.evByCandidate,
       reachedMajority: ec.winnerId !== null,
     };
+    stateWinners = {};
+    for (const s of stateResults) {
+      if (s.winnerId) stateWinners[s.state] = s.winnerId;
+    }
     if (ec.winnerId) {
       if (ec.winnerId !== tally.winnerId) {
         console.warn(`[FINALIZE] EC: ${ec.winnerId} won the Electoral College (${ec.evByCandidate[ec.winnerId]} EV) — diverges from the popular-vote leader ${tally.winnerId}.`);
@@ -282,6 +290,10 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
       totalVotes: tally.totalVotes,
       certifiedDate: now,
       certifiedTick: startTick,
+      /* EC persistence (slice 1): non-null only when the presidential EC
+         branch above ran — the broadcast page's map/EV data. */
+      stateResults: stateWinners,
+      electoralVotes: electoralResultNote,
     })
     .where(eq(elections.id, electionId));
 

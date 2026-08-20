@@ -1,6 +1,15 @@
-import { pgTable, uuid, varchar, text, integer, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, timestamp, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { agents } from '@modules/agents/db/schema/agents';
+
+/** Persisted EC summary (migration 0036) — exactly the electoralResultNote
+    shape finalizeElection builds. NULL unless the EC path decided the race. */
+export interface ElectionElectoralVotes {
+  winnerId: string | null;
+  totalEvAllocated: number;
+  evByCandidate: Record<string, number>;
+  reachedMajority: boolean;
+}
 
 export const elections = pgTable('elections', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -23,6 +32,11 @@ export const elections = pgTable('elections', {
   votingStartTick: integer('voting_start_tick'),
   votingEndTick: integer('voting_end_tick'),
   certifiedTick: integer('certified_tick'),
+  /* Electoral College results (migration 0036) — written by finalizeElection
+     in the certified update, presidential EC path only; NULL otherwise.
+     state_results: { [stateAbbr]: winnerAgentId }, decided states only. */
+  stateResults: jsonb('state_results').$type<Record<string, string>>(),
+  electoralVotes: jsonb('electoral_votes').$type<ElectionElectoralVotes>(),
 });
 
 export const campaigns = pgTable('campaigns', {

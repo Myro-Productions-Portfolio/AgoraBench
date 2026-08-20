@@ -1,10 +1,44 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { elections, agents, votes, campaigns, parties, partyMemberships } from '@db/schema/index';
+import { elections, agents, votes, campaigns, parties, partyMemberships, type ElectionElectoralVotes } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
 import { and, eq, inArray, ne } from 'drizzle-orm';
+import { EC_MAJORITY } from '@core/server/lib/electoralCollege';
 
 const router = Router();
+
+export interface ElectoralCollegeBlock {
+  enabled: true;
+  stateResults: Record<string, string>;
+  evByCandidate: Record<string, number>;
+  totalEvAllocated: number;
+  threshold: number;
+  winnerId: string | null;
+  reachedMajority: boolean;
+}
+
+/**
+ * The whitelisted electoralCollege response block for GET /elections/:id
+ * (broadcast spec §3.1). Null — and the key omitted — when the election was
+ * certified without the EC path (both columns null: non-presidential, or
+ * electoralCollegeEnabled false at certification time). Never spreads the
+ * raw row. Exported for unit tests.
+ */
+export function buildElectoralCollegeBlock(
+  stateResults: Record<string, string> | null,
+  electoralVotes: ElectionElectoralVotes | null,
+): ElectoralCollegeBlock | null {
+  if (!electoralVotes) return null;
+  return {
+    enabled: true,
+    stateResults: stateResults ?? {},
+    evByCandidate: electoralVotes.evByCandidate ?? {},
+    totalEvAllocated: electoralVotes.totalEvAllocated ?? 0,
+    threshold: EC_MAJORITY,
+    winnerId: electoralVotes.winnerId ?? null,
+    reachedMajority: electoralVotes.reachedMajority === true,
+  };
+}
 
 /* GET /api/elections/active -- Returns active/upcoming elections */
 router.get('/elections/active', async (_req, res, next) => {
@@ -195,6 +229,11 @@ router.get('/elections/:id', async (req, res, next) => {
       castAt: v.castAt,
     }));
 
+    const electoralCollege = buildElectoralCollegeBlock(
+      election.stateResults ?? null,
+      election.electoralVotes ?? null,
+    );
+
     res.json({
       success: true,
       data: {
@@ -211,6 +250,7 @@ router.get('/elections/:id', async (req, res, next) => {
         winnerId: election.winnerId,
         candidates,
         rollCall,
+        ...(electoralCollege ? { electoralCollege } : {}),
       },
     });
   } catch (error) {

@@ -91,9 +91,10 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
   }
 
   /* Multi-seat idempotency (B3): a congress_general is finalized iff its
-     status reached 'certified' — the certify update is the LAST write of
-     the multi-seat branch, so a crashed half-run stays 'voting' and re-runs
-     cleanly (the chamber close before re-seating makes the redo converge).
+     status reached 'certified' — campaigns close and the certify flip are
+     the terminal write group of the multi-seat branch, so a crashed half-run
+     stays 'voting' WITH active campaigns and re-runs cleanly (the chamber
+     close before re-seating makes the redo converge).
      The single-winner winnerId check below is skipped for this type: its
      one-active-position probe can't represent N seats. */
   if (election.positionType === 'congress_general' && election.status === 'certified') {
@@ -535,9 +536,9 @@ export async function finalizeElection(electionId: string, tickNumber?: number):
  *
  * elections.winnerId carries the top vote-getter for display compatibility;
  * the full sets persist in the election_completed activity metadata
- * (winnerIds/loserIds) for Phase 11.5. The certify update is deliberately
- * the LAST write — see the status-based idempotency check in
- * finalizeElection.
+ * (winnerIds/loserIds) for Phase 11.5. The campaigns close-out and certify
+ * update are deliberately the terminal write group — see the status-based
+ * idempotency check in finalizeElection.
  */
 async function finalizeCongressGeneral(
   electionId: string,
@@ -563,12 +564,6 @@ async function finalizeCongressGeneral(
     .where(inArray(agents.id, winnerIds));
   const nameById = new Map(winnerAgents.map((a) => [a.id, a.displayName]));
   const topWinnerName = nameById.get(topWinnerId) ?? 'Unknown';
-
-  /* Close out campaigns first (same as the single-winner path). */
-  await db
-    .update(campaigns)
-    .set({ status: 'concluded', endDate: now })
-    .where(eq(campaigns.electionId, electionId));
 
   /* The chamber ends with the term: every sitting member AND the speaker
      vacate at certification (re-elected members get fresh rows below). */
@@ -657,7 +652,10 @@ async function finalizeCongressGeneral(
   );
 
   /* Approval cascades per set — same margin math as the single-winner path,
-     applied per winner/loser. */
+     applied per winner/loser. Accepted bounded distortion: a crash-rerun of
+     this branch re-applies the reputation/approval/sentiment rewards above
+     and below (updateApproval is not tx-aware, so the terminal-write-group
+     design cannot cover them). */
   const candidateCount = standings.length;
   const totalContributions = standings.reduce((sum, s) => sum + Number(s.totalContributions ?? 0), 0);
   const contribByAgent = new Map(standings.map((s) => [s.agentId, Number(s.totalContributions ?? 0)]));
@@ -723,7 +721,16 @@ async function finalizeCongressGeneral(
     }
   }
 
-  /* Terminal write LAST — the status flip is the idempotency marker. */
+  /* Terminal write group LAST. Campaigns stay 'active' until here so a
+     crashed half-run re-enters through the active-campaigns query and redoes
+     the branch cleanly (closing them earlier wedged the election in 'voting'
+     forever: the re-run's campaignTotals came back empty → no_campaigns
+     bail). The status flip is the idempotency marker. */
+  await db
+    .update(campaigns)
+    .set({ status: 'concluded', endDate: now })
+    .where(eq(campaigns.electionId, electionId));
+
   await db
     .update(elections)
     .set({

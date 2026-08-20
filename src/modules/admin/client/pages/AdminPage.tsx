@@ -3829,7 +3829,7 @@ export function AdminPage() {
                       onBlur={() => void saveConfig({ presidentTermTicks: simConfig.presidentTermTicks })}
                       className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                     />
-                    <p className="text-xs text-text-muted">Incumbent tenure limit in ticks, derived from wall-clock time since inauguration. 0 = disabled; recommended 1460 ≈ 4 sim-years. When enabled and the sitting president's tenure reaches this limit, a new presidential election is triggered automatically instead of being suppressed — the incumbent stays seated until certification.</p>
+                    <p className="text-xs text-text-muted">Incumbent tenure limit in ticks, counted from the tick the president was seated (presidents seated before the tick-anchor migration fall back to wall-clock-derived tenure, so the first enable triggers an election immediately). 0 = disabled; recommended 1460 ≈ 4 sim-years. When enabled and the sitting president's tenure reaches this limit, a new presidential election is triggered automatically instead of being suppressed — the incumbent stays seated until certification.</p>
                   </div>
 
                   {/* Election Cycles — tick-anchored phase schedule (1 tick = 1 sim-day) */}

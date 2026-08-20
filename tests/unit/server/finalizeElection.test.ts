@@ -476,6 +476,58 @@ describe('finalizeElection — congress_general multi-seat (B3)', () => {
     expect(insertedRows).toHaveLength(0);
     expect(updatedCalls).toHaveLength(0);
   });
+
+  /* B-1 (review round 2): campaigns must be concluded only in the terminal
+     write group. Closing them first wedged a crashed half-run forever: the
+     rerun's active-campaigns query came back empty -> no_campaigns bail with
+     the election stuck in 'voting', suppressing every future general. */
+  it('B-1 rerun safety: campaigns conclude only in the terminal write group, and a crash-rerun (still voting, campaigns still active) re-certifies cleanly', async () => {
+    rc['congressSeats'] = 2;
+    const opts = {
+      election: { id: electionId, positionType: 'congress_general', winnerId: null, status: 'voting' },
+      campaignTotals: threeCandidates,
+      castBallots: [
+        { candidateId: 'c1', voterId: 'v1' },
+        { candidateId: 'c1', voterId: 'v2' },
+        { candidateId: 'c3', voterId: 'v3' },
+      ],
+      winnerAgents: [
+        { id: 'c1', displayName: 'Winner One' },
+        { id: 'c3', displayName: 'Winner Three' },
+      ],
+      winnersPriorPositions: [],
+    };
+    queueCongressSelects(opts);
+
+    const { finalizeElection } = await loadFinalize();
+    const first = await finalizeElection(electionId, 910);
+    expect(first.status).toBe('ok');
+
+    const concludedIdx = updatedCalls.findIndex((c) => c.values['status'] === 'concluded');
+    const certifyIdx = updatedCalls.findIndex((c) => c.values['status'] === 'certified');
+    const chamberCloseIdx = updatedCalls.findIndex((c) => c.values['isActive'] === false);
+    expect(concludedIdx).toBe(updatedCalls.length - 2);
+    expect(certifyIdx).toBe(updatedCalls.length - 1);
+    expect(chamberCloseIdx).toBeGreaterThanOrEqual(0);
+    expect(chamberCloseIdx).toBeLessThan(concludedIdx);
+
+    /* Crash-rerun: any crash before the terminal group leaves the election
+       'voting' with ACTIVE campaigns (chamber close / seat inserts may have
+       happened — the rerun's chamber close before re-seating converges).
+       The rerun must certify, never bail no_campaigns. */
+    updatedCalls = [];
+    insertedRows = [];
+    updateApprovalCalls = [];
+    broadcastCalls = [];
+    queueCongressSelects(opts);
+
+    const rerun = await finalizeElection(electionId, 910);
+    expect(rerun.status).toBe('ok');
+    expect(updatedCalls[updatedCalls.length - 1]!.values['status']).toBe('certified');
+    expect(updatedCalls[updatedCalls.length - 2]!.values['status']).toBe('concluded');
+    const rerunSeats = insertedRows.filter((r) => r.values['type'] === 'congress_member');
+    expect(rerunSeats).toHaveLength(2);
+  });
 });
 
 describe('finalizeElection — presidential path regression pins (B3)', () => {

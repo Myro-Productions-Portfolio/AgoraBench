@@ -8,7 +8,7 @@ import {
 import { eq, desc, sql, gte, and, inArray } from 'drizzle-orm';
 import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfig.js';
 import { ACTIVE_CASE_STATUSES } from '@core/server/lib/courtMath.js';
-import { electionTickSchedule, wallDateForTick } from '@core/server/lib/electionMath.js';
+import { electionTickSchedule, wallDateForTick, ELECTION_LIFECYCLE_TYPES } from '@core/server/lib/electionMath.js';
 import { getCurrentTickNumber } from '@core/server/lib/tickClock.js';
 
 export type InterventionInput = {
@@ -262,6 +262,11 @@ export async function executeIntervention(input: InterventionInput) {
     case 'trigger_election': {
       const { positionType } = payload as { positionType: string };
       if (!positionType) throw new Error('positionType required');
+      /* Only lifecycle-managed types — anything else mints a row Phase 14
+         can never advance (frozen in 'registration' forever). */
+      if (!(ELECTION_LIFECYCLE_TYPES as readonly string[]).includes(positionType)) {
+        throw new Error(`positionType must be one of: ${ELECTION_LIFECYCLE_TYPES.join(', ')}`);
+      }
       const rc = getRuntimeConfig();
       const now = new Date();
       /* Tick-anchored schedule (B1) — tick columns gate the phases; the

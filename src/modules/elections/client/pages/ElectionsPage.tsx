@@ -96,6 +96,21 @@ interface ActivityRow {
   createdAt: string;
 }
 
+/* GET /elections/:id/electoral — provisional EC snapshot during voting. */
+interface ElectoralSnapshotResponse {
+  enabled: boolean;
+  status?: string;
+  provisional?: boolean;
+  stateResults?: Record<string, string>;
+  evByCandidate?: Record<string, number>;
+  totalEvAllocated?: number;
+  threshold?: number;
+  winnerId?: string | null;
+  reachedMajority?: boolean;
+  ballotsCounted?: number;
+  statesCalled?: number;
+}
+
 type BroadcastPhase = 'campaign' | 'night' | 'inauguration' | 'none';
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
@@ -645,6 +660,7 @@ export function ElectionsPage() {
   const [pastElections, setPastElections] = useState<PastElection[]>([]);
   const [campaigns, setCampaigns] = useState<EnrichedCampaign[]>([]);
   const [detail, setDetail] = useState<ElectionDetail | null>(null);
+  const [electoral, setElectoral] = useState<ElectoralSnapshotResponse | null>(null);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [dossierAgentId, setDossierAgentId] = useState<string | null>(null);
   const { subscribe } = useWebSocket();
@@ -733,21 +749,39 @@ export function ElectionsPage() {
     void fetchDetail(detailTargetId);
   }, [detailTargetId, fetchDetail]);
 
-  /* Election Night liveness: poll the detail (design brief 05's model) and
-     refetch on ballot broadcasts scoped to the focused race. */
+  const fetchElectoral = useCallback(async (id: string) => {
+    try {
+      const res = await electionsApi.electoral(id);
+      if (res.data) setElectoral(res.data as ElectoralSnapshotResponse);
+    } catch {
+      /* transient — leave current state */
+    }
+  }, []);
+
+  /* Election Night liveness: poll the detail + provisional EC snapshot
+     (design brief 05's polling model) and refetch on ballot broadcasts
+     scoped to the focused race. */
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
-    if (phase !== 'night' || !detailTargetId) return;
-    pollRef.current = setInterval(() => { void fetchDetail(detailTargetId); }, NIGHT_POLL_MS);
+    if (phase !== 'night' || !detailTargetId) {
+      setElectoral(null);
+      return;
+    }
+    const refetchLive = () => {
+      void fetchDetail(detailTargetId);
+      void fetchElectoral(detailTargetId);
+    };
+    void fetchElectoral(detailTargetId);
+    pollRef.current = setInterval(refetchLive, NIGHT_POLL_MS);
     const unsub = subscribe('election:ballot_cast', (data) => {
       const electionId = (data as { electionId?: string } | null)?.electionId;
-      if (!electionId || electionId === detailTargetId) void fetchDetail(detailTargetId);
+      if (!electionId || electionId === detailTargetId) refetchLive();
     });
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       unsub();
     };
-  }, [phase, detailTargetId, fetchDetail, subscribe]);
+  }, [phase, detailTargetId, fetchDetail, fetchElectoral, subscribe]);
 
   /* ── Derived view data ── */
 
@@ -828,7 +862,11 @@ export function ElectionsPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
             <div className="space-y-6 min-w-0">
-              <ElectionMapCard mode="trail" stateWinners={null} colorByAgent={colorByAgent} nameByAgent={nameByAgent} />
+              {/* Per-state geography only ever exists for presidential races —
+                  a congress_general is a national at-large vote, so no map. */}
+              {focus.type === 'president' && (
+                <ElectionMapCard mode="trail" stateWinners={null} colorByAgent={colorByAgent} nameByAgent={nameByAgent} />
+              )}
 
               <div>
                 <h3 className="font-serif text-lg text-stone mb-4">Fundraising Leaderboard</h3>
@@ -904,19 +942,50 @@ export function ElectionsPage() {
             targetDate={deriveBannerTargetDate(bannerElection)}
           />
 
+          {/* The EC map/bars render only where per-state data can ever exist:
+              a presidential race whose snapshot is not switched off (§3.2 —
+              { enabled: false } means national tally only). While the first
+              snapshot is in flight (electoral null) the neutral map shows. */}
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:items-start gap-6">
             <div className="space-y-6 min-w-0">
-              <ElectionMapCard mode="live" stateWinners={null} colorByAgent={colorByAgent} nameByAgent={nameByAgent} />
+              {focus.type === 'president' && electoral?.enabled !== false ? (
+                <>
+                  <ElectionMapCard
+                    mode="live"
+                    stateWinners={electoral?.enabled ? electoral.stateResults ?? null : null}
+                    colorByAgent={colorByAgent}
+                    nameByAgent={nameByAgent}
+                  />
+                  {electoral?.enabled && (
+                    <EvBars
+                      evByCandidate={electoral.evByCandidate ?? {}}
+                      totalEvAllocated={electoral.totalEvAllocated ?? 0}
+                      colorByAgent={colorByAgent}
+                      nameByAgent={nameByAgent}
+                      provisional
+                    />
+                  )}
+                </>
+              ) : (
+                <NationalTally candidates={candidates} certified={false} colorByAgent={colorByAgent} />
+              )}
             </div>
 
             <div className="space-y-4 min-w-0">
-              <NationalTally candidates={candidates} certified={false} colorByAgent={colorByAgent} />
+              {focus.type === 'president' && electoral?.enabled !== false && (
+                <NationalTally candidates={candidates} certified={false} colorByAgent={colorByAgent} />
+              )}
               <div className="rounded-lg border border-border bg-surface p-5">
                 <p className="text-xs text-text-muted uppercase tracking-widest">Ballots cast</p>
                 <p className="font-serif text-4xl font-semibold text-stone mt-1">{ballotsCast}</p>
                 <p className="text-xs text-text-muted mt-1">
                   {countedForCandidates} for candidates{abstentions > 0 ? ` · ${abstentions} abstained` : ''}
                 </p>
+                {electoral?.enabled && (
+                  <p className="text-xs text-text-muted mt-1">
+                    {electoral.statesCalled ?? 0}/{EC_STATE_COUNT} states leaning
+                  </p>
+                )}
                 <Link
                   to={`/elections/${focus.id}`}
                   className="inline-block text-xs text-gold hover:underline mt-3"

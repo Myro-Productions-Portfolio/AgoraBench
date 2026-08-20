@@ -405,6 +405,72 @@ export function assignVoterState(
   return stateOrder[stateOrder.length - 1] ?? null;
 }
 
+/** One ballot with its voter — the minimal shape the EC bucketing needs. */
+export interface VoterBallotRow {
+  candidateId: string | null;
+  voterId: string;
+}
+
+export interface ElectoralSnapshot {
+  /** stateAbbr -> plurality leader. Decided (ballot-carrying) states only. */
+  stateWinners: Record<string, string>;
+  evByCandidate: Record<string, number>;
+  totalEvAllocated: number;
+  /** Candidate at/over threshold, or null (short of 270 — normal mid-count). */
+  winnerId: string | null;
+  reachedMajority: boolean;
+  /** Ballots that named a candidate (abstentions excluded). */
+  ballotsCounted: number;
+}
+
+/**
+ * Compute-on-read Electoral College snapshot over the ballots cast so far
+ * (broadcast spec §3.2): bucket each ballot by the voter's hash-assigned
+ * state, take each state's plurality via tallyElectionVotes (no fallback —
+ * an abstention-only state stays uncalled), and sum winner-take-all EVs via
+ * tallyElectoralCollege. Pure composition of the existing tested primitives —
+ * no new math, no writes; the same computation finalizeElection runs at
+ * certification, so a provisional read converges to the certified result.
+ */
+export function computeElectoralSnapshot(
+  ballots: VoterBallotRow[],
+  evByState: Record<string, number>,
+  stateOrder: string[],
+  candidateOrder: string[],
+  threshold = 270,
+): ElectoralSnapshot {
+  const ballotsByState = new Map<string, BallotRow[]>();
+  let ballotsCounted = 0;
+  if (Array.isArray(ballots)) {
+    for (const b of ballots) {
+      if (!b || typeof b.voterId !== 'string') continue;
+      if (typeof b.candidateId === 'string' && b.candidateId.length > 0) ballotsCounted += 1;
+      const st = assignVoterState(b.voterId, evByState, stateOrder);
+      if (!st) continue;
+      if (!ballotsByState.has(st)) ballotsByState.set(st, []);
+      ballotsByState.get(st)!.push({ candidateId: b.candidateId });
+    }
+  }
+
+  const stateResults: StateResult[] = [];
+  const stateWinners: Record<string, string> = {};
+  for (const [state, stateBallots] of ballotsByState) {
+    const stateTally = tallyElectionVotes(stateBallots, candidateOrder, null);
+    stateResults.push({ state, winnerId: stateTally.winnerId });
+    if (stateTally.winnerId) stateWinners[state] = stateTally.winnerId;
+  }
+
+  const ec = tallyElectoralCollege(stateResults, evByState, candidateOrder, threshold);
+  return {
+    stateWinners,
+    evByCandidate: ec.evByCandidate,
+    totalEvAllocated: ec.totalEvAllocated,
+    winnerId: ec.winnerId,
+    reachedMajority: ec.winnerId !== null,
+    ballotsCounted,
+  };
+}
+
 /* ────────────────────────────────────────────────────────────────────────
  * Presidential term-limit trigger (elections revival minimal slice)
  *

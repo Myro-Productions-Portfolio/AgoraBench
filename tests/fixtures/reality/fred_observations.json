@@ -1,0 +1,54 @@
+{
+  "_note": "FRED series/observations response in the documented shape (fred.stlouisfed.org/docs/api/fred/series_observations.html; the docs host blocks non-browser fetches, shape cross-confirmed 2026-08-19 against the pyfredapi and fredr client docs). NOT a live capture -- FRED requires an api_key and none was provisioned at build time. Values are realistic UNRATE-scale numbers; '.' is FRED's missing-value convention.",
+  "unrate": {
+    "realtime_start": "2026-08-19",
+    "realtime_end": "2026-08-19",
+    "observation_start": "1776-07-04",
+    "observation_end": "9999-12-31",
+    "units": "lin",
+    "output_type": 1,
+    "file_type": "json",
+    "order_by": "observation_date",
+    "sort_order": "desc",
+    "count": 4,
+    "offset": 0,
+    "limit": 4,
+    "observations": [
+      { "realtime_start": "2026-08-19", "realtime_end": "2026-08-19", "date": "2026-07-01", "value": "4.2" },
+      { "realtime_start": "2026-08-19", "realtime_end": "2026-08-19", "date": "2026-06-01", "value": "4.1" },
+      { "realtime_start": "2026-08-19", "realtime_end": "2026-08-19", "date": "2026-05-01", "value": "." },
+      { "realtime_start": "2026-08-19", "realtime_end": "2026-08-19", "date": "2026-04-01", "value": "4.0" }
+    ]
+  },
+  "cpiaucsl": {
+    "sort_order": "desc",
+    "count": 14,
+    "observations": [
+      { "date": "2026-06-01", "value": "325.0" },
+      { "date": "2026-05-01", "value": "324.1" },
+      { "date": "2026-04-01", "value": "323.3" },
+      { "date": "2026-03-01", "value": "322.6" },
+      { "date": "2026-02-01", "value": "321.9" },
+      { "date": "2026-01-01", "value": "321.0" },
+      { "date": "2025-12-01", "value": "320.2" },
+      { "date": "2025-11-01", "value": "319.5" },
+      { "date": "2025-10-01", "value": "318.8" },
+      { "date": "2025-09-01", "value": "318.0" },
+      { "date": "2025-08-01", "value": "317.2" },
+      { "date": "2025-07-01", "value": "316.4" },
+      { "date": "2025-06-01", "value": "315.5" },
+      { "date": "2025-05-01", "value": "314.7" }
+    ]
+  },
+  "gdp": {
+    "sort_order": "desc",
+    "count": 5,
+    "observations": [
+      { "date": "2026-04-01", "value": "30612.4" },
+      { "date": "2026-01-01", "value": "30353.9" },
+      { "date": "2025-10-01", "value": "30110.5" },
+      { "date": "2025-07-01", "value": "29862.0" },
+      { "date": "2025-04-01", "value": "29602.7" }
+    ]
+  }
+}

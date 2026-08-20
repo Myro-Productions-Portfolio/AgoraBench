@@ -235,6 +235,12 @@ export interface RuntimeConfig {
   /* ---- Capitol City (effect layer) — deployed dark, off by default ---- */
   cityEnabled: boolean;                      // master switch: city engine never loads, ticks, or persists when false (deploy dark)
   cityMonthsPerTick: number;                 // city-months advanced per government tick (1-12); 1 keeps causality legible
+
+  /* ---- Scoreboard (E4) — deployed dark, off by default ---- */
+  scoreboardEnabled: boolean;                // master switch: sim exporter + reality bridge write metric_snapshots; false = zero scoreboard writes (deploy dark)
+  fredAdapterEnabled: boolean;               // FRED reality adapter (UNRATE/CPIAUCSL/GDP, Tier C); needs FRED_API_KEY in env (warn-and-degrade)
+  congressStatsAdapterEnabled: boolean;      // Congress.gov stats adapter (throughput + time-to-passage); needs CONGRESS_API_KEY in env (warn-and-degrade)
+  approvalScrapeEnabled: boolean;            // congressional-approval page scrape (Ballotpedia Polling Index); tolerant parser + staleness warn
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -461,6 +467,12 @@ const DEFAULTS: RuntimeConfig = {
   /* Capitol City (effect layer) — deployed dark */
   cityEnabled: false,
   cityMonthsPerTick: 1,
+
+  /* Scoreboard (E4) — deployed dark */
+  scoreboardEnabled: false,
+  fredAdapterEnabled: false,
+  congressStatsAdapterEnabled: false,
+  approvalScrapeEnabled: false,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

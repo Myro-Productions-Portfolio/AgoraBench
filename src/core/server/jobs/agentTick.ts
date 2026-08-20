@@ -36,6 +36,7 @@ import {
   governmentEvents,
   gazetteIssues,
   fiscalTickSummaries,
+  metricSnapshots,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
@@ -57,11 +58,13 @@ import { finalizeElection } from '@modules/elections/server/finalizeElection.js'
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
+import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
 import { pollWorldEvents, sweepWorldEvents } from '@modules/world/server/lib/worldFeedPoller.js';
 import { stepMacroEngine } from '@modules/world/server/lib/macroEngine.js';
 import { stepCityEngine } from '@modules/city/server/lib/cityTick.js';
 import { staleRepeatableKeys } from '../lib/tickReconcile.js';
 import { floorExpiryCutoff, selectExpiredFloorBills } from '../lib/billExpiryMath.js';
+import { simTierAValues, medianPassageTicks, throughputPerSession, averageApproval, simDateForTick, METRIC_KEYS, type MetricValue } from '../lib/scoreboardMath.js';
 
 /* ── Approval Rating Helper ─────────────────────────────────────────── */
 export async function updateApproval(
@@ -5427,16 +5430,20 @@ agentTickQueue.process(async () => {
       /* Phase 3: one fiscal summary row per tick — powers the budget
          dashboard's treasury chart. Writes regardless of the kill switch
          (revenue and treasury are real either way). Inside Phase 13's try:
-         a summary failure never kills the tick. Schema unchanged — debt
-         movement is NOT added as a new summary column (spec constraint);
-         it's fully recoverable from governmentSettings.debtOutstanding +
-         the debt_issued/debt_retired activity events above. */
+         a summary failure never kills the tick. E4 scoreboard (migration
+         0033) supersedes the old "debt movement is NOT a summary column"
+         constraint: debtOutstanding / taxRatePercent / gdpAnnual are
+         per-tick history now — the scoreboard needs true trajectories,
+         not reconstruction from activity events. */
       await db.insert(fiscalTickSummaries).values({
         tickId: currentTick?.id ?? undefined,
         tickNumber,
         revenue: totalRevenue,
         spending: tickSpendingThisTick,
         treasuryEnd: treasuryBalance,
+        debtOutstanding,
+        taxRatePercent: govSettings.taxRatePercent,
+        gdpAnnual: rc.gdpAnnual,
       });
 
       console.warn(`[SIMULATION] Phase 13: Revenue accrued $${totalRevenue}. Treasury: $${treasuryBalance}${rc.debtEngineEnabled ? ` (debt $${debtOutstanding})` : ''}`);
@@ -6745,6 +6752,27 @@ agentTickQueue.process(async () => {
     } catch (err) {
       console.warn('[SIMULATION] Reality pool error:', err);
     }
+
+    /* Scoreboard reality side (E4 slice 2): Tier A bridge over the rows
+       just pulled above + FRED / Congress-stats / approval-scrape adapters
+       (each behind its own flag). pullScoreboardReality never throws;
+       try/caught anyway so a future change can never take down a tick. */
+    if (rc.scoreboardEnabled) {
+      try {
+        const sb = await pullScoreboardReality({
+          fredAdapterEnabled: rc.fredAdapterEnabled,
+          congressStatsAdapterEnabled: rc.congressStatsAdapterEnabled,
+          approvalScrapeEnabled: rc.approvalScrapeEnabled,
+          gdpAnnual: rc.gdpAnnual,
+        });
+        console.warn(
+          `[SIMULATION] Scoreboard reality: wrote ${sb.written} metric snapshot(s)` +
+          (sb.errors.length > 0 ? ` (${sb.errors.length} adapter error(s): ${sb.errors.join('; ')})` : ''),
+        );
+      } catch (err) {
+        console.warn('[SIMULATION] Scoreboard reality error:', err);
+      }
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -6845,6 +6873,107 @@ agentTickQueue.process(async () => {
       }
     } catch (err) {
       console.warn('[APPROVAL] Fiscal consequence error:', err);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Scoreboard sim exporter — E4 slice 1                                 */
+  /* (docs/specs/observability-and-metrics.md). Writes sim-side           */
+  /* metric_snapshots from this tick's settled fiscal summary (Phase 13)  */
+  /* + enacted-law timestamps + officeholder approval. Zero LLM calls.    */
+  /* Runs AFTER the fiscal-consequence + decay blocks so the approval     */
+  /* metric reads the tick's FINAL approval state (the reality-side       */
+  /* bridge lives in the 16-tick reality-pull block instead — different   */
+  /* cadence, different source). Dark by default (rc.scoreboardEnabled);  */
+  /* failure-isolated per the city/gazette pattern — never fails a tick.  */
+  /* ------------------------------------------------------------------ */
+  if (rc.scoreboardEnabled) {
+    try {
+      const values: MetricValue[] = [];
+
+      /* This tick's fiscal-summary row (written in Phase 13). Tier A is
+         skipped when the row predates migration 0033's columns (NULLs). */
+      const [summaryRow] = await db
+        .select({
+          revenue: fiscalTickSummaries.revenue,
+          spending: fiscalTickSummaries.spending,
+          debtOutstanding: fiscalTickSummaries.debtOutstanding,
+          gdpAnnual: fiscalTickSummaries.gdpAnnual,
+        })
+        .from(fiscalTickSummaries)
+        .where(eq(fiscalTickSummaries.tickNumber, tickNumber))
+        .orderBy(desc(fiscalTickSummaries.createdAt))
+        .limit(1);
+
+      if (summaryRow && summaryRow.debtOutstanding !== null && summaryRow.gdpAnnual !== null) {
+        values.push(...simTierAValues({
+          revenue: summaryRow.revenue,
+          spending: summaryRow.spending,
+          debtOutstanding: summaryRow.debtOutstanding,
+          gdpAnnual: summaryRow.gdpAnnual,
+        }));
+      }
+
+      /* Tier B throughput + time-to-passage over laws enacted since T0.
+         Introduction ticks aren't stored anywhere — durations are the
+         wall-clock timestamps converted via the current tick interval
+         (see medianPassageTicks' caveat on historical interval changes). */
+      if (rc.divergenceT0Tick > 0 && tickNumber > rc.divergenceT0Tick) {
+        const enacted = await db
+          .select({ enactedDate: laws.enactedDate, introducedAt: bills.introducedAt })
+          .from(laws)
+          .innerJoin(bills, eq(laws.billId, bills.id))
+          .where(sql`${laws.enactedTick} IS NOT NULL AND ${laws.enactedTick} >= ${rc.divergenceT0Tick}`)
+          .limit(5000);
+
+        const throughput = throughputPerSession(enacted.length, tickNumber - rc.divergenceT0Tick);
+        if (throughput !== null) values.push({ metricKey: METRIC_KEYS.legislativeThroughput, value: throughput });
+
+        const durations = enacted.map((l) => l.enactedDate.getTime() - l.introducedAt.getTime());
+        const medianTicks = medianPassageTicks(durations, rc.tickIntervalMs);
+        if (medianTicks !== null) values.push({ metricKey: METRIC_KEYS.timeToPassage, value: medianTicks });
+      }
+
+      /* Approval trend: avg over CURRENT officeholders, read fresh from
+         agents (activeAgents was snapshotted at tick start, before this
+         tick's approval moves). */
+      const officeholderIds = [...new Set(
+        (await db
+          .select({ agentId: positions.agentId })
+          .from(positions)
+          .where(eq(positions.isActive, true))
+        ).map((p) => p.agentId),
+      )];
+      if (officeholderIds.length > 0) {
+        const ratings = await db
+          .select({ approvalRating: agents.approvalRating })
+          .from(agents)
+          .where(inArray(agents.id, officeholderIds));
+        const avg = averageApproval(ratings.map((r) => r.approvalRating));
+        if (avg !== null) values.push({ metricKey: METRIC_KEYS.approvalTrend, value: avg });
+      }
+
+      const atDate = simDateForTick(
+        tickNumber,
+        rc.divergenceT0Tick,
+        rc.divergenceT0Date,
+        new Date().toISOString().slice(0, 10),
+      );
+      let written = 0;
+      for (const v of values) {
+        if (!Number.isFinite(v.value)) continue;
+        await db
+          .insert(metricSnapshots)
+          .values({ metricKey: v.metricKey, side: 'sim', value: v.value, atDate, atTick: tickNumber })
+          .onConflictDoUpdate({
+            target: [metricSnapshots.metricKey, metricSnapshots.side, metricSnapshots.atDate, metricSnapshots.atTick],
+            set: { value: v.value },
+          });
+        written++;
+      }
+      console.warn(`[SIMULATION] Scoreboard: exported ${written} sim metric snapshot(s) for tick ${tickNumber}`);
+    } catch (err) {
+      console.warn('[SIMULATION] Scoreboard export error:', err);
     }
   }
 

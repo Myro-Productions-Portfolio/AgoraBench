@@ -1,0 +1,92 @@
+{
+ "bills": [
+  {
+   "congress": 119,
+   "latestAction": {
+    "actionDate": "2026-07-12",
+    "text": "Became Public Law No: 119-102."
+   },
+   "laws": [
+    {
+     "number": "119-102",
+     "type": "Public Law"
+    }
+   ],
+   "number": "629",
+   "originChamber": "Senate",
+   "originChamberCode": "S",
+   "title": "Emergency Conservation Program Improvement Act of 2025",
+   "type": "S",
+   "updateDate": "2026-07-31",
+   "updateDateIncludingText": "2026-07-31"
+  },
+  {
+   "congress": 119,
+   "latestAction": {
+    "actionDate": "2026-07-11",
+    "text": "Became Public Law No: 119-101."
+   },
+   "laws": [
+    {
+     "number": "119-101",
+     "type": "Public Law"
+    }
+   ],
+   "number": "6644",
+   "originChamber": "House",
+   "originChamberCode": "H",
+   "title": "21st Century ROAD to Housing Act",
+   "type": "HR",
+   "updateDate": "2026-08-13",
+   "updateDateIncludingText": "2026-08-13"
+  },
+  {
+   "congress": 119,
+   "latestAction": {
+    "actionDate": "2026-06-26",
+    "text": "Became Public Law No: 119-100."
+   },
+   "laws": [
+    {
+     "number": "119-100",
+     "type": "Public Law"
+    }
+   ],
+   "number": "1003",
+   "originChamber": "Senate",
+   "originChamberCode": "S",
+   "title": "Lulu\u2019s Law",
+   "type": "S",
+   "updateDate": "2026-08-04",
+   "updateDateIncludingText": "2026-08-04"
+  },
+  {
+   "congress": 119,
+   "latestAction": {
+    "actionDate": "2026-06-12",
+    "text": "Became Public Law No: 119-99."
+   },
+   "laws": [
+    {
+     "number": "119-99",
+     "type": "Public Law"
+    }
+   ],
+   "number": "254",
+   "originChamber": "Senate",
+   "originChamberCode": "S",
+   "title": "ARTIST Act",
+   "type": "S",
+   "updateDate": "2026-08-04",
+   "updateDateIncludingText": "2026-08-04"
+  }
+ ],
+ "pagination": {
+  "count": 104
+ },
+ "request": {
+  "congress": "119",
+  "contentType": "application/json",
+  "format": "json"
+ }
+}

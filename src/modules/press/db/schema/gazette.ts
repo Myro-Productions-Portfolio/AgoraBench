@@ -13,6 +13,10 @@ export const gazetteIssues = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     tickId: uuid('tick_id').references(() => tickLog.id),
+    /* 'gazette' = Daily Gazette (enters agent prompts via buildRecentNewsBlock);
+       'ten_k' = the Agora 10-K (sim-vs-REALITY narrative — press surfaces only,
+       must never enter agent prompts: agent-facing readers filter kind='gazette'). */
+    kind: varchar('kind', { length: 20 }).notNull().default('gazette'),
     headline: varchar('headline', { length: 200 }).notNull(),
     body: text('body').notNull(),
     /* Deterministic digest the LLM was given — audit trail, never model output. */
@@ -21,5 +25,6 @@ export const gazetteIssues = pgTable(
   },
   (t) => ({
     createdAtIdx: index('gazette_issues_created_at_idx').on(t.createdAt),
+    kindCreatedAtIdx: index('gazette_issues_kind_created_at_idx').on(t.kind, t.createdAt.desc()),
   }),
 );

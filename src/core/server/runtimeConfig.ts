@@ -235,6 +235,9 @@ export interface RuntimeConfig {
   /* ---- Capitol City (effect layer) — deployed dark, off by default ---- */
   cityEnabled: boolean;                      // master switch: city engine never loads, ticks, or persists when false (deploy dark)
   cityMonthsPerTick: number;                 // city-months advanced per government tick (1-12); 1 keeps causality legible
+
+  /* ---- Scoreboard (E4) — deployed dark, off by default ---- */
+  scoreboardEnabled: boolean;                // master switch: sim exporter + reality bridge write metric_snapshots; false = zero scoreboard writes (deploy dark)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -461,6 +464,9 @@ const DEFAULTS: RuntimeConfig = {
   /* Capitol City (effect layer) — deployed dark */
   cityEnabled: false,
   cityMonthsPerTick: 1,
+
+  /* Scoreboard (E4) — deployed dark */
+  scoreboardEnabled: false,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

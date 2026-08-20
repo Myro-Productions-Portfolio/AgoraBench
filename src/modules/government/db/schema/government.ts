@@ -119,6 +119,13 @@ export const fiscalTickSummaries = pgTable(
     revenue: bigint('revenue', { mode: 'number' }).notNull(),
     spending: bigint('spending', { mode: 'number' }).notNull(),
     treasuryEnd: bigint('treasury_end', { mode: 'number' }).notNull(),
+    /* E4 scoreboard (migration 0033): per-tick history for three fields
+       that previously lived only on the single mutable government_settings
+       row / runtime config — no trajectory was reconstructable. Nullable:
+       legacy rows predate the columns and stay NULL. */
+    debtOutstanding: bigint('debt_outstanding', { mode: 'number' }),
+    taxRatePercent: integer('tax_rate_percent'),
+    gdpAnnual: bigint('gdp_annual', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

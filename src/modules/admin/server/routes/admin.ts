@@ -606,6 +606,11 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const cmpt = posInt('cityMonthsPerTick', 1, 12);
     if (cmpt !== undefined) update.cityMonthsPerTick = cmpt;
 
+    /* Scoreboard (E4) — Rule 1: every RuntimeConfig field gets a server
+       handler branch, same commit. scoreboardEnabled gates ALL
+       metric_snapshots writes (sim exporter + reality bridge) — deploy dark. */
+    if (typeof body.scoreboardEnabled === 'boolean') update.scoreboardEnabled = body.scoreboardEnabled;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

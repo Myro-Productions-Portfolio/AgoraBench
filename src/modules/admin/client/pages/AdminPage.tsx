@@ -244,6 +244,8 @@ interface RuntimeConfig {
   /* Capitol City (effect layer) */
   cityEnabled: boolean;
   cityMonthsPerTick: number;
+  /* Scoreboard (E4) */
+  scoreboardEnabled: boolean;
 }
 
 interface EconomySettings {
@@ -3295,6 +3297,28 @@ export function AdminPage() {
                     />
                     <p className="text-xs text-text-muted">City-months advanced per government tick. 1 keeps causality legible: this tick's budget → this month's city.</p>
                   </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Scoreboard (E4) — deployed dark */}
+            {simConfig && (
+              <CollapsibleSection
+                id="scoreboard"
+                title="Scoreboard"
+                subtitle="Sim-vs-reality metric registry — per-tick sim exporter + reality-side series into metric_snapshots. Deployed dark — see docs/specs/observability-and-metrics.md."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Scoreboard Enabled (master switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.scoreboardEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, scoreboardEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ scoreboardEnabled: simConfig.scoreboardEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, no metric snapshots are written at all — sim exporter and reality bridge are both unreachable.</p>
                 </div>
               </CollapsibleSection>
             )}

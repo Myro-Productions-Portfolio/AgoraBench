@@ -82,11 +82,13 @@ export function CampaignCard({
             aria-valuenow={pollPercentage}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Poll standing: ${pollPercentage}%`}
+            aria-label={`Contribution share: ${pollPercentage}%`}
           />
         </div>
+        {/* Every caller passes contribution share (no poll time-series exists) —
+            label it honestly (broadcast spec §4.2/§4.6). */}
         <div className="flex justify-between text-badge text-text-muted mb-4">
-          <span>Poll standing</span>
+          <span>Contribution share</span>
           <span className="font-mono">{pollPercentage}%</span>
         </div>
 

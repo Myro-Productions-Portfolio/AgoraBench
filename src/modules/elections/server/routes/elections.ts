@@ -1,10 +1,46 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { elections, agents, votes, campaigns, parties, partyMemberships } from '@db/schema/index';
+import { elections, agents, votes, campaigns, parties, partyMemberships, type ElectionElectoralVotes } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { getRuntimeConfig } from '@core/server/runtimeConfig';
+import { EC_MAJORITY, ELECTORAL_VOTES, STATE_ORDER } from '@core/server/lib/electoralCollege';
+import { computeElectoralSnapshot, orderCandidates } from '@core/server/lib/electionMath';
 
 const router = Router();
+
+export interface ElectoralCollegeBlock {
+  enabled: true;
+  stateResults: Record<string, string>;
+  evByCandidate: Record<string, number>;
+  totalEvAllocated: number;
+  threshold: number;
+  winnerId: string | null;
+  reachedMajority: boolean;
+}
+
+/**
+ * The whitelisted electoralCollege response block for GET /elections/:id
+ * (broadcast spec §3.1). Null — and the key omitted — when the election was
+ * certified without the EC path (both columns null: non-presidential, or
+ * electoralCollegeEnabled false at certification time). Never spreads the
+ * raw row. Exported for unit tests.
+ */
+export function buildElectoralCollegeBlock(
+  stateResults: Record<string, string> | null,
+  electoralVotes: ElectionElectoralVotes | null,
+): ElectoralCollegeBlock | null {
+  if (!electoralVotes) return null;
+  return {
+    enabled: true,
+    stateResults: stateResults ?? {},
+    evByCandidate: electoralVotes.evByCandidate ?? {},
+    totalEvAllocated: electoralVotes.totalEvAllocated ?? 0,
+    threshold: EC_MAJORITY,
+    winnerId: electoralVotes.winnerId ?? null,
+    reachedMajority: electoralVotes.reachedMajority === true,
+  };
+}
 
 /* GET /api/elections/active -- Returns active/upcoming elections */
 router.get('/elections/active', async (_req, res, next) => {
@@ -94,6 +130,72 @@ router.get('/elections/past', async (_req, res, next) => {
     );
 
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/* GET /api/elections/:id/electoral -- Provisional Electoral College snapshot
+   over the ballots cast SO FAR (broadcast spec §3.2, compute-on-read: pure
+   reuse of assignVoterState + tallyElectionVotes + tallyElectoralCollege via
+   computeElectoralSnapshot — no writes, no new math). Public read-only, like
+   the rest of /elections. Guarded: only a presidential race with
+   electoralCollegeEnabled gets a snapshot; otherwise { enabled: false } and
+   the client shows the national tally only. */
+router.get('/elections/:id/electoral', async (req, res, next) => {
+  try {
+    const [election] = await db
+      .select({ id: elections.id, positionType: elections.positionType, status: elections.status })
+      .from(elections)
+      .where(eq(elections.id, req.params.id))
+      .limit(1);
+
+    if (!election) throw new AppError(404, 'Election not found');
+
+    const rc = getRuntimeConfig();
+    if (!rc.electoralCollegeEnabled || election.positionType !== 'president') {
+      res.json({ success: true, data: { enabled: false } });
+      return;
+    }
+
+    /* Deterministic candidate order — same registration-order convention as
+       finalizeElection, so provisional tie-breaks match certification. */
+    const campaignRows = await db
+      .select({
+        agentId: campaigns.agentId,
+        startDate: sql<string>`min(${campaigns.startDate})`,
+        campaignId: sql<string>`min(${campaigns.id}::text)`,
+      })
+      .from(campaigns)
+      .where(and(eq(campaigns.electionId, req.params.id), eq(campaigns.status, 'active')))
+      .groupBy(campaigns.agentId);
+    const candidateOrder = orderCandidates(
+      campaignRows.map((c) => ({ agentId: c.agentId, totalContributions: 0, startDate: c.startDate, campaignId: c.campaignId })),
+    );
+
+    const ballots = await db
+      .select({ candidateId: votes.candidateId, voterId: votes.voterId })
+      .from(votes)
+      .where(eq(votes.electionId, req.params.id));
+
+    const snapshot = computeElectoralSnapshot(ballots, ELECTORAL_VOTES, [...STATE_ORDER], candidateOrder, EC_MAJORITY);
+
+    res.json({
+      success: true,
+      data: {
+        enabled: true,
+        status: election.status,
+        provisional: election.status !== 'certified',
+        stateResults: snapshot.stateWinners,
+        evByCandidate: snapshot.evByCandidate,
+        totalEvAllocated: snapshot.totalEvAllocated,
+        threshold: EC_MAJORITY,
+        winnerId: snapshot.winnerId,
+        reachedMajority: snapshot.reachedMajority,
+        ballotsCounted: snapshot.ballotsCounted,
+        statesCalled: Object.keys(snapshot.stateWinners).length,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -195,6 +297,11 @@ router.get('/elections/:id', async (req, res, next) => {
       castAt: v.castAt,
     }));
 
+    const electoralCollege = buildElectoralCollegeBlock(
+      election.stateResults ?? null,
+      election.electoralVotes ?? null,
+    );
+
     res.json({
       success: true,
       data: {
@@ -211,6 +318,7 @@ router.get('/elections/:id', async (req, res, next) => {
         winnerId: election.winnerId,
         candidates,
         rollCall,
+        ...(electoralCollege ? { electoralCollege } : {}),
       },
     });
   } catch (error) {

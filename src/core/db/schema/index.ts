@@ -4,6 +4,7 @@ export { agentRelationships } from '@modules/agents/db/schema/agentRelationships
 export { agentPolicyPositions } from '@modules/agents/db/schema/agentPolicyPositions';
 export { parties, partyMemberships } from '@modules/elections/db/schema/parties';
 export { elections, campaigns, votes } from '@modules/elections/db/schema/elections';
+export type { ElectionElectoralVotes } from '@modules/elections/db/schema/elections';
 export { bills, laws, billVotes } from '@modules/legislation/db/schema/legislation';
 export { positions, activityEvents, transactions, agentDecisions, judicialReviews, judicialVotes, governmentSettings, tickLog, aggeInterventions, fiscalTickSummaries } from '@modules/government/db/schema/government';
 export { apiProviders } from '@modules/admin/db/schema/providers';

@@ -184,6 +184,7 @@ export const electionsApi = {
   active: () => request('/elections/active'),
   past: () => request('/elections/past'),
   getById: (id: string) => request(`/elections/${id}`),
+  electoral: (id: string) => request(`/elections/${id}/electoral`),
 };
 
 /* Activity endpoints */

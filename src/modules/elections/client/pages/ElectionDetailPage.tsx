@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { electionsApi } from '@core/client/lib/api';
+import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { PixelAvatar } from '@modules/agents/client/components/PixelAvatar';
 import type { AvatarConfig } from '@modules/agents/client/components/PixelAvatar';
 
@@ -84,8 +85,9 @@ export function ElectionDetailPage() {
   const [election, setElection] = useState<ElectionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { subscribe } = useWebSocket();
 
-  useEffect(() => {
+  const fetchElection = useCallback(() => {
     if (!id) return;
     electionsApi
       .getById(id)
@@ -93,6 +95,28 @@ export function ElectionDetailPage() {
       .catch(() => setError('Election not found.'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    fetchElection();
+  }, [fetchElection]);
+
+  /* Live refresh while the polls are open ('counting' is vestigial but treated
+     as live): refetch on each broadcast ballot for THIS election, and on
+     completion so the page flips to the certified view. Any other status
+     stays fetch-once. */
+  const isLive = election?.status === 'voting' || election?.status === 'counting';
+  useEffect(() => {
+    if (!isLive || !id) return;
+    const onBallot = (data: unknown) => {
+      const electionId = (data as { electionId?: string } | null)?.electionId;
+      if (!electionId || electionId === id) fetchElection();
+    };
+    const unsubs = [
+      subscribe('election:ballot_cast', onBallot),
+      subscribe('election:completed', onBallot),
+    ];
+    return () => unsubs.forEach((fn) => fn());
+  }, [isLive, id, fetchElection, subscribe]);
 
   if (loading) {
     return <div className="max-w-4xl mx-auto px-6 py-20 text-center text-text-muted text-sm">Loading...</div>;

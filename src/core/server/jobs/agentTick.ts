@@ -55,7 +55,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose } from '../lib/electionMath.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5669,13 +5669,18 @@ agentTickQueue.process(async () => {
      * incumbent is a single idempotent action that always resolves the
      * election). If there is no incumbent either (open-seat election with
      * zero takers), registration is left open — it will pick up any
-     * candidacy declared next tick with no data loss. */
-    const electionsPastRegistration = await db
-      .select()
-      .from(elections)
-      .where(and(eq(elections.positionType, 'president'), eq(elections.status, 'registration'), lte(elections.registrationDeadline, now)));
-
-    for (const election of electionsPastRegistration) {
+     * candidacy declared next tick with no data loss.
+     *
+     * Deadline gating is per-row in JS, tick-first with wall fallback (B1):
+     * rows with a registrationEndsTick anchor gate on tickNumber; legacy
+     * NULL-anchor rows keep the wall-clock lte(registrationDeadline) check.
+     * Reuses electionsInRegistration from the candidacy block above — the
+     * old separate query differed only by the wall filter this replaces. */
+    for (const election of electionsInRegistration) {
+      const deadlineReached = election.registrationEndsTick != null
+        ? tickNumber >= election.registrationEndsTick
+        : new Date(election.registrationDeadline).getTime() <= now.getTime();
+      if (!deadlineReached) continue;
       const activeCampaignRows = await db
         .select({ agentId: campaigns.agentId })
         .from(campaigns)
@@ -5716,9 +5721,22 @@ agentTickQueue.process(async () => {
         }
       }
 
-      if (!registrationShouldClose(now, election.registrationDeadline, campaignCount)) continue;
+      const shouldClose = election.registrationEndsTick != null
+        ? registrationShouldCloseAtTick(tickNumber, election.registrationEndsTick, campaignCount)
+        : registrationShouldClose(now, election.registrationDeadline, campaignCount);
+      if (!shouldClose) continue;
 
-      await db.update(elections).set({ status: 'campaigning' }).where(eq(elections.id, election.id));
+      /* Tick-anchored rows refresh their derived display dates at the
+         transition so banner countdowns stay honest across interval changes
+         (the tick columns stay authoritative; zero UI edits needed). */
+      const displayRefresh = election.votingStartTick != null && election.votingEndTick != null
+        ? {
+            registrationDeadline: now,
+            votingStartDate: wallDateForTick(election.votingStartTick, tickNumber, now, rc.tickIntervalMs),
+            votingEndDate: wallDateForTick(election.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+          }
+        : {};
+      await db.update(elections).set({ status: 'campaigning', ...displayRefresh }).where(eq(elections.id, election.id));
 
       await db.insert(activityEvents).values({
         type: 'election_campaigning_started',
@@ -5734,16 +5752,28 @@ agentTickQueue.process(async () => {
       console.warn(`[SIMULATION] Phase 14: Election ${election.id} moved registration -> campaigning (${campaignCount} candidate(s))`);
     }
 
-    /* campaigning -> voting */
-    const electionsThatShouldBeginVoting = await db
+    /* campaigning -> voting — per-row tick-first gate, wall fallback (B1) */
+    const electionsCampaigning = await db
       .select()
       .from(elections)
-      .where(and(eq(elections.status, 'campaigning'), lte(elections.votingStartDate, now)));
+      .where(eq(elections.status, 'campaigning'));
 
-    for (const election of electionsThatShouldBeginVoting) {
+    for (const election of electionsCampaigning) {
+      const shouldOpen = election.votingStartTick != null
+        ? votingShouldOpenAtTick(tickNumber, election.votingStartTick)
+        : election.votingStartDate != null && new Date(election.votingStartDate).getTime() <= now.getTime();
+      if (!shouldOpen) continue;
+
+      /* Display-date refresh at the transition (tick-anchored rows only). */
+      const votingDisplayRefresh = election.votingEndTick != null
+        ? {
+            votingStartDate: now,
+            votingEndDate: wallDateForTick(election.votingEndTick, tickNumber, now, rc.tickIntervalMs),
+          }
+        : {};
       await db
         .update(elections)
-        .set({ status: 'voting' })
+        .set({ status: 'voting', ...votingDisplayRefresh })
         .where(eq(elections.id, election.id));
 
       await db.insert(activityEvents).values({
@@ -5979,11 +6009,15 @@ agentTickQueue.process(async () => {
       }
     }
 
-    /* voting -> certified (via shared finalizeElection helper) */
-    const electionsToComplete = await db
-      .select()
-      .from(elections)
-      .where(and(eq(elections.status, 'voting'), lte(elections.votingEndDate, now)));
+    /* voting -> certified (via shared finalizeElection helper) — per-row
+       tick-first gate, wall fallback (B1). Reuses electionsCurrentlyVoting
+       from the ballot pass above (no status writes happen in between; the
+       old separate query differed only by the wall filter this replaces). */
+    const electionsToComplete = electionsCurrentlyVoting.filter((election) =>
+      election.votingEndTick != null
+        ? votingShouldCloseAtTick(tickNumber, election.votingEndTick)
+        : election.votingEndDate != null && new Date(election.votingEndDate).getTime() <= now.getTime(),
+    );
 
     for (const election of electionsToComplete) {
       const result = await finalizeElection(election.id);
@@ -6075,9 +6109,11 @@ agentTickQueue.process(async () => {
 
       if (!inflightPresElection) {
         console.warn('[SIMULATION] Phase 14: No sitting president and no election in flight — triggering new election');
-        const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-        const votingStartDate = new Date(now.getTime() + (rc.campaignDurationDays ?? 14) * 24 * 60 * 60 * 1000);
-        const votingEndDate = new Date(votingStartDate.getTime() + (rc.votingDurationHours ?? 48) * 60 * 60 * 1000);
+        /* Tick-anchored schedule (B1); timestamps become derived display dates. */
+        const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+        const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+        const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+        const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
 
         const [newElection] = await db
           .insert(elections)
@@ -6088,6 +6124,10 @@ agentTickQueue.process(async () => {
             registrationDeadline,
             votingStartDate,
             votingEndDate,
+            createdTick: tickNumber,
+            registrationEndsTick: sched.registrationEndsTick,
+            votingStartTick: sched.votingStartTick,
+            votingEndTick: sched.votingEndTick,
           })
           .returning({ id: elections.id });
 
@@ -6136,9 +6176,11 @@ agentTickQueue.process(async () => {
 
         if (!inflightPresElection) {
           console.warn(`[SIMULATION] Phase 14: President term expired (${Math.round(tenure)}/${rc.presidentTermTicks} ticks) — triggering re-election`);
-          const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-          const votingStartDate = new Date(now.getTime() + (rc.campaignDurationDays ?? 14) * 24 * 60 * 60 * 1000);
-          const votingEndDate = new Date(votingStartDate.getTime() + (rc.votingDurationHours ?? 48) * 60 * 60 * 1000);
+          /* Tick-anchored schedule (B1); timestamps become derived display dates. */
+          const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+          const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+          const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+          const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
 
           const [newElection] = await db
             .insert(elections)
@@ -6149,6 +6191,10 @@ agentTickQueue.process(async () => {
               registrationDeadline,
               votingStartDate,
               votingEndDate,
+              createdTick: tickNumber,
+              registrationEndsTick: sched.registrationEndsTick,
+              votingStartTick: sched.votingStartTick,
+              votingEndTick: sched.votingEndTick,
             })
             .returning({ id: elections.id });
 

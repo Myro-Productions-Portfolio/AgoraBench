@@ -14,6 +14,11 @@ import {
   filterCandidacyEligible,
   registrationShouldClose,
   isRealCandidacyStatus,
+  electionTickSchedule,
+  registrationShouldCloseAtTick,
+  votingShouldOpenAtTick,
+  votingShouldCloseAtTick,
+  wallDateForTick,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -617,5 +622,90 @@ describe('isRealCandidacyStatus', () => {
 
   it('is a plain string comparison — any unrecognized future status defaults to real (only "declined" is special-cased out)', () => {
     expect(isRealCandidacyStatus('some_future_status')).toBe(true);
+  });
+});
+
+/* ── Election cycles B1: tick-anchored scheduling ─────────────────────── */
+
+describe('electionTickSchedule', () => {
+  it('lays out sequential windows: created -> +registration -> +campaign -> +voting', () => {
+    expect(electionTickSchedule(100, 7, 30, 6)).toEqual({
+      registrationEndsTick: 107,
+      votingStartTick: 137,
+      votingEndTick: 143,
+    });
+  });
+
+  it('floors fractional durations and clamps each window to at least 1 tick', () => {
+    expect(electionTickSchedule(1, 0, -5, 2.9)).toEqual({
+      registrationEndsTick: 2,
+      votingStartTick: 3,
+      votingEndTick: 5,
+    });
+  });
+
+  it('is defensive on non-finite createdTick (treated as tick 1)', () => {
+    expect(electionTickSchedule(NaN, 1, 1, 1)).toEqual({
+      registrationEndsTick: 2,
+      votingStartTick: 3,
+      votingEndTick: 4,
+    });
+  });
+});
+
+describe('registrationShouldCloseAtTick', () => {
+  it('false before the deadline tick regardless of campaign count', () => {
+    expect(registrationShouldCloseAtTick(106, 107, 5)).toBe(false);
+  });
+
+  it('keeps the >=1-campaign AND: false at/after the deadline with zero campaigns', () => {
+    expect(registrationShouldCloseAtTick(107, 107, 0)).toBe(false);
+    expect(registrationShouldCloseAtTick(999, 107, 0)).toBe(false);
+  });
+
+  it('true at the boundary (>=) and after, with >=1 campaign', () => {
+    expect(registrationShouldCloseAtTick(107, 107, 1)).toBe(true);
+    expect(registrationShouldCloseAtTick(108, 107, 3)).toBe(true);
+  });
+
+  it('null/undefined/non-finite anchor -> false (legacy wall-clock rows never match)', () => {
+    expect(registrationShouldCloseAtTick(107, null, 1)).toBe(false);
+    expect(registrationShouldCloseAtTick(107, undefined, 1)).toBe(false);
+    expect(registrationShouldCloseAtTick(107, NaN, 1)).toBe(false);
+  });
+});
+
+describe('votingShouldOpenAtTick / votingShouldCloseAtTick', () => {
+  it('boundary is >= (opens/closes ON the anchor tick)', () => {
+    expect(votingShouldOpenAtTick(137, 137)).toBe(true);
+    expect(votingShouldOpenAtTick(136, 137)).toBe(false);
+    expect(votingShouldCloseAtTick(143, 143)).toBe(true);
+    expect(votingShouldCloseAtTick(142, 143)).toBe(false);
+  });
+
+  it('null-defensive: null/undefined/NaN anchors never open or close', () => {
+    expect(votingShouldOpenAtTick(999, null)).toBe(false);
+    expect(votingShouldOpenAtTick(999, undefined)).toBe(false);
+    expect(votingShouldCloseAtTick(999, null)).toBe(false);
+    expect(votingShouldCloseAtTick(999, NaN)).toBe(false);
+  });
+});
+
+describe('wallDateForTick', () => {
+  const now = new Date('2026-08-20T00:00:00Z');
+  const HOUR = 60 * 60 * 1000;
+
+  it('projects future ticks onto wall time at the current interval', () => {
+    expect(wallDateForTick(107, 100, now, HOUR).getTime()).toBe(now.getTime() + 7 * HOUR);
+  });
+
+  it('clamps past/current ticks to now (a countdown never shows negative)', () => {
+    expect(wallDateForTick(100, 100, now, HOUR).getTime()).toBe(now.getTime());
+    expect(wallDateForTick(95, 100, now, HOUR).getTime()).toBe(now.getTime());
+  });
+
+  it('non-positive/non-finite interval degrades to now instead of NaN dates', () => {
+    expect(wallDateForTick(107, 100, now, 0).getTime()).toBe(now.getTime());
+    expect(wallDateForTick(107, 100, now, NaN).getTime()).toBe(now.getTime());
   });
 });

@@ -472,6 +472,100 @@ export function registrationShouldClose(now: Date | string | number, registratio
   return current >= deadline && activeCampaignCount > 0;
 }
 
+/* ────────────────────────────────────────────────────────────────────────
+ * Election cycles (B1) — tick-anchored scheduling
+ *
+ * Elections created after migration 0034 carry tick anchors (created_tick,
+ * registration_ends_tick, voting_start_tick, voting_end_tick) and their
+ * phase transitions gate on tick number, immune to tick-interval changes
+ * and server downtime (the PR #47 "tick numbers, not timestamps" lesson).
+ * Legacy rows have NULL anchors and keep the wall-clock gates — every
+ * helper here is null-defensive and returns false for a missing anchor so
+ * a legacy row can never accidentally match a tick gate.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+export interface ElectionTickSchedule {
+  registrationEndsTick: number;
+  votingStartTick: number;
+  votingEndTick: number;
+}
+
+/**
+ * Sequential phase windows from the creation tick: registration closes at
+ * created + registrationTicks, voting opens campaignTicks later, closes
+ * votingTicks after that. Durations floor to integers and clamp to >= 1 so
+ * a misconfigured 0/negative window can never produce a schedule that is
+ * already past at creation.
+ */
+export function electionTickSchedule(
+  createdTick: number,
+  registrationTicks: number,
+  campaignTicks: number,
+  votingTicks: number,
+): ElectionTickSchedule {
+  const base = Number.isFinite(createdTick) ? Math.max(1, Math.floor(createdTick)) : 1;
+  const dur = (v: number): number => (Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1);
+  const registrationEndsTick = base + dur(registrationTicks);
+  const votingStartTick = registrationEndsTick + dur(campaignTicks);
+  const votingEndTick = votingStartTick + dur(votingTicks);
+  return { registrationEndsTick, votingStartTick, votingEndTick };
+}
+
+/**
+ * Tick-anchored registration -> campaigning gate. KEEPS the >=1-campaign
+ * AND from registrationShouldClose: a zero-candidate deadline resolves via
+ * the caller's incumbent/sitting-member auto-registration fallback, never
+ * by extending the deadline.
+ */
+export function registrationShouldCloseAtTick(
+  tickNumber: number,
+  registrationEndsTick: number | null | undefined,
+  activeCampaignCount: number,
+): boolean {
+  if (typeof registrationEndsTick !== 'number' || !Number.isFinite(registrationEndsTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= registrationEndsTick && activeCampaignCount > 0;
+}
+
+/** Tick-anchored campaigning -> voting gate. Null/non-finite anchor -> false. */
+export function votingShouldOpenAtTick(tickNumber: number, votingStartTick: number | null | undefined): boolean {
+  if (typeof votingStartTick !== 'number' || !Number.isFinite(votingStartTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= votingStartTick;
+}
+
+/** Tick-anchored voting -> certified gate. Null/non-finite anchor -> false. */
+export function votingShouldCloseAtTick(tickNumber: number, votingEndTick: number | null | undefined): boolean {
+  if (typeof votingEndTick !== 'number' || !Number.isFinite(votingEndTick)) return false;
+  if (!Number.isFinite(tickNumber)) return false;
+  return tickNumber >= votingEndTick;
+}
+
+/**
+ * Project a future tick anchor onto a display wall date at the current tick
+ * interval: now + (targetTick - tickNumber) * tickIntervalMs, clamped to now
+ * for past/current ticks. Display-only — phase gates read the tick anchors,
+ * never these derived dates; refreshed at each transition so countdowns stay
+ * honest across interval changes with zero UI edits.
+ */
+export function wallDateForTick(
+  targetTick: number,
+  tickNumber: number,
+  now: Date | string | number,
+  tickIntervalMs: number,
+): Date {
+  const nowMs = new Date(now).getTime();
+  if (
+    !Number.isFinite(targetTick) ||
+    !Number.isFinite(tickNumber) ||
+    !Number.isFinite(tickIntervalMs) ||
+    tickIntervalMs <= 0
+  ) {
+    return new Date(nowMs);
+  }
+  return new Date(nowMs + Math.max(0, targetTick - tickNumber) * tickIntervalMs);
+}
+
 /**
  * Single source of truth for "is this campaigns.status a real candidacy the
  * public/owner should ever see." 'declined' (elections revival minimal

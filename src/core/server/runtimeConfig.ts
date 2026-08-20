@@ -32,8 +32,8 @@ export interface RuntimeConfig {
   supermajorityPercentage: number;   // 0.0 – 1.0
 
   /* ---- Elections ---- */
-  campaignDurationDays: number;
-  votingDurationHours: number;
+  campaignDurationDays: number;      // DEPRECATED: legacy in-flight (pre-0034) rows only — new elections schedule by electionCampaignTicks
+  votingDurationHours: number;       // DEPRECATED: legacy in-flight (pre-0034) rows only — new elections schedule by electionVotingTicks
   minReputationToRun: number;
   minReputationToVote: number;
 
@@ -230,7 +230,15 @@ export interface RuntimeConfig {
   electoralCollegeEnabled: boolean;          // Slice 4: president tallied per-state → Electoral College (270 to win). Off = today's single honest national popular-vote count.
 
   /* ---- Elections Revival (minimal slice) — deployed dark, off by default ---- */
-  presidentTermTicks: number;                // incumbent tenure limit in ticks (wall-clock-derived from positions.startDate); 0 = disabled, preserves today's suppress-while-seated behavior; recommended 1460 ≈ 4 sim-years
+  presidentTermTicks: number;                // incumbent tenure limit in ticks (tick-stamped positions.startTick preferred, wall-clock fallback); 0 = disabled, preserves today's suppress-while-seated behavior; recommended 1460 ≈ 4 sim-years
+
+  /* ---- Election Cycles — tick-anchored phase schedule (1 tick = 1 sim-day) ---- */
+  /* Governs elections created after migration 0034; legacy in-flight rows keep
+     campaignDurationDays/votingDurationHours wall-clock physics until drained. */
+  electionRegistrationTicks: number;         // registration window in ticks (1-365)
+  electionCampaignTicks: number;             // campaigning window in ticks (1-730)
+  electionVotingTicks: number;               // voting window in ticks (1-90)
+  congressTermTicks: number;                 // congressional general election cadence in ticks; 0 = disabled/dark (0-100000; recommended 730 ≈ 2 sim-years)
 
   /* ---- Capitol City (effect layer) — deployed dark, off by default ---- */
   cityEnabled: boolean;                      // master switch: city engine never loads, ticks, or persists when false (deploy dark)
@@ -463,6 +471,12 @@ const DEFAULTS: RuntimeConfig = {
 
   /* Elections Revival (minimal slice) — deployed dark */
   presidentTermTicks: 0,
+
+  /* Election Cycles — tick-anchored schedule; congress generals dark (0) */
+  electionRegistrationTicks: 7,
+  electionCampaignTicks: 30,
+  electionVotingTicks: 6,
+  congressTermTicks: 0,
 
   /* Capitol City (effect layer) — deployed dark */
   cityEnabled: false,

@@ -18,6 +18,8 @@ import { getRuntimeConfig, updateRuntimeConfig } from '@core/server/runtimeConfi
 import type { ProviderOverride } from '@core/server/runtimeConfig.js';
 import { requireOwner } from '@core/server/middleware/auth.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
+import { electionTickSchedule, wallDateForTick } from '@core/server/lib/electionMath.js';
+import { getCurrentTickNumber } from '@core/server/lib/tickClock.js';
 import healthRouter from './health.js';
 
 const router = Router();
@@ -598,6 +600,18 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     // byte-identical to today's suppress-while-seated behavior).
     const pTermTicks = posInt('presidentTermTicks', 0, 100_000);
     if (pTermTicks !== undefined) update.presidentTermTicks = pTermTicks;
+
+    // Election Cycles — tick-anchored phase windows (Rule 1: type check +
+    // range clamp, same commit). congressTermTicks 0 = congressional general
+    // elections disabled (deploy dark default).
+    const ert = posInt('electionRegistrationTicks', 1, 365);
+    if (ert !== undefined) update.electionRegistrationTicks = ert;
+    const ecmt = posInt('electionCampaignTicks', 1, 730);
+    if (ecmt !== undefined) update.electionCampaignTicks = ecmt;
+    const evtt = posInt('electionVotingTicks', 1, 90);
+    if (evtt !== undefined) update.electionVotingTicks = evtt;
+    const cgtt = posInt('congressTermTicks', 0, 100_000);
+    if (cgtt !== undefined) update.congressTermTicks = cgtt;
 
     /* Capitol City (effect layer) — Rule 1: type check + clamp, same commit.
        cityEnabled is the master switch: false (default) = the city block in
@@ -1254,9 +1268,13 @@ router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => 
     }
     const rc = getRuntimeConfig();
     const now = new Date();
-    const registrationDeadline = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 1 day
-    const votingStartDate = new Date(now.getTime() + rc.campaignDurationDays * 24 * 60 * 60 * 1000);
-    const votingEndDate = new Date(votingStartDate.getTime() + rc.votingDurationHours * 60 * 60 * 1000);
+    /* Tick-anchored schedule (B1) — the tick columns are the authoritative
+       gates; the timestamp columns are derived display dates. */
+    const tickNumber = await getCurrentTickNumber();
+    const sched = electionTickSchedule(tickNumber, rc.electionRegistrationTicks, rc.electionCampaignTicks, rc.electionVotingTicks);
+    const registrationDeadline = wallDateForTick(sched.registrationEndsTick, tickNumber, now, rc.tickIntervalMs);
+    const votingStartDate = wallDateForTick(sched.votingStartTick, tickNumber, now, rc.tickIntervalMs);
+    const votingEndDate = wallDateForTick(sched.votingEndTick, tickNumber, now, rc.tickIntervalMs);
     const [election] = await db.insert(elections).values({
       positionType,
       status: 'registration',
@@ -1264,6 +1282,10 @@ router.post('/admin/elections/trigger', requireOwner, async (req, res, next) => 
       registrationDeadline,
       votingStartDate,
       votingEndDate,
+      createdTick: tickNumber,
+      registrationEndsTick: sched.registrationEndsTick,
+      votingStartTick: sched.votingStartTick,
+      votingEndTick: sched.votingEndTick,
     }).returning();
     res.json({ success: true, data: election });
   } catch (error) {
@@ -1298,9 +1320,22 @@ router.post('/admin/elections/:id/advance', requireOwner, async (req, res, next)
     const now = new Date();
 
     if (nextStatus === 'voting') {
+      /* Fresh voting-window stamps (B1): a force-advanced election must not
+         wait on its ORIGINAL votingEndTick (possibly hundreds of ticks out)
+         — it gets a full electionVotingTicks window from right now. Wall
+         dates re-derived to match, keeping countdowns honest. */
+      const rc = getRuntimeConfig();
+      const tickNumber = await getCurrentTickNumber();
+      const votingEndTick = tickNumber + Math.max(1, Math.floor(rc.electionVotingTicks));
       await db
         .update(elections)
-        .set({ status: nextStatus, votingStartDate: now })
+        .set({
+          status: nextStatus,
+          votingStartDate: now,
+          votingStartTick: tickNumber,
+          votingEndTick,
+          votingEndDate: wallDateForTick(votingEndTick, tickNumber, now, rc.tickIntervalMs),
+        })
         .where(eq(elections.id, id));
       res.json({ success: true, data: { id, previousStatus: election.status, newStatus: nextStatus } });
       return;

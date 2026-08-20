@@ -181,8 +181,6 @@ agentTickQueue.process(async () => {
   let vetoedByPresidentThisTick: (typeof bills.$inferSelect)[] = [];
   /* Populated by Phase 2c, read by Phase 11.5 */
   let brokenDealsThisTick: { dealId: string; wrongedPartyId: string; wrongedPartyName: string }[] = [];
-  /* Election results from Phase 14, read by Phase 11.5 */
-  let electionResultsThisTick: { electionId: string; winnerId: string; loserIds: string[] }[] = [];
   /* Government spending this tick (net paychecks + one-time appropriations +
      recurring program debits) — accumulated by Phases 9 and 12, written to
      fiscal_tick_summaries by Phase 13. Integer dollars. */
@@ -4962,12 +4960,91 @@ agentTickQueue.process(async () => {
         }
       }
 
-      /* election_won / election_lost — from Phase 14 */
-      for (const result of electionResultsThisTick) {
-        triggers115.push({ agentId: result.winnerId, triggerType: 'election_won', triggerElectionId: result.electionId });
-        for (const loserId of result.loserIds) {
-          triggers115.push({ agentId: loserId, triggerType: 'election_lost', triggerElectionId: result.electionId });
+      /* election_won / election_lost — elections certified LAST tick (B5).
+         Phase 11.5 runs BEFORE Phase 14 in the tick order, so the old
+         in-memory electionResultsThisTick carry was always empty when read
+         (the acknowledged ordering bug) — election statements could never
+         fire. Now: exact certified_tick = tickNumber - 1 window (gap-free,
+         no wall-clock fragility; legacy pre-0034 certifications carry NULL
+         and never match). No-double-fire guard: a tick that crashed after
+         this phase re-runs with the same tickNumber, so any election that
+         already has a win/loss statement row is skipped. Inner try so a
+         failure here never silences the other statement triggers. */
+      try {
+        const certifiedLastTick = await db
+          .select({ id: elections.id, winnerId: elections.winnerId, certifiedDate: elections.certifiedDate })
+          .from(elections)
+          .where(and(eq(elections.certifiedTick, tickNumber - 1), isNotNull(elections.winnerId)));
+
+        if (certifiedLastTick.length > 0) {
+          const electionIds115 = certifiedLastTick.map((e) => e.id);
+          const priorStatements = await db
+            .select({ triggerElectionId: agentStatements.triggerElectionId })
+            .from(agentStatements)
+            .where(and(
+              inArray(agentStatements.triggerElectionId, electionIds115),
+              inArray(agentStatements.triggerType, ['election_won', 'election_lost']),
+            ));
+          const alreadyFired115 = new Set(priorStatements.map((s) => s.triggerElectionId));
+
+          /* winnerIds/loserIds persist in the election_completed activity
+             metadata (finalizeElection writes both sets). Bounded fetch:
+             the events were written at certification, so createdAt >= the
+             batch's earliest certifiedDate (1h slack for clock skew). */
+          const earliestCertified115 = certifiedLastTick.reduce<Date | null>((min, e) => {
+            if (!e.certifiedDate) return min;
+            return !min || e.certifiedDate < min ? e.certifiedDate : min;
+          }, null);
+          const metaByElection115 = new Map<string, { winnerIds: string[]; loserIds: string[] }>();
+          if (earliestCertified115) {
+            const completionEvents = await db
+              .select({ metadata: activityEvents.metadata })
+              .from(activityEvents)
+              .where(and(
+                eq(activityEvents.type, 'election_completed'),
+                gte(activityEvents.createdAt, new Date(earliestCertified115.getTime() - 60 * 60 * 1000)),
+              ));
+            for (const ev of completionEvents) {
+              try {
+                const meta = JSON.parse(ev.metadata) as { electionId?: string; winnerIds?: unknown; loserIds?: unknown };
+                if (typeof meta.electionId === 'string' && Array.isArray(meta.winnerIds)) {
+                  metaByElection115.set(meta.electionId, {
+                    winnerIds: meta.winnerIds.filter((v): v is string => typeof v === 'string'),
+                    loserIds: Array.isArray(meta.loserIds) ? meta.loserIds.filter((v): v is string => typeof v === 'string') : [],
+                  });
+                }
+              } catch {
+                /* unparseable metadata — the legacy re-derivation below covers it */
+              }
+            }
+          }
+
+          for (const certifiedElection of certifiedLastTick) {
+            if (alreadyFired115.has(certifiedElection.id)) continue;
+            const fromMeta = metaByElection115.get(certifiedElection.id);
+            let winnerIds115 = fromMeta?.winnerIds;
+            let loserIds115 = fromMeta?.loserIds;
+            if (!winnerIds115 || winnerIds115.length === 0) {
+              /* Legacy re-derivation: winner from the election row, losers
+                 from its real (non-declined) campaigns. */
+              winnerIds115 = certifiedElection.winnerId ? [certifiedElection.winnerId] : [];
+              const campaignRows115 = await db
+                .select({ agentId: campaigns.agentId })
+                .from(campaigns)
+                .where(and(eq(campaigns.electionId, certifiedElection.id), ne(campaigns.status, 'declined')));
+              const winnerSet115 = new Set(winnerIds115);
+              loserIds115 = [...new Set(campaignRows115.map((c) => c.agentId))].filter((id) => !winnerSet115.has(id));
+            }
+            for (const wid of winnerIds115) {
+              triggers115.push({ agentId: wid, triggerType: 'election_won', triggerElectionId: certifiedElection.id });
+            }
+            for (const lid of loserIds115 ?? []) {
+              triggers115.push({ agentId: lid, triggerType: 'election_lost', triggerElectionId: certifiedElection.id });
+            }
+          }
         }
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 11.5: election statement window failed (other triggers unaffected):', err);
       }
 
       /* deal_broken — from Phase 2c */
@@ -6069,17 +6146,12 @@ agentTickQueue.process(async () => {
         : election.votingEndDate != null && new Date(election.votingEndDate).getTime() <= now.getTime(),
     );
 
+    /* Win/loss press statements fire NEXT tick: Phase 11.5 (which runs
+       before Phase 14 in the tick order) reads certified_tick = its
+       tickNumber - 1 — no in-memory carry (B5). */
     for (const election of electionsToComplete) {
       const result = await finalizeElection(election.id, tickNumber);
-      if (result.status === 'ok' && result.winnerId) {
-        /* Track for Phase 11.5 public statements (already-consumed this tick —
-           see known ordering quirk; left intact for future tick v2 refactor) */
-        electionResultsThisTick.push({
-          electionId: election.id,
-          winnerId: result.winnerId,
-          loserIds: result.loserIds ?? [],
-        });
-      } else if (result.status === 'no_campaigns') {
+      if (result.status === 'no_campaigns') {
         console.warn(`[SIMULATION] Election ${election.id} had no campaigns — skipping finalize.`);
       }
     }
@@ -7290,12 +7362,20 @@ agentTickQueue.process(async () => {
         .orderBy(asc(activityEvents.createdAt))
         .limit(40);
 
+      /* Elections certified THIS tick (B5: the in-memory carry is gone —
+         Phase 14 stamps certifiedTick on every finalize, so the same-tick
+         query replaces it exactly for this tail-of-tick consumer). */
+      const certifiedThisTickGz = await db
+        .select({ winnerId: elections.winnerId })
+        .from(elections)
+        .where(and(eq(elections.certifiedTick, tickNumber), isNotNull(elections.winnerId)));
+
       const agentNameById = new Map(activeAgents.map((a) => [a.id, a.displayName]));
       const digest = buildGazetteDigest({
         passedBills: passedBillsThisTick.map((b) => ({ title: b.title })),
         failedBills: failedBillsThisTick.map((b) => ({ title: b.title })),
         vetoedBills: vetoedByPresidentThisTick.map((b) => ({ title: b.title })),
-        electionWinners: electionResultsThisTick.map((r) => agentNameById.get(r.winnerId) ?? 'a challenger'),
+        electionWinners: certifiedThisTickGz.map((r) => (r.winnerId ? agentNameById.get(r.winnerId) ?? 'a challenger' : 'a challenger')),
         brokenDeals: brokenDealsThisTick.map((d) => ({ wrongedPartyName: d.wrongedPartyName })),
         events: gazetteEvents,
       });

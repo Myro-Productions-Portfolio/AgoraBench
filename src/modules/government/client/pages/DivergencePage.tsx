@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { divergenceApi } from '@core/client/lib/api';
+import { divergenceApi, pressApi } from '@core/client/lib/api';
 import { useWebSocket } from '@core/client/lib/useWebSocket';
 import { formatMoney } from '@core/client/lib/formatMoney';
 import { EmptyState } from '@core/client/components/EmptyState';
@@ -99,11 +99,14 @@ function pendingReason(m: ScoreboardMetric): string {
   return 'no snapshots on both sides yet';
 }
 
-function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+function Section({ title, subtitle, action, children }: { title: string; subtitle?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-surface p-6 space-y-3">
       <div>
-        <h2 className="font-serif text-lg font-semibold text-stone">{title}</h2>
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="font-serif text-lg font-semibold text-stone">{title}</h2>
+          {action}
+        </div>
         {subtitle && <p className="text-xs text-text-muted mt-0.5">{subtitle}</p>}
       </div>
       {children}
@@ -304,6 +307,7 @@ function DeficitChart({
 export function DivergencePage() {
   const [data, setData] = useState<DivergenceData | null>(null);
   const [scoreboard, setScoreboard] = useState<ScoreboardData | null>(null);
+  const [hasTenK, setHasTenK] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const { subscribe } = useWebSocket();
@@ -319,6 +323,13 @@ export function DivergencePage() {
     /* Scoreboard is additive — a failure here never blanks the page. */
     divergenceApi.scoreboard()
       .then((res) => { if (res.data) setScoreboard(res.data as ScoreboardData); })
+      .catch(() => undefined);
+    /* 10-K cross-link appears only once at least one report exists. */
+    pressApi.reports(1)
+      .then((res) => {
+        const d = res.data as { issues?: unknown[] } | undefined;
+        setHasTenK((d?.issues?.length ?? 0) > 0);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -400,6 +411,11 @@ export function DivergencePage() {
       <Section
         title="Scoreboard"
         subtitle="Two governments, same line items — the AI government's 10-K next to the real one's. A metric appears here only when both sides can produce the same number; the rest are visible-but-pending. No composite winner score, deliberately."
+        action={hasTenK && (
+          <Link to="/press?view=reports" className="text-xs text-gold hover:text-gold/80 whitespace-nowrap transition-colors">
+            Read the latest 10-K →
+          </Link>
+        )}
       >
         {scoreboard && scoreboard.metrics.length > 0 ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

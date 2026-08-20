@@ -112,6 +112,8 @@ export const pressApi = {
     request(`/press/gazette?limit=${limit}&offset=${offset}`),
   gazetteLatest: () =>
     request('/press/gazette/latest'),
+  reports: (limit = 20, offset = 0) =>
+    request(`/press/reports?limit=${limit}&offset=${offset}`),
 };
 
 /* Capitol City spectator endpoints (city-effect-layer slice 3) */

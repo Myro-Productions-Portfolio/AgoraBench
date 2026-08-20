@@ -1,39 +1,51 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '@db/connection';
 import { agentStatements, agents, gazetteIssues } from '@db/schema/index';
 import { eq, desc, and, sql } from 'drizzle-orm';
 
 const router = Router();
 
+/* Shared list handler for the two gazette_issues kinds. Both press feeds are
+   public read-only with identical pagination; only the kind differs. Gazette
+   readers MUST filter kind='gazette' — 10-K rows narrate the sim-vs-reality
+   comparison and belong on press surfaces only. */
+function listIssuesByKind(kind: 'gazette' | 'ten_k') {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 10;
+      const rawOffset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
+      const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 10 : rawLimit, 50);
+      const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+
+      const [rows, [countRow]] = await Promise.all([
+        db
+          .select({
+            id: gazetteIssues.id,
+            tickId: gazetteIssues.tickId,
+            headline: gazetteIssues.headline,
+            body: gazetteIssues.body,
+            createdAt: gazetteIssues.createdAt,
+          })
+          .from(gazetteIssues)
+          .where(eq(gazetteIssues.kind, kind))
+          .orderBy(desc(gazetteIssues.createdAt))
+          .limit(limit)
+          .offset(offset),
+        db.select({ count: sql<number>`COUNT(*)::int` }).from(gazetteIssues).where(eq(gazetteIssues.kind, kind)),
+      ]);
+
+      res.json({ success: true, data: { issues: rows, total: countRow?.count ?? 0 } });
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
 /* GET /api/press/gazette -- Public: Daily Gazette issues, newest first */
-router.get('/press/gazette', async (req, res, next) => {
-  try {
-    const rawLimit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 10;
-    const rawOffset = typeof req.query.offset === 'string' ? parseInt(req.query.offset, 10) : 0;
-    const limit = Math.min(isNaN(rawLimit) || rawLimit < 1 ? 10 : rawLimit, 50);
-    const offset = isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+router.get('/press/gazette', listIssuesByKind('gazette'));
 
-    const [rows, [countRow]] = await Promise.all([
-      db
-        .select({
-          id: gazetteIssues.id,
-          tickId: gazetteIssues.tickId,
-          headline: gazetteIssues.headline,
-          body: gazetteIssues.body,
-          createdAt: gazetteIssues.createdAt,
-        })
-        .from(gazetteIssues)
-        .orderBy(desc(gazetteIssues.createdAt))
-        .limit(limit)
-        .offset(offset),
-      db.select({ count: sql<number>`COUNT(*)::int` }).from(gazetteIssues),
-    ]);
-
-    res.json({ success: true, data: { issues: rows, total: countRow?.count ?? 0 } });
-  } catch (error) {
-    next(error);
-  }
-});
+/* GET /api/press/reports -- Public: Agora 10-K reports, newest first */
+router.get('/press/reports', listIssuesByKind('ten_k'));
 
 /* GET /api/press/gazette/latest -- Public: most recent Gazette issue (null when none) */
 router.get('/press/gazette/latest', async (_req, res, next) => {
@@ -47,6 +59,7 @@ router.get('/press/gazette/latest', async (_req, res, next) => {
         createdAt: gazetteIssues.createdAt,
       })
       .from(gazetteIssues)
+      .where(eq(gazetteIssues.kind, 'gazette'))
       .orderBy(desc(gazetteIssues.createdAt))
       .limit(1);
 

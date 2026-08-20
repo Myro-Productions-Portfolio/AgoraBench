@@ -514,9 +514,13 @@ export async function buildRecentNewsBlock(): Promise<string> {
       .where(eq(activityEvents.type, 'media_event'))
       .orderBy(desc(activityEvents.createdAt))
       .limit(2),
-    /* Individually failure-soft: gazette_issues may not exist yet on a mid-life DB */
+    /* Individually failure-soft: gazette_issues may not exist yet on a mid-life DB.
+       kind='gazette' is doctrine-bearing, not cosmetic: 10-K rows (kind='ten_k')
+       narrate the sim-vs-REALITY comparison and must NEVER enter agent prompts —
+       this filter is what keeps the reality frame out of sim context. */
     db.select({ headline: gazetteIssues.headline, createdAt: gazetteIssues.createdAt })
       .from(gazetteIssues)
+      .where(eq(gazetteIssues.kind, 'gazette'))
       .orderBy(desc(gazetteIssues.createdAt))
       .limit(1)
       .catch(() => [] as { headline: string; createdAt: Date }[]),
@@ -902,18 +906,22 @@ async function callProvider(
   rc: ReturnType<typeof getRuntimeConfig>,
   systemPrompt: string,
   contextMessage: string,
+  maxTokensOverride?: number,
 ): Promise<string> {
   const apiKey = await getApiKey(provider, agent.ownerUserId ?? null);
   const model = agent.model ?? await getDefaultModel(provider);
   const truncated = contextMessage.slice(0, rc.maxPromptLengthChars);
+  /* Override exists for the 10-K writer only: its ~8000-char body cannot fit
+     the global rc.maxOutputLengthTokens (500). Every other caller omits it. */
+  const maxTokens = maxTokensOverride ?? rc.maxOutputLengthTokens;
   switch (provider) {
-    case 'openai':      return callOpenAI(apiKey, model, systemPrompt, truncated, rc.maxOutputLengthTokens);
-    case 'google':      return callGoogle(apiKey, model, systemPrompt, truncated, rc.maxOutputLengthTokens);
-    case 'huggingface': return callHuggingFace(apiKey, model, systemPrompt, truncated, rc.maxOutputLengthTokens);
-    case 'anthropic':   return callAnthropic(apiKey, model, truncated, systemPrompt, rc.maxOutputLengthTokens);
+    case 'openai':      return callOpenAI(apiKey, model, systemPrompt, truncated, maxTokens);
+    case 'google':      return callGoogle(apiKey, model, systemPrompt, truncated, maxTokens);
+    case 'huggingface': return callHuggingFace(apiKey, model, systemPrompt, truncated, maxTokens);
+    case 'anthropic':   return callAnthropic(apiKey, model, truncated, systemPrompt, maxTokens);
     default: {
       const agentTemp = agent.temperature ? parseFloat(agent.temperature) : 0.9;
-      return callOllama(truncated, systemPrompt, rc.maxOutputLengthTokens, agentTemp, model || undefined);
+      return callOllama(truncated, systemPrompt, maxTokens, agentTemp, model || undefined);
     }
   }
 }
@@ -1257,6 +1265,88 @@ export async function generateGazetteArticle(
     return { headline, body };
   } catch (err) {
     console.warn('[AI] Gazette article generation failed:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The Agora 10-K
+// ---------------------------------------------------------------------------
+
+const TEN_K_HEADLINE_MAX_CHARS = 200; // matches gazette_issues.headline varchar(200)
+const TEN_K_BODY_MAX_CHARS = 8000;    // DB body is unbounded text; UI renders full bodies
+const TEN_K_MAX_OUTPUT_TOKENS = 1200; // rc.maxOutputLengthTokens (500) can't fit the body
+
+/**
+ * Rule-4 parse of the 10-K writer's raw output: only the whitelisted
+ * headline/body keys are read, both type-checked and length-clamped.
+ * Same contract as the Gazette parse; exported for unit tests.
+ */
+export function parseTenKArticle(raw: string): { headline: string; body: string } | null {
+  const s = raw.indexOf('{');
+  const e = raw.lastIndexOf('}');
+  if (s === -1 || e <= s) return null;
+  const jsonSubstr = raw.slice(s, e + 1);
+
+  let parsed: unknown;
+  try { parsed = JSON.parse(jsonSubstr); }
+  catch {
+    try { parsed = JSON.parse(sanitizeJsonString(jsonSubstr)); }
+    catch { return null; }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+
+  const headlineRaw = (parsed as Record<string, unknown>)['headline'];
+  const bodyRaw = (parsed as Record<string, unknown>)['body'];
+  if (typeof headlineRaw !== 'string' || typeof bodyRaw !== 'string') return null;
+
+  const headline = headlineRaw.replace(/\s+/g, ' ').trim().slice(0, TEN_K_HEADLINE_MAX_CHARS);
+  const body = bodyRaw.trim().slice(0, TEN_K_BODY_MAX_CHARS);
+  if (headline.length < 5 || body.length < 50) return null;
+
+  return { headline, body };
+}
+
+/**
+ * ONE LLM call that turns the deterministic scoreboard digest into the Agora
+ * 10-K — the government reported like a company, sim vs reality. Returns null
+ * on ANY failure and never throws: a failed report must never fail the tick.
+ * DOCTRINE: this is the only place the reality comparison meets an LLM, and
+ * its output lands as gazette_issues kind='ten_k', which every agent-facing
+ * reader filters out — the reality frame never enters agent prompts.
+ */
+export async function generateTenKReport(
+  digest: string,
+  periodLabel: string,
+): Promise<{ headline: string; body: string } | null> {
+  try {
+    const rc = getRuntimeConfig();
+    const provider = rc.providerOverride !== 'default' ? rc.providerOverride : 'openai';
+    const tenKRecord: AgentRecord = {
+      id: 'ten-k',
+      displayName: 'The Agora 10-K',
+      alignment: null,
+      modelProvider: provider,
+      personality: null,
+      ownerUserId: null,
+    };
+
+    const systemPrompt =
+      `You are the chief analyst writing the periodic 10-K report of Agora Bench — an AI-run ` +
+      `government reported on like a company. Narrate what the AI government did this period, ` +
+      `what the real US government did, and where they diverged. Use ONLY figures from the ` +
+      `scoreboard digest — never invent numbers, metrics, or events. Where the digest marks a ` +
+      `metric pending, say so plainly instead of guessing. Respond ONLY with a valid JSON object ` +
+      `of the form {"headline": "<one headline, max 12 words>", "body": "<the report, 300-700 words>"} — ` +
+      `no markdown, no text outside the JSON.`;
+    const contextMessage =
+      `Reporting period: ${periodLabel}\n\nScoreboard digest (verified figures):\n${digest}\n\n` +
+      `Write the report now. JSON only.`;
+
+    const raw = await callProvider(provider, tenKRecord, rc, systemPrompt, contextMessage, TEN_K_MAX_OUTPUT_TOKENS);
+    return parseTenKArticle(raw);
+  } catch (err) {
+    console.warn('[AI] 10-K report generation failed:', err instanceof Error ? err.message : err);
     return null;
   }
 }

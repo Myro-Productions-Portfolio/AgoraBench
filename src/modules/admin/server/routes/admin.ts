@@ -628,6 +628,8 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     if (typeof body.fredAdapterEnabled === 'boolean') update.fredAdapterEnabled = body.fredAdapterEnabled;
     if (typeof body.congressStatsAdapterEnabled === 'boolean') update.congressStatsAdapterEnabled = body.congressStatsAdapterEnabled;
     if (typeof body.approvalScrapeEnabled === 'boolean') update.approvalScrapeEnabled = body.approvalScrapeEnabled;
+    const tkct = posInt('tenKReportCadenceTicks', 0, 2000);
+    if (tkct !== undefined) update.tenKReportCadenceTicks = tkct;
 
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });

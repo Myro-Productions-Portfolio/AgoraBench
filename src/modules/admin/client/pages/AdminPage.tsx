@@ -254,6 +254,7 @@ interface RuntimeConfig {
   fredAdapterEnabled: boolean;
   congressStatsAdapterEnabled: boolean;
   approvalScrapeEnabled: boolean;
+  tenKReportCadenceTicks: number;
 }
 
 interface EconomySettings {
@@ -3357,6 +3358,22 @@ export function AdminPage() {
                     />
                   </label>
                   <p className="text-xs text-text-muted">Congressional-approval page scrape — tolerant parser; staleness surfaces in logs and /api/admin/reality/status.</p>
+                </div>
+
+                <div className="border-t border-border pt-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">10-K Report Cadence (ticks)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.tenKReportCadenceTicks}</span>
+                    </div>
+                    <input type="number" min={0} max={2000} step={1}
+                      value={simConfig.tenKReportCadenceTicks}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, tenKReportCadenceTicks: parseInt(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ tenKReportCadenceTicks: simConfig.tenKReportCadenceTicks })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Publish the Agora 10-K — one LLM narrative over the scoreboard, sim vs reality — every N ticks. 0 = off. Requires the scoreboard master switch; the report goes to the Press Room only, never into agent prompts.</p>
+                  </div>
                 </div>
               </CollapsibleSection>
             )}

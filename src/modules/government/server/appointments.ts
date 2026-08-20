@@ -48,6 +48,8 @@ export interface AppointmentContext {
   confirmThreshold: number;
   /** Optional extra prompt context (e.g. which cabinet role). */
   seatDescriptor?: string;
+  /** Tick the seat is filled on — stamped as positions.startTick (B4). */
+  tickNumber?: number;
 }
 
 /**
@@ -126,6 +128,7 @@ export async function runAppointment(ctx: AppointmentContext): Promise<Appointme
     title: ctx.title,
     startDate: new Date(),
     isActive: true,
+    startTick: typeof ctx.tickNumber === 'number' && Number.isFinite(ctx.tickNumber) ? ctx.tickNumber : null,
   });
   await db.insert(activityEvents).values({
     type: 'appointment_confirmed',

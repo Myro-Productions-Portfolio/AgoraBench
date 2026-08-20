@@ -22,6 +22,7 @@ import {
   ELECTION_LIFECYCLE_TYPES,
   ELECTION_OFFICE_LABEL,
   candidacyExcludedAgentIds,
+  tenureTicksPreferred,
   type BallotRow,
   type HeldPosition,
   type CandidateStanding,
@@ -741,6 +742,37 @@ describe('votingShouldOpenAtTick / votingShouldCloseAtTick', () => {
     expect(votingShouldOpenAtTick(999, undefined)).toBe(false);
     expect(votingShouldCloseAtTick(999, null)).toBe(false);
     expect(votingShouldCloseAtTick(999, NaN)).toBe(false);
+  });
+});
+
+/* ── Election cycles B4: tick-based tenure ────────────────────────────── */
+
+describe('tenureTicksPreferred', () => {
+  const HOUR = 60 * 60 * 1000;
+  const start = new Date('2026-08-01T00:00:00Z');
+  const now = new Date('2026-08-01T10:00:00Z'); // 10 wall-ticks at 1h interval
+
+  it('prefers the tick anchor when present: tickNumber - startTick', () => {
+    expect(tenureTicksPreferred(100, 130, start, now, HOUR)).toBe(30);
+  });
+
+  it('clamps a future/equal startTick to 0 tenure', () => {
+    expect(tenureTicksPreferred(130, 130, start, now, HOUR)).toBe(0);
+    expect(tenureTicksPreferred(140, 130, start, now, HOUR)).toBe(0);
+  });
+
+  it('falls back to wall-clock tenureTicks when the anchor is null/undefined/NaN', () => {
+    expect(tenureTicksPreferred(null, 130, start, now, HOUR)).toBe(10);
+    expect(tenureTicksPreferred(undefined, 130, start, now, HOUR)).toBe(10);
+    expect(tenureTicksPreferred(NaN, 130, start, now, HOUR)).toBe(10);
+  });
+
+  it('falls back to wall-clock when tickNumber itself is non-finite', () => {
+    expect(tenureTicksPreferred(100, NaN, start, now, HOUR)).toBe(10);
+  });
+
+  it('tick-anchored tenure is immune to the interval used for the wall fallback', () => {
+    expect(tenureTicksPreferred(100, 130, start, now, 1)).toBe(30);
   });
 });
 

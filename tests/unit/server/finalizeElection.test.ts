@@ -244,6 +244,58 @@ describe('finalizeElection — presidential outgoing-incumbent handoff', () => {
     expect(challengerApproval?.eventType).toBe('election_won');
   });
 
+  it('B4: passing tickNumber stamps startTick on the winner row and certifiedTick on the election', async () => {
+    const electionId = 'election-tick';
+    const winnerId = 'agent-winner';
+
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId, 742);
+    expect(result.status).toBe('ok');
+
+    const positionInsert = insertedRows.find(
+      (r) => r.values['isActive'] === true && r.values['type'] === 'president',
+    );
+    expect(positionInsert!.values['startTick']).toBe(742);
+
+    const certifyUpdate = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certifyUpdate!.values['certifiedTick']).toBe(742);
+  });
+
+  it('B4: omitting tickNumber (legacy/out-of-tick callers without a clock) stamps null anchors — wall-clock behavior preserved', async () => {
+    const electionId = 'election-no-tick';
+    const winnerId = 'agent-winner';
+
+    queueSelects({
+      election: { id: electionId, positionType: 'president', winnerId: null, status: 'voting' },
+      campaignTotals: [{ agentId: winnerId, totalContributions: 500, startDate: '2026-01-01T00:00:00Z', campaignId: 'camp-1' }],
+      castBallots: [{ candidateId: winnerId, voterId: 'voter-1' }],
+      winnerAgent: [{ id: winnerId, displayName: 'Winner Agent' }],
+      winnerPriorPositions: [],
+      outgoingPresident: [],
+    });
+
+    const { finalizeElection } = await loadFinalize();
+    const result = await finalizeElection(electionId);
+    expect(result.status).toBe('ok');
+
+    const positionInsert = insertedRows.find(
+      (r) => r.values['isActive'] === true && r.values['type'] === 'president',
+    );
+    expect(positionInsert!.values['startTick']).toBeNull();
+
+    const certifyUpdate = updatedCalls.find((c) => c.values['status'] === 'certified');
+    expect(certifyUpdate!.values['certifiedTick']).toBeNull();
+  });
+
   it('non-presidential election (congress_member): no outgoing-handoff query, only the double-position vacate path applies', async () => {
     const electionId = 'election-3';
     const winnerId = 'agent-winner';

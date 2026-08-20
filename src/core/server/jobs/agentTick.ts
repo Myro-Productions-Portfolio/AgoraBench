@@ -55,7 +55,7 @@ import { broadcast } from '../websocket.js';
 import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants';
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
-import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicks, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds } from '../lib/electionMath.js';
+import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds } from '../lib/electionMath.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -346,6 +346,7 @@ agentTickQueue.process(async () => {
         title: `${committee} Committee Chair`,
         startDate: new Date(),
         isActive: true,
+        startTick: tickNumber,
       });
       sittingChairIds05.add(chairAgent.id);
 
@@ -3338,6 +3339,7 @@ agentTickQueue.process(async () => {
               candidates: candidates10,
               confirmVoterIds: seatedCongress10.map((c) => c.agentId),
               confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
+              tickNumber,
             });
             console.warn(`[SIMULATION] Phase 10: justice appointment cycle — ${result10.status}.`);
           }
@@ -3354,6 +3356,7 @@ agentTickQueue.process(async () => {
               title: 'Supreme Court Justice',
               startDate: new Date(),
               isActive: true,
+              startTick: tickNumber,
             });
 
             await db.insert(activityEvents).values({
@@ -6067,7 +6070,7 @@ agentTickQueue.process(async () => {
     );
 
     for (const election of electionsToComplete) {
-      const result = await finalizeElection(election.id);
+      const result = await finalizeElection(election.id, tickNumber);
       if (result.status === 'ok' && result.winnerId) {
         /* Track for Phase 11.5 public statements (already-consumed this tick —
            see known ordering quirk; left intact for future tick v2 refactor) */
@@ -6096,7 +6099,7 @@ agentTickQueue.process(async () => {
      * fetch, not the stale top-of-phase snapshot, or a same-tick winner can
      * be double-seated / re-elected against themselves. */
     const freshOfficePositions14 = await db
-      .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate })
+      .select({ agentId: positions.agentId, type: positions.type, startDate: positions.startDate, startTick: positions.startTick })
       .from(positions)
       .where(eq(positions.isActive, true));
     const freshActiveCongress14 = freshOfficePositions14.filter((p) => p.type === 'congress_member');
@@ -6125,6 +6128,7 @@ agentTickQueue.process(async () => {
           startDate: now,
           endDate: termEnd,
           isActive: true,
+          startTick: tickNumber,
         });
 
         await db.insert(activityEvents).values({
@@ -6196,10 +6200,11 @@ agentTickQueue.process(async () => {
        * stays seated (no interregnum) — the election runs its normal
        * registration -> campaigning -> voting -> certified lifecycle and
        * finalizeElection's existing vacate rule + E3 voting handle the
-       * transfer once a winner is certified. Tenure is wall-clock-derived
-       * from positions.startDate (see electionMath.tenureTicks) — no
-       * tick-stamped column added this slice; documented caveat: server
-       * downtime does not pause tenure the way a tick-count would.
+       * transfer once a winner is certified. Tenure is tick-anchored (B4:
+       * positions.startTick, downtime/interval-change-proof) with the
+       * wall-clock derivation as the legacy fallback for pre-0034 rows —
+       * the sitting president predates the column, so the first enable
+       * still fires on wall-derived tenure (inaugural cycle, accepted).
        *
        * Uses freshActivePresident14, not the top-of-phase activePresident:
        * a presidential election certified by finalizeElection earlier in
@@ -6208,7 +6213,7 @@ agentTickQueue.process(async () => {
        * president's startDate — since exceeded tenure is why the election
        * was triggered in the first place, that immediately re-triggers a
        * second election against the brand-new incumbent. */
-      const tenure = tenureTicks(freshActivePresident14.startDate, now, rc.tickIntervalMs);
+      const tenure = tenureTicksPreferred(freshActivePresident14.startTick, tickNumber, freshActivePresident14.startDate, now, rc.tickIntervalMs);
       if (presidentTermExpired(tenure, rc.presidentTermTicks)) {
         const [inflightPresElection] = await db
           .select({ id: elections.id })
@@ -6409,6 +6414,7 @@ agentTickQueue.process(async () => {
                 type: 'speaker',
                 title: 'Speaker of the Legislature',
                 startDate: new Date(),
+                startTick: tickNumber,
                 /* No endDate — the Speaker serves until they lose their congress
                    seat (which cascades to the speaker seat via getSeatsToVacate
                    ranking) or a new term forces a re-vote. Deliberately NOT
@@ -6482,6 +6488,7 @@ agentTickQueue.process(async () => {
             confirmVoterIds: seatedCongress146.map((c) => c.agentId),
             confirmThreshold: rc.appointmentConfirmationThreshold ?? 0.5,
             seatDescriptor: `The role is ${vacantRole}.`,
+            tickNumber,
           });
           console.warn(`[SIMULATION] Phase 14.6: cabinet (${vacantRole}) appointment cycle — ${result146.status}.`);
         }

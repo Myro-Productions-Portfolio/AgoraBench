@@ -1344,8 +1344,9 @@ router.post('/admin/elections/:id/advance', requireOwner, async (req, res, next)
     if (nextStatus === 'certified') {
       /* Delegate the full finalize pipeline. finalizeElection handles status,
        * winnerId, totalVotes, certifiedDate, positions row, agent updates,
-       * approval/relationship cascades, and broadcasts. */
-      const result = await finalizeElection(id);
+       * approval/relationship cascades, and broadcasts. Out-of-tick caller,
+       * so the tick number for certifiedTick/startTick comes from tickClock. */
+      const result = await finalizeElection(id, await getCurrentTickNumber());
       if (result.status === 'no_campaigns') {
         res.status(400).json({
           success: false,

@@ -64,10 +64,17 @@ const POSITION_TITLE_BY_TYPE: Record<string, string> = {
  * broadcasts to clients. Idempotency: if the election already has a winnerId
  * set AND an active positions row exists for that agent/type, returns
  * 'already_finalized' without duplicating side effects.
+ *
+ * tickNumber (B4): the tick this certification belongs to — Phase 14 passes
+ * its own tickNumber, the admin /advance path derives one via tickClock.
+ * Stamped as elections.certifiedTick (Phase 11.5's press-statement window
+ * keys on it) and positions.startTick (tick-based tenure). Omitted ->
+ * null anchors, wall-clock behavior preserved.
  */
-export async function finalizeElection(electionId: string): Promise<FinalizeElectionResult> {
+export async function finalizeElection(electionId: string, tickNumber?: number): Promise<FinalizeElectionResult> {
   const rc = getRuntimeConfig();
   const now = new Date();
+  const startTick = typeof tickNumber === 'number' && Number.isFinite(tickNumber) ? tickNumber : null;
 
   /* Load election */
   const [election] = await db
@@ -251,6 +258,7 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
       winnerId: winner.agentId,
       totalVotes: tally.totalVotes,
       certifiedDate: now,
+      certifiedTick: startTick,
     })
     .where(eq(elections.id, electionId));
 
@@ -330,6 +338,7 @@ export async function finalizeElection(electionId: string): Promise<FinalizeElec
       startDate: now,
       endDate,
       isActive: true,
+      startTick,
     })
     .returning({ id: positions.id });
 

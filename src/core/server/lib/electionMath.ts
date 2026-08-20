@@ -425,6 +425,27 @@ export function tenureTicks(startDate: Date | string | number, now: Date | strin
 }
 
 /**
+ * Tick-based tenure (B4): prefer the seat's tick anchor (tickNumber −
+ * startTick, downtime- and interval-change-proof) and fall back to the
+ * wall-clock tenureTicks derivation for legacy rows seated before migration
+ * 0034 (NULL startTick). The sitting president predating the column means
+ * the first presidentTermTicks enable still fires on wall-derived tenure
+ * (inaugural cycle — accepted); every later officeholder is tick-anchored.
+ */
+export function tenureTicksPreferred(
+  startTick: number | null | undefined,
+  tickNumber: number,
+  startDate: Date | string | number,
+  now: Date | string | number,
+  tickIntervalMs: number,
+): number {
+  if (typeof startTick === 'number' && Number.isFinite(startTick) && Number.isFinite(tickNumber)) {
+    return Math.max(0, tickNumber - startTick);
+  }
+  return tenureTicks(startDate, now, tickIntervalMs);
+}
+
+/**
  * True when a president's term has expired: term limit enabled (> 0) and
  * elapsed tenure has reached or exceeded it. termLimitTicks <= 0 means
  * disabled — always false, preserving today's suppress-while-seated

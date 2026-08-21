@@ -806,6 +806,7 @@ export function ElectionsPage() {
       subscribe('election:voting_started', refetch),
       subscribe('election:completed', refetch),
       subscribe('campaign:speech', refetch),
+      subscribe('campaign:debate', refetch),
     ];
     return () => unsubs.forEach((fn) => fn());
   }, [fetchLists, subscribe]);

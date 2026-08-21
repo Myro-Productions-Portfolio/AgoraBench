@@ -15,7 +15,8 @@ type TriggerType =
   | 'election_lost'
   | 'deal_broken'
   | 'proactive'
-  | 'bill_proposed';
+  | 'bill_proposed'
+  | 'debate';
 
 interface PressStatement {
   id: string;
@@ -50,6 +51,7 @@ const TRIGGER_COLORS: Record<TriggerType, string> = {
   deal_broken: 'text-red-400 bg-red-900/30 border-red-700/40',
   proactive: 'text-blue-300 bg-blue-900/20 border-blue-700/30',
   bill_proposed: 'text-blue-300 bg-blue-900/20 border-blue-700/30',
+  debate: 'text-gold bg-yellow-900/30 border-yellow-700/40',
 };
 
 const TRIGGER_LABELS: Record<TriggerType, string> = {
@@ -61,6 +63,7 @@ const TRIGGER_LABELS: Record<TriggerType, string> = {
   deal_broken: 'Deal Broken',
   proactive: 'Statement',
   bill_proposed: 'Bill Proposed',
+  debate: 'Debate Stage',
 };
 
 type FilterOption = 'all' | 'bill_advocacy' | 'veto_response' | 'election' | 'deal' | 'proactive';
@@ -89,7 +92,7 @@ const MULTI_TRIGGER_MAP: Record<FilterOption, TriggerType[] | undefined> = {
   all: undefined,
   bill_advocacy: ['bill_passed', 'bill_failed', 'bill_proposed'],
   veto_response: ['bill_vetoed'],
-  election: ['election_won', 'election_lost'],
+  election: ['election_won', 'election_lost', 'debate'],
   deal: ['deal_broken'],
   proactive: ['proactive'],
 };

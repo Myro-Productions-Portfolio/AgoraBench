@@ -28,22 +28,27 @@ import {
   donationStances,
   campaignEndorsements,
   electionPolls,
+  agentStatements,
 } from '@db/schema/index';
 import { generateAgentDecision } from '@core/server/services/ai.js';
 import type { RuntimeConfig } from '@core/server/runtimeConfig';
 import { broadcast } from '@core/server/websocket.js';
-import { officeRank } from '@core/server/lib/electionMath.js';
+import { officeRank, orderCandidates } from '@core/server/lib/electionMath.js';
 import {
   campaignRng,
   donationAmount,
   spendAmount,
   computePollSnapshot,
+  debateTicksFor,
+  debateReception,
   STANCE_ASKS_PER_TICK,
   ENDORSE_ASKS_PER_TICK,
   DEBATE_GLOW_TICKS,
+  DEBATE_WIN_APPROVAL,
   type Generosity,
   type PollVoter,
   type PollCandidate,
+  type DebateParticipantInput,
 } from '@core/server/lib/campaignMath.js';
 
 export interface EngineElection {
@@ -812,6 +817,233 @@ export async function snapshotPolls(opts: {
       });
     } catch (err) {
       console.warn(`[CAMPAIGN] Poll snapshot failed (election ${election.id}):`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+/* ── Debates — scheduled at the campaigning transition, fired on ticks ── */
+
+/** Called once at registration -> campaigning. Tick-anchored rows only
+    (legacy wall-clock elections get no debates); scheduledAt is a display
+    estimate, scheduled_tick is authoritative (judicial convention). */
+export async function scheduleDebates(opts: {
+  election: { id: string; positionType: string; votingStartTick: number | null };
+  tickNumber: number;
+  rc: Readonly<RuntimeConfig>;
+}): Promise<void> {
+  const { election, tickNumber, rc } = opts;
+  if (rc.campaignDebateCount <= 0 || election.votingStartTick == null) return;
+  const ticks = debateTicksFor(tickNumber, election.votingStartTick, rc.campaignDebateCount);
+  if (ticks.length === 0) return;
+  await db.insert(governmentEvents).values(
+    ticks.map((debateTick, i) => ({
+      type: 'campaign_debate',
+      title: `Campaign Debate ${ticks.length > 1 ? `${i + 1} of ${ticks.length} ` : ''}(${election.positionType} race)`.slice(0, 200),
+      description: `The leading candidates for ${election.positionType} meet on the debate stage.`,
+      scheduledAt: new Date(Date.now() + (debateTick - tickNumber) * rc.tickIntervalMs),
+      durationMinutes: 90,
+      attendeeIds: '[]',
+      status: 'scheduled',
+      relatedElectionId: election.id,
+      scheduledTick: debateTick,
+      isPublic: true,
+    })),
+  );
+  console.warn(`[CAMPAIGN] ${ticks.length} debate(s) scheduled for ${election.positionType} race (ticks ${ticks.join(', ')})`);
+}
+
+/** Called at campaigning -> voting: unfired debates cancel (judicial
+    cancel precedent). Unconditional — leftovers cancel even if the owner
+    zeroed the debate dial mid-cycle. */
+export async function cancelPendingDebates(opts: { electionId: string }): Promise<void> {
+  await db
+    .update(governmentEvents)
+    .set({ status: 'cancelled', outcome: 'Campaign window closed before this debate fired.' })
+    .where(and(
+      eq(governmentEvents.type, 'campaign_debate'),
+      eq(governmentEvents.relatedElectionId, opts.electionId),
+      eq(governmentEvents.status, 'scheduled'),
+    ));
+}
+
+/** Fires debates whose scheduled_tick has arrived: top-K participants by
+    latest poll -> contributions -> registration order; one LLM statement
+    each; deterministic audience reception decides the winner (+2 approval,
+    losses 0 — negatives are reserved for vetoes). */
+export async function runDueDebates(opts: {
+  elections: EngineElection[];
+  activeAgents: EngineAgent[];
+  tickNumber: number;
+  rc: Readonly<RuntimeConfig>;
+  updateApproval: (agentId: string, delta: number, eventType: string, reason: string) => Promise<void>;
+}): Promise<void> {
+  const { elections: races, activeAgents, tickNumber, rc } = opts;
+  if (races.length === 0) return;
+
+  const due = await db
+    .select()
+    .from(governmentEvents)
+    .where(and(
+      eq(governmentEvents.type, 'campaign_debate'),
+      eq(governmentEvents.status, 'scheduled'),
+      sql`${governmentEvents.scheduledTick} <= ${tickNumber}`,
+      inArray(governmentEvents.relatedElectionId, races.map((e) => e.id)),
+    ));
+  if (due.length === 0) return;
+
+  const agentById = new Map(activeAgents.map((a) => [a.id, a]));
+
+  for (const event of due) {
+    try {
+      const election = races.find((e) => e.id === event.relatedElectionId)!;
+      const raceCampaigns = await db
+        .select({
+          id: campaigns.id,
+          agentId: campaigns.agentId,
+          platform: campaigns.platform,
+          contributions: campaigns.contributions,
+          startDate: campaigns.startDate,
+        })
+        .from(campaigns)
+        .where(and(eq(campaigns.electionId, election.id), eq(campaigns.status, 'active')));
+
+      if (raceCampaigns.length === 0) {
+        await cancelPendingDebates({ electionId: election.id });
+        continue;
+      }
+
+      /* Stage selection: latest poll share -> contributions -> registration
+         order. Reception ties break by registration order, so the chosen K
+         are re-sorted into registration order before reception. */
+      const [latestPollRow] = await db
+        .select({ results: electionPolls.results })
+        .from(electionPolls)
+        .where(eq(electionPolls.electionId, election.id))
+        .orderBy(sql`${electionPolls.tick} DESC`)
+        .limit(1);
+      const pollShareByCampaign = new Map(Object.entries(latestPollRow?.results ?? {}));
+      const regOrder = orderCandidates(raceCampaigns.map((c) => ({
+        agentId: c.agentId,
+        totalContributions: c.contributions ?? 0,
+        startDate: c.startDate,
+        campaignId: c.id,
+      })));
+      const regRank = new Map(regOrder.map((id, i) => [id, i]));
+      const stage = [...raceCampaigns]
+        .sort((a, b) => {
+          const poll = (pollShareByCampaign.get(b.id) ?? -1) - (pollShareByCampaign.get(a.id) ?? -1);
+          if (poll !== 0) return poll;
+          const contrib = (b.contributions ?? 0) - (a.contributions ?? 0);
+          if (contrib !== 0) return contrib;
+          return (regRank.get(a.agentId) ?? Infinity) - (regRank.get(b.agentId) ?? Infinity);
+        })
+        .slice(0, Math.max(2, rc.debateParticipants))
+        .sort((a, b) => (regRank.get(a.agentId) ?? Infinity) - (regRank.get(b.agentId) ?? Infinity));
+
+      const participants = stage.filter((c) => agentById.has(c.agentId));
+      if (participants.length < 2) {
+        /* A one-candidate stage is no debate — cancel this event only. */
+        await db
+          .update(governmentEvents)
+          .set({ status: 'cancelled', outcome: 'Fewer than two candidates available to debate.' })
+          .where(eq(governmentEvents.id, event.id));
+        continue;
+      }
+
+      /* Electorate-average voteAlignment per participant (0.5 default). */
+      const participantIds = participants.map((p) => p.agentId);
+      const candidateIdSet = new Set(raceCampaigns.map((c) => c.agentId));
+      const electorateIds = activeAgents.filter((a) => !candidateIdSet.has(a.id)).map((a) => a.id);
+      const avgByAgent = new Map<string, number>(participantIds.map((id) => [id, 0.5]));
+      if (electorateIds.length > 0) {
+        const rows = await db
+          .select({
+            targetAgentId: agentRelationships.targetAgentId,
+            avg: sql<number>`avg(${agentRelationships.voteAlignment})`,
+          })
+          .from(agentRelationships)
+          .where(and(
+            inArray(agentRelationships.agentId, electorateIds),
+            inArray(agentRelationships.targetAgentId, participantIds),
+          ))
+          .groupBy(agentRelationships.targetAgentId);
+        for (const r of rows) avgByAgent.set(r.targetAgentId, Number(r.avg));
+      }
+
+      /* One statement per participant — rivals' platforms + own standing. */
+      const statementResults = await Promise.allSettled(
+        participants.map((p) => {
+          const agent = agentById.get(p.agentId)!;
+          const rivals = participants
+            .filter((r) => r.agentId !== p.agentId)
+            .map((r) => `  - ${agentById.get(r.agentId)?.displayName ?? 'Unknown'}: ${(r.platform ?? '').slice(0, 200)}`)
+            .join('\n');
+          const ownShare = pollShareByCampaign.get(p.id);
+          const standing = ownShare !== undefined ? ` You stand at ${ownShare}% in the latest poll.` : '';
+          const contextMessage =
+            `You are on the debate stage for the ${election.positionType} election.${standing} Your rivals:\n${rivals}\n\n` +
+            `Deliver your sharpest debate statement — contrast your platform with theirs. ` +
+            `Respond with: {"action":"debate_statement","reasoning":"your one-line debate statement"}`;
+          return generateAgentDecision(agentRecord(agent, rc), contextMessage, 'campaign_debate')
+            .then((decision) => ({ participant: p, decision }));
+        }),
+      );
+
+      /* Deterministic reception — physics decides, not the LLM. */
+      const receptionInput: DebateParticipantInput[] = participants.map((p) => ({
+        agentId: p.agentId,
+        avgAlignment: avgByAgent.get(p.agentId) ?? 0.5,
+      }));
+      const reception = debateReception(receptionInput, campaignRng(tickNumber, event.id, 'debate'))!;
+      const winnerName = agentById.get(reception.winnerAgentId)?.displayName ?? 'Unknown';
+
+      for (const result of statementResults) {
+        if (result.status === 'rejected') {
+          console.warn('[CAMPAIGN] Debate statement call rejected:', result.reason);
+          continue;
+        }
+        const { participant, decision } = result.value;
+        if (decision.action !== 'debate_statement' || !decision.reasoning) continue;
+        await db.insert(agentStatements).values({
+          agentId: participant.agentId,
+          statementText: decision.reasoning.slice(0, 2000),
+          triggerType: 'debate',
+          triggerElectionId: election.id,
+          approvalDelta: participant.agentId === reception.winnerAgentId ? DEBATE_WIN_APPROVAL : 0,
+          isPublic: true,
+        });
+      }
+
+      await db
+        .update(governmentEvents)
+        .set({
+          status: 'completed',
+          scheduledAt: new Date(),
+          attendeeIds: JSON.stringify(participantIds),
+          outcome: JSON.stringify({ winnerAgentId: reception.winnerAgentId, sharesByAgent: reception.sharesByAgent }),
+        })
+        .where(eq(governmentEvents.id, event.id));
+
+      await db.insert(activityEvents).values({
+        type: 'campaign_debate',
+        agentId: reception.winnerAgentId,
+        title: 'Campaign debate',
+        description: `${participants.map((p) => agentById.get(p.agentId)?.displayName ?? 'Unknown').join(', ')} debated in the ${election.positionType} race — ${winnerName} won the exchange`,
+        metadata: JSON.stringify({ electionId: election.id, eventId: event.id, winnerAgentId: reception.winnerAgentId, sharesByAgent: reception.sharesByAgent }),
+      });
+
+      broadcast('campaign:debate', {
+        electionId: election.id,
+        eventId: event.id,
+        participants: participantIds,
+        winnerAgentId: reception.winnerAgentId,
+        sharesByAgent: reception.sharesByAgent,
+      });
+
+      await opts.updateApproval(reception.winnerAgentId, DEBATE_WIN_APPROVAL, 'debate_win', `${winnerName} won the ${election.positionType} campaign debate`);
+      console.warn(`[CAMPAIGN] Debate fired (${election.positionType}): ${winnerName} won`);
+    } catch (err) {
+      console.warn(`[CAMPAIGN] Debate failed (event ${event.id}):`, err instanceof Error ? err.message : err);
     }
   }
 }

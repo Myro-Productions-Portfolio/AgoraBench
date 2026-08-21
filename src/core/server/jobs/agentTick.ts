@@ -58,7 +58,7 @@ import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
 import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
-import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, snapshotPolls, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
+import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, snapshotPolls, scheduleDebates, cancelPendingDebates, runDueDebates, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5882,6 +5882,20 @@ agentTickQueue.process(async () => {
         positionType: election.positionType,
       });
       console.warn(`[SIMULATION] Phase 14: Election ${election.id} moved registration -> campaigning (${campaignCount} candidate(s))`);
+
+      /* Campaign debates (dark until campaignDebateCount > 0) — scheduled
+         once at this transition, tick-anchored rows only. */
+      if (rc.campaignDebateCount > 0) {
+        try {
+          await scheduleDebates({
+            election: { id: election.id, positionType: election.positionType, votingStartTick: election.votingStartTick },
+            tickNumber,
+            rc,
+          });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 14: debate scheduling failed (campaign proceeds without debates):', err);
+        }
+      }
     }
 
     /* campaigning -> voting — per-row tick-first gate, wall fallback (B1) */
@@ -5922,6 +5936,14 @@ agentTickQueue.process(async () => {
       });
 
       console.warn(`[SIMULATION] Election voting started: ${election.positionType}`);
+
+      /* Unfired debates cancel at the window close (judicial precedent);
+         unconditional so leftovers clear even after the dial went to 0. */
+      try {
+        await cancelPendingDebates({ electionId: election.id });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 14: pending-debate cancel failed:', err);
+      }
     }
 
     /* ---- Vote casting window (E3 slice A) --------------------------- */
@@ -6955,6 +6977,13 @@ agentTickQueue.process(async () => {
           console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
         }
       }
+      /* Due debates fire after speeches (self-gating: no scheduled rows =
+         no-op; runs even at dial 0 so leftovers still fire or cancel). */
+      try {
+        await runDueDebates({ elections: activeCampaigningElections, activeAgents, tickNumber, rc, updateApproval });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 15 debates error:', err);
+      }
     }
 
     /* Poll snapshots — campaigning AND voting races, every tick, outside the
@@ -7511,7 +7540,7 @@ agentTickQueue.process(async () => {
                (law_struck_down is already listed above). */
             'law_upheld',
             /* Campaign realism — same hard-whitelist rule. */
-            'campaign_endorsement',
+            'campaign_endorsement', 'campaign_debate',
           ]),
           gte(activityEvents.createdAt, tickFiredAt),
         ))

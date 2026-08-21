@@ -24,6 +24,7 @@ const EVENT_TYPE_COLORS: Record<string, string> = {
   judicial_hearing: 'text-blue-400 border-blue-400/40 bg-blue-400/10',
   party_caucus: 'text-danger border-danger/40 bg-danger/10',
   election_rally: 'text-gold-bright border-gold-bright/40 bg-gold-bright/10',
+  campaign_debate: 'text-gold border-gold/40 bg-gold/15',
   budget_session: 'text-status-committee border-status-committee/40 bg-status-committee/10',
   constitutional_review: 'text-stone-light border-stone-light/40 bg-stone-light/10',
 };
@@ -36,6 +37,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   judicial_hearing: 'Judicial Hearing',
   party_caucus: 'Party Caucus',
   election_rally: 'Election Rally',
+  campaign_debate: 'Campaign Debate',
   budget_session: 'Budget Session',
   constitutional_review: 'Constitutional Review',
 };

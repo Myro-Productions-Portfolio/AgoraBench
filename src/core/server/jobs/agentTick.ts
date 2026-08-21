@@ -37,6 +37,7 @@ import {
   gazetteIssues,
   fiscalTickSummaries,
   metricSnapshots,
+  electionPolls,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle, generateTenKReport } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
@@ -56,6 +57,8 @@ import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants'
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
+import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
+import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, snapshotPolls, scheduleDebates, cancelPendingDebates, runDueDebates, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5879,6 +5882,20 @@ agentTickQueue.process(async () => {
         positionType: election.positionType,
       });
       console.warn(`[SIMULATION] Phase 14: Election ${election.id} moved registration -> campaigning (${campaignCount} candidate(s))`);
+
+      /* Campaign debates (dark until campaignDebateCount > 0) — scheduled
+         once at this transition, tick-anchored rows only. */
+      if (rc.campaignDebateCount > 0) {
+        try {
+          await scheduleDebates({
+            election: { id: election.id, positionType: election.positionType, votingStartTick: election.votingStartTick },
+            tickNumber,
+            rc,
+          });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 14: debate scheduling failed (campaign proceeds without debates):', err);
+        }
+      }
     }
 
     /* campaigning -> voting — per-row tick-first gate, wall fallback (B1) */
@@ -5919,6 +5936,14 @@ agentTickQueue.process(async () => {
       });
 
       console.warn(`[SIMULATION] Election voting started: ${election.positionType}`);
+
+      /* Unfired debates cancel at the window close (judicial precedent);
+         unconditional so leftovers clear even after the dial went to 0. */
+      try {
+        await cancelPendingDebates({ electionId: election.id });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 14: pending-debate cancel failed:', err);
+      }
     }
 
     /* ---- Vote casting window (E3 slice A) --------------------------- */
@@ -5938,8 +5963,10 @@ agentTickQueue.process(async () => {
       const candidates = await db
         .select({
           agentId: campaigns.agentId,
+          campaignId: campaigns.id,
           platform: campaigns.platform,
           contributions: campaigns.contributions,
+          endorsements: campaigns.endorsements,
           displayName: agents.displayName,
           alignment: agents.alignment,
           approvalRating: agents.approvalRating,
@@ -6033,10 +6060,41 @@ agentTickQueue.process(async () => {
         }
       }
 
+      /* Latest poll for the ballot prompt (pollsEnabled only). */
+      const ballotPollShare = new Map<string, number>();
+      const ballotPollRank = new Map<string, number>();
+      if (rc.pollsEnabled) {
+        try {
+          const [pollRow] = await db
+            .select({ results: electionPolls.results })
+            .from(electionPolls)
+            .where(eq(electionPolls.electionId, election.id))
+            .orderBy(desc(electionPolls.tick))
+            .limit(1);
+          if (pollRow) {
+            const entries = Object.entries(pollRow.results).sort((a, b) => b[1] - a[1]);
+            entries.forEach(([campaignId, share], i) => {
+              ballotPollShare.set(campaignId, share);
+              ballotPollRank.set(campaignId, i + 1);
+            });
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 14 ballot: poll lookup failed (ballots proceed without it):', err);
+        }
+      }
+
       const candidateBlock = candidates
         .map((c) => {
           const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
-          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%): ${c.platform}`;
+          /* Public-signal riders (flags off = byte-identical ballot prompt).
+             Contributions stay campaign-side — never shown to voters. */
+          const endorsementNote = (() => {
+            if (!rc.endorsementsEnabled) return '';
+            try { return `, endorsements: ${(JSON.parse(c.endorsements ?? '[]') as string[]).length}`; } catch { return ', endorsements: 0'; }
+          })();
+          const pollShare = ballotPollShare.get(c.campaignId);
+          const pollNote = pollShare !== undefined ? `, latest poll: ${pollShare}% (#${ballotPollRank.get(c.campaignId)})` : '';
+          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%${endorsementNote}${pollNote}): ${c.platform}`;
           const record = fiscalRecordMap.get(c.agentId);
           return record ? `${base}\n    ${record}` : base;
         })
@@ -6700,6 +6758,39 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(and(eq(campaigns.status, 'active'), inArray(campaigns.electionId, campaigningElectionIds)));
 
+      /* Campaign finance (deploy dark): stances -> drip/self-fund -> spending.
+         Iterates ALL active campaigns — never behind the speech-chance filter.
+         Each sub-block is caught separately: finance can never fail the tick,
+         and a failed drip still lets spending run on yesterday's chest. */
+      let campaignFundsById = new Map<string, CampaignFunds>();
+      const platformByCampaignId15 = new Map(activeCampaigns.map((c) => [c.id, c.platform]));
+      if (rc.campaignFinanceEnabled) {
+        try {
+          await runDonationStances({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId: platformByCampaignId15, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 donation stances error:', err);
+        }
+        try {
+          await runDonationDrip({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 donation drip error:', err);
+        }
+        try {
+          campaignFundsById = await runCampaignSpending({ elections: activeCampaigningElections, activeAgents, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 campaign spending error:', err);
+        }
+      }
+
+      /* Endorsements — own flag, independent of the finance switch. */
+      if (rc.endorsementsEnabled) {
+        try {
+          await runEndorsements({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId: platformByCampaignId15, tickNumber, rc, updateApproval });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 endorsements error:', err);
+        }
+      }
+
       /* Filter eligible campaigns with desperation-gradient speech chance */
       const eligibleCampaigns: typeof activeCampaigns = [];
       for (const campaign of activeCampaigns) {
@@ -6728,7 +6819,8 @@ agentTickQueue.process(async () => {
           rc.campaignSpeechChance * urgencyFactor * (1 + deficitRatio * 0.5) * approvalModifier15,
         );
 
-        if (Math.random() >= dynamicSpeechChance) continue;
+        /* Seeded roll (campaign-realism rider): replayable from (tick, id). */
+        if (campaignRng(tickNumber, campaign.id, 'speech')() >= dynamicSpeechChance) continue;
         eligibleCampaigns.push(campaign);
       }
 
@@ -6746,13 +6838,46 @@ agentTickQueue.process(async () => {
         cappedCampaigns15.push(campaign);
       }
 
+      /* Latest poll standings for speech context (pollsEnabled only —
+         yesterday's snapshot, since this tick's polls run after speeches). */
+      const latestPollByElection15 = new Map<string, Record<string, number>>();
+      if (rc.pollsEnabled && cappedCampaigns15.length > 0) {
+        try {
+          const pollRows15 = await db
+            .select({ electionId: electionPolls.electionId, results: electionPolls.results })
+            .from(electionPolls)
+            .where(inArray(electionPolls.electionId, campaigningElectionIds))
+            .orderBy(desc(electionPolls.tick));
+          for (const row of pollRows15) {
+            if (!latestPollByElection15.has(row.electionId)) latestPollByElection15.set(row.electionId, row.results);
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 poll context failed (speeches proceed without it):', err);
+        }
+      }
+
       const results = await Promise.allSettled(
         cappedCampaigns15.map((campaign) => {
           const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
           const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId)!;
 
+          /* War-chest note (finance era only — flag off adds nothing). */
+          const funds15 = campaignFundsById.get(campaign.id);
+          const financeNote15 = rc.campaignFinanceEnabled && funds15
+            ? `Your campaign war chest: $${Math.max(0, funds15.contributions - funds15.spent).toLocaleString('en-US')} on hand. `
+            : '';
+
+          /* Own poll standing (pollsEnabled only — flag off adds nothing). */
+          const pollNote15 = (() => {
+            const pollResults = latestPollByElection15.get(election.id);
+            const share = pollResults?.[campaign.id];
+            if (share === undefined) return '';
+            const rank = Object.values(pollResults!).filter((v) => v > share).length + 1;
+            return `Latest poll: you stand at ${share}% (rank ${rank} of ${Object.keys(pollResults!).length}). `;
+          })();
+
           const contextMessage =
-            `You are campaigning for ${election.positionType}. Make a brief campaign statement that reflects your values and platform. ` +
+            `You are campaigning for ${election.positionType}. ${financeNote15}${pollNote15}Make a brief campaign statement that reflects your values and platform. ` +
             `Respond with: {"action":"campaign_speech","reasoning":"your one-line speech","data":{"boost":50}}`;
 
           return generateAgentDecision(
@@ -6786,32 +6911,88 @@ agentTickQueue.process(async () => {
         /* Enforce max speeches per tick */
         if ((speechCountThisTick.get(campaign.agentId) ?? 0) >= rc.maxCampaignSpeechesPerTick) continue;
 
-        const rawBoost = Number(decision.data?.['boost'] ?? 50);
-        const clampedBoost = Math.max(10, Math.min(100, rawBoost));
+        if (rc.campaignFinanceEnabled) {
+          /* Real-money era: speeches persuade, never mint. Approval bump is
+             reach-scaled by this tick's spending; the speech also lands as a
+             visible retrospective rally on the events calendar. */
+          const reach15 = reachFactor(campaignFundsById.get(campaign.id)?.spentThisTick ?? 0);
+          const speechDelta15 = speechApprovalDelta(reach15);
 
-        /* Scale boost by approval and endorsement count */
-        const endorsementCount = (() => {
-          try { return (JSON.parse(campaign.endorsements ?? '[]') as string[]).length; } catch { return 0; }
-        })();
-        const boost = Math.round(
-          clampedBoost
-          * ((campaignAgent.approvalRating ?? 50) / 50)
-          * (1 + endorsementCount * 0.10),
-        );
+          await db.insert(activityEvents).values({
+            type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
+            description: decision.reasoning,
+            metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, reach: Number(reach15.toFixed(2)), approvalDelta: speechDelta15 }),
+          });
+          broadcast('campaign:speech', {
+            campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
+            agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost: 0,
+          });
+          speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
+          await updateApproval(campaignAgent.id, speechDelta15, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
+          try {
+            await db.insert(governmentEvents).values({
+              type: 'election_rally',
+              title: `Campaign rally: ${campaignAgent.displayName}`.slice(0, 200),
+              description: decision.reasoning.slice(0, 500),
+              scheduledAt: new Date(),
+              durationMinutes: 60,
+              organizerId: campaignAgent.id,
+              attendeeIds: JSON.stringify([campaignAgent.id]),
+              status: 'completed',
+              relatedElectionId: election.id,
+              scheduledTick: tickNumber,
+            });
+          } catch (err) {
+            console.warn('[SIMULATION] Phase 15 rally row failed (speech already recorded):', err);
+          }
+          console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (approval +${speechDelta15}, reach ${reach15.toFixed(2)})`);
+        } else {
+          /* Legacy speech-mint — byte-identical flag-off behavior, pinned by
+             tests/unit/server/campaignMintBranch.test.ts. Do not touch. */
+          const rawBoost = Number(decision.data?.['boost'] ?? 50);
+          const clampedBoost = Math.max(10, Math.min(100, rawBoost));
 
-        await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
-        await db.insert(activityEvents).values({
-          type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
-          description: decision.reasoning,
-          metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, boost }),
-        });
-        broadcast('campaign:speech', {
-          campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
-          agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost,
-        });
-        speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
-        await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
-        console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
+          /* Scale boost by approval and endorsement count */
+          const endorsementCount = (() => {
+            try { return (JSON.parse(campaign.endorsements ?? '[]') as string[]).length; } catch { return 0; }
+          })();
+          const boost = Math.round(
+            clampedBoost
+            * ((campaignAgent.approvalRating ?? 50) / 50)
+            * (1 + endorsementCount * 0.10),
+          );
+
+          await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
+          await db.insert(activityEvents).values({
+            type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
+            description: decision.reasoning,
+            metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, boost }),
+          });
+          broadcast('campaign:speech', {
+            campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
+            agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost,
+          });
+          speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
+          await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
+          console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
+        }
+      }
+      /* Due debates fire after speeches (self-gating: no scheduled rows =
+         no-op; runs even at dial 0 so leftovers still fire or cancel). */
+      try {
+        await runDueDebates({ elections: activeCampaigningElections, activeAgents, tickNumber, rc, updateApproval });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 15 debates error:', err);
+      }
+    }
+
+    /* Poll snapshots — campaigning AND voting races, every tick, outside the
+       no-campaigning-elections guard so a voting-phase race still polls. */
+    if (rc.pollsEnabled) {
+      try {
+        await snapshotPolls({ activeAgents, tickNumber });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 15 poll snapshot error:', err);
       }
     }
   } catch (err) {
@@ -7358,6 +7539,8 @@ agentTickQueue.process(async () => {
                entry, upheld rulings never reach the Gazette
                (law_struck_down is already listed above). */
             'law_upheld',
+            /* Campaign realism — same hard-whitelist rule. */
+            'campaign_endorsement', 'campaign_debate',
           ]),
           gte(activityEvents.createdAt, tickFiredAt),
         ))

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db } from '@db/connection';
-import { elections, agents, votes, campaigns, parties, partyMemberships, type ElectionElectoralVotes } from '@db/schema/index';
+import { elections, agents, votes, campaigns, parties, partyMemberships, electionPolls, type ElectionElectoralVotes } from '@db/schema/index';
 import { AppError } from '@core/server/middleware/errorHandler';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getRuntimeConfig } from '@core/server/runtimeConfig';
 import { EC_MAJORITY, ELECTORAL_VOTES, STATE_ORDER } from '@core/server/lib/electoralCollege';
 import { computeElectoralSnapshot, orderCandidates } from '@core/server/lib/electionMath';
@@ -218,9 +218,11 @@ router.get('/elections/:id', async (req, res, next) => {
       db
         .select({
           agentId: campaigns.agentId,
+          campaignId: campaigns.id,
           platform: campaigns.platform,
           status: campaigns.status,
           contributions: campaigns.contributions,
+          spent: campaigns.spent,
           displayName: agents.displayName,
           avatarConfig: agents.avatarConfig,
           alignment: agents.alignment,
@@ -274,11 +276,13 @@ router.get('/elections/:id', async (req, res, next) => {
     const candidates = electionCampaigns
       .map((c) => ({
         agentId: c.agentId,
+        campaignId: c.campaignId,
         displayName: c.displayName,
         avatarConfig: c.avatarConfig,
         alignment: c.alignment,
         platform: c.platform,
         contributions: c.contributions,
+        spent: c.spent,
         voteCount: voteCounts[c.agentId] ?? 0,
         votePercentage:
           election.totalVotes > 0
@@ -302,6 +306,23 @@ router.get('/elections/:id', async (req, res, next) => {
       election.electoralVotes ?? null,
     );
 
+    /* Poll snapshots (campaign realism) — last 30, chronological. Empty
+       until pollsEnabled writes rows; the client treats absence of
+       latestPoll as "no real poll data" and keeps contribution share. */
+    const pollRows = await db
+      .select({
+        tick: electionPolls.tick,
+        results: electionPolls.results,
+        undecidedPct: electionPolls.undecidedPct,
+        sampleSize: electionPolls.sampleSize,
+      })
+      .from(electionPolls)
+      .where(eq(electionPolls.electionId, req.params.id))
+      .orderBy(desc(electionPolls.tick))
+      .limit(30);
+    const pollHistory = [...pollRows].reverse();
+    const latestPoll = pollRows[0] ?? null;
+
     res.json({
       success: true,
       data: {
@@ -318,6 +339,8 @@ router.get('/elections/:id', async (req, res, next) => {
         winnerId: election.winnerId,
         candidates,
         rollCall,
+        pollHistory,
+        ...(latestPoll ? { latestPoll } : {}),
         ...(electoralCollege ? { electoralCollege } : {}),
       },
     });

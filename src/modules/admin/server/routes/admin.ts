@@ -631,6 +631,21 @@ router.post('/admin/config', requireOwner, async (req, res, next) => {
     const tkct = posInt('tenKReportCadenceTicks', 0, 2000);
     if (tkct !== undefined) update.tenKReportCadenceTicks = tkct;
 
+    /* Campaign Realism — Rule 1: type check + range clamp, same commit as the
+       RuntimeConfig fields. campaignFinanceEnabled is the master switch; flip
+       between election cycles only (activation runbook), never mid-campaign. */
+    if (typeof body.campaignFinanceEnabled === 'boolean') update.campaignFinanceEnabled = body.campaignFinanceEnabled;
+    const drp = num('donationRatePct', 0, 2);
+    if (drp !== undefined) update.donationRatePct = drp;
+    const csrp = num('campaignSpendRatePct', 0, 100);
+    if (csrp !== undefined) update.campaignSpendRatePct = csrp;
+    if (typeof body.endorsementsEnabled === 'boolean') update.endorsementsEnabled = body.endorsementsEnabled;
+    if (typeof body.pollsEnabled === 'boolean') update.pollsEnabled = body.pollsEnabled;
+    const cdbc = posInt('campaignDebateCount', 0, 6);
+    if (cdbc !== undefined) update.campaignDebateCount = cdbc;
+    const dpp = posInt('debateParticipants', 2, 8);
+    if (dpp !== undefined) update.debateParticipants = dpp;
+
     const updated = await updateRuntimeConfig(update);
     res.json({ success: true, data: updated });
   } catch (error) {

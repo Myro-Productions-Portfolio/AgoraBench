@@ -255,6 +255,14 @@ interface RuntimeConfig {
   congressStatsAdapterEnabled: boolean;
   approvalScrapeEnabled: boolean;
   tenKReportCadenceTicks: number;
+  /* Campaign Realism */
+  campaignFinanceEnabled: boolean;
+  donationRatePct: number;
+  campaignSpendRatePct: number;
+  endorsementsEnabled: boolean;
+  pollsEnabled: boolean;
+  campaignDebateCount: number;
+  debateParticipants: number;
 }
 
 interface EconomySettings {
@@ -3305,6 +3313,107 @@ export function AdminPage() {
                       className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
                     />
                     <p className="text-xs text-text-muted">City-months advanced per government tick. 1 keeps causality legible: this tick's budget → this month's city.</p>
+                  </div>
+                </div>
+              </CollapsibleSection>
+            )}
+
+            {/* Campaign Realism — deployed dark */}
+            {simConfig && (
+              <CollapsibleSection
+                id="campaign_realism"
+                title="Campaign Finance"
+                subtitle="Real-money races — donor stances, per-tick donation drip, campaign spending, endorsements, honest polls, debates. Deployed dark."
+                badge={savingBadge}
+              >
+                <div className="space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Campaign Finance Enabled (master switch)</span>
+                    <input type="checkbox"
+                      checked={simConfig.campaignFinanceEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, campaignFinanceEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ campaignFinanceEnabled: simConfig.campaignFinanceEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">When off, speeches mint contributions exactly as before (byte-identical legacy path). NEVER flip mid-campaign — the war chest would mix minted units with real dollars. Flip between election cycles only.</p>
+                </div>
+
+                <div className="border-t border-border pt-4 space-y-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Donation Rate (% of donor balance / tick)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.donationRatePct}</span>
+                    </div>
+                    <input type="number" min={0} max={2} step={0.05}
+                      value={simConfig.donationRatePct}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, donationRatePct: parseFloat(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ donationRatePct: simConfig.donationRatePct })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Per-tick ceiling before generosity and jitter. 0.2 ≈ $496/tick from the median wallet at medium generosity (~5.8% of a wallet over a 30-tick cycle).</p>
+                  </div>
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Campaign Spend Rate (% of war chest / tick)</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.campaignSpendRatePct}</span>
+                    </div>
+                    <input type="number" min={0} max={100} step={1}
+                      value={simConfig.campaignSpendRatePct}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, campaignSpendRatePct: parseFloat(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ campaignSpendRatePct: simConfig.campaignSpendRatePct })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Share of available funds (contributions − spent) a campaign burns per tick. Spending buys reach, which amplifies speeches and the poll exposure term.</p>
+                  </div>
+                </div>
+
+                <div className="border-t border-border pt-4 space-y-3">
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Endorsements Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.endorsementsEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, endorsementsEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ endorsementsEnabled: simConfig.endorsementsEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">Officeholders and party leaders get one endorsement ask per race; an endorsement bumps candidate approval +1 and shows on ballots.</p>
+                  <label className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary font-medium">Polls Enabled</span>
+                    <input type="checkbox"
+                      checked={simConfig.pollsEnabled}
+                      onChange={e => setSimConfig(c => c ? ({ ...c, pollsEnabled: e.target.checked }) : c)}
+                      onBlur={() => void saveConfig({ pollsEnabled: simConfig.pollsEnabled })}
+                    />
+                  </label>
+                  <p className="text-xs text-text-muted">Per-tick poll snapshots from the real ballot signal families (alignment, approval, party, policy, reach). Serves the UI and enters ballot/speech prompts as a public signal.</p>
+                </div>
+
+                <div className="border-t border-border pt-4 space-y-4">
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Debates per Campaign</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.campaignDebateCount}</span>
+                    </div>
+                    <input type="number" min={0} max={6} step={1}
+                      value={simConfig.campaignDebateCount}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, campaignDebateCount: parseInt(e.target.value) || 0 } : c)}
+                      onBlur={() => void saveConfig({ campaignDebateCount: simConfig.campaignDebateCount })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Debates scheduled evenly inside each campaign window. 0 = off; recommend 2 at activation.</p>
+                  </div>
+                  <div className="space-y-2 max-w-xs">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm font-medium text-text-secondary">Debate Participants</label>
+                      <span className="text-sm text-gold font-mono">{simConfig.debateParticipants}</span>
+                    </div>
+                    <input type="number" min={2} max={8} step={1}
+                      value={simConfig.debateParticipants}
+                      onChange={(e) => setSimConfig((c) => c ? { ...c, debateParticipants: parseInt(e.target.value) || 2 } : c)}
+                      onBlur={() => void saveConfig({ debateParticipants: simConfig.debateParticipants })}
+                      className="w-full bg-white/5 border border-border rounded px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-gold/50"
+                    />
+                    <p className="text-xs text-text-muted">Top-K candidates on each stage, by latest poll, then contributions, then registration order.</p>
                   </div>
                 </div>
               </CollapsibleSection>

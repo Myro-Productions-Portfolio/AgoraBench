@@ -250,6 +250,17 @@ export interface RuntimeConfig {
   congressStatsAdapterEnabled: boolean;      // Congress.gov stats adapter (throughput + time-to-passage); needs CONGRESS_API_KEY in env (warn-and-degrade)
   approvalScrapeEnabled: boolean;            // congressional-approval page scrape (Ballotpedia Polling Index); tolerant parser + staleness warn
   tenKReportCadenceTicks: number;            // publish the Agora 10-K (LLM narrative over the scoreboard) every N ticks; 0 = off (deploy dark); also gated by scoreboardEnabled
+
+  /* ---- Campaign Realism — deployed dark, off by default ---- */
+  /* NEVER flip campaignFinanceEnabled mid-campaigning (unit mixing between
+     the legacy speech-mint and real dollars) — flip between cycles only. */
+  campaignFinanceEnabled: boolean;           // gates stances/drip/self-fund/spending/reach/rallies + the donation/campaign_expenditure tx types; false = legacy speech-mint, byte-identical
+  donationRatePct: number;                   // per-tick donation ceiling as % of donor balance (0-2); 0.2 ≈ $496/tick from the median wallet at medium generosity
+  campaignSpendRatePct: number;              // % of available war chest (contributions − spent) spent per tick (0-100)
+  endorsementsEnabled: boolean;              // officeholder/party-leader endorsement asks + approval bump + gazette entry
+  pollsEnabled: boolean;                     // poll snapshots + serving + ballot/speech injection + UI relabel
+  campaignDebateCount: number;               // debates scheduled per campaign window (0-6); 0 = off (recommend 2 at activation)
+  debateParticipants: number;                // top-K candidates on each debate stage (2-8)
 }
 
 const DEFAULTS: RuntimeConfig = {
@@ -489,6 +500,15 @@ const DEFAULTS: RuntimeConfig = {
   congressStatsAdapterEnabled: false,
   approvalScrapeEnabled: false,
   tenKReportCadenceTicks: 0,
+
+  /* Campaign Realism — deployed dark */
+  campaignFinanceEnabled: false,
+  donationRatePct: 0.2,
+  campaignSpendRatePct: 20,
+  endorsementsEnabled: false,
+  pollsEnabled: false,
+  campaignDebateCount: 0,
+  debateParticipants: 4,
 };
 
 let current: RuntimeConfig = { ...DEFAULTS };

@@ -9,6 +9,7 @@ export type GovernmentEventType =
   | 'judicial_hearing'
   | 'party_caucus'
   | 'election_rally'
+  | 'campaign_debate'
   | 'budget_session'
   | 'constitutional_review';
 
@@ -26,6 +27,9 @@ export const governmentEvents = pgTable('government_events', {
   outcome: text('outcome'),
   relatedBillId: uuid('related_bill_id'),
   relatedElectionId: uuid('related_election_id'),
+  /* Tick-anchored future scheduling (migration 0037) — authoritative when
+     set; scheduledAt stays a display-only estimate (judicial convention). */
+  scheduledTick: integer('scheduled_tick'),
   isPublic: boolean('is_public').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

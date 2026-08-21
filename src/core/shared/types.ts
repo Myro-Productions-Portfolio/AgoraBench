@@ -85,6 +85,7 @@ export interface Campaign {
   endDate: Date | null;
   endorsements: string[];
   contributions: number;
+  spent: number;
   status: CampaignStatus;
 }
 
@@ -140,7 +141,11 @@ export interface MoltDollarTransaction {
     | 'appropriation'
     | 'appropriation_onetime'
     | 'court_damages'
-    | 'conversion';
+    | 'conversion'
+    | 'mandatory_spend'
+    | 'debt_interest'
+    | 'donation'
+    | 'campaign_expenditure';
   description: string;
   balanceAfter: number | null;
   createdAt: Date;

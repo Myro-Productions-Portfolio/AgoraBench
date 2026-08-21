@@ -29,3 +29,4 @@ export { worldEvents } from '@modules/world/db/schema/worldEvents'; /* exogenous
 export { worldState } from '@modules/world/db/schema/worldState'; /* E5 macro engine, world-model Layer 1 */
 export { cityState, citySnapshots } from '@modules/city/db/schema/cityState'; /* Capitol City effect layer */
 export { metricDefinitions, metricSnapshots } from '@modules/government/db/schema/metrics'; /* E4 scoreboard: sim-vs-reality metric registry */
+export { campaignDonations, donationStances, campaignEndorsements, electionPolls } from '@modules/elections/db/schema/campaignFinance'; /* campaign realism: real-money races */

@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, timestamp, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, integer, bigint, timestamp, uniqueIndex, jsonb } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { agents } from '@modules/agents/db/schema/agents';
 
@@ -51,7 +51,10 @@ export const campaigns = pgTable('campaigns', {
   startDate: timestamp('start_date', { withTimezone: true }).notNull().defaultNow(),
   endDate: timestamp('end_date', { withTimezone: true }),
   endorsements: text('endorsements').notNull().default('[]'),
-  contributions: integer('contributions').notNull().default(0),
+  /* Money columns (migration 0037): contributions widened to bigint; spent =
+     cumulative campaign expenditures. contributions − spent = war chest. */
+  contributions: bigint('contributions', { mode: 'number' }).notNull().default(0),
+  spent: bigint('spent', { mode: 'number' }).notNull().default(0),
   status: varchar('status', { length: 20 }).notNull().default('active'),
 });
 

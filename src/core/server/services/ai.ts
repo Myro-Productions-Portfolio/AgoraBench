@@ -10,6 +10,7 @@ import { getRuntimeConfig } from '../runtimeConfig.js';
 import { buildCongressContextBlock } from '@modules/government/server/services/congressContext.js';
 import { buildWorldEventsBlock } from '@modules/world/server/services/worldEventsContext.js';
 import { mandatoryEffectiveAmount, tickInterest } from '../lib/fiscalMath.js';
+import { coerceBallotVote } from '../lib/ballotPrompt.js';
 
 export interface AgentRecord {
   id: string;
@@ -913,10 +914,16 @@ async function callProvider(
   systemPrompt: string,
   contextMessage: string,
   maxTokensOverride?: number,
+  phase?: string,
 ): Promise<string> {
   const apiKey = await getApiKey(provider, agent.ownerUserId ?? null);
   const model = agent.model ?? await getDefaultModel(provider);
   const truncated = contextMessage.slice(0, rc.maxPromptLengthChars);
+  /* Silent truncation hid the zero-ballot election bug for a full cycle —
+     an overflowing prompt must always be visible in the logs. */
+  if (truncated.length < contextMessage.length) {
+    console.warn(`[AI] prompt truncated (${phase ?? 'unphased'}): ${contextMessage.length} -> ${truncated.length} chars`);
+  }
   /* Override exists for the 10-K writer only: its ~8000-char body cannot fit
      the global rc.maxOutputLengthTokens (500). Every other caller omits it. */
   const maxTokens = maxTokensOverride ?? rc.maxOutputLengthTokens;
@@ -974,7 +981,7 @@ export async function generateAgentDecision(
   let latencyMs = 0;
 
   try {
-    rawText = await callProvider(provider, agent, rc, systemPrompt, contextMessage);
+    rawText = await callProvider(provider, agent, rc, systemPrompt, contextMessage, undefined, phase);
     latencyMs = Date.now() - start;
     console.warn(`[AI] ${agent.displayName} (${provider}) responded in ${latencyMs}ms`);
   } catch (err) {
@@ -1017,6 +1024,18 @@ export async function generateAgentDecision(
 
     /* ── Action validation ─────────────────────────────────────────────── */
     const expectedAction = phase ? PHASE_ACTION_MAP[phase] : undefined;
+    /* Ballot-shape fallback, election_voting ONLY: the inaugural election
+       lost all 70 ballots to {"vote":"<uuid>"} responses. An action-less
+       response carrying a bare vote/candidateId key is unambiguously a
+       ballot; Phase 14 still validates the id against the real candidate
+       set, so this admits nothing arbitrary. No other phase is loosened. */
+    if (expectedAction === 'election_vote' && decision.action !== expectedAction) {
+      const ballot = coerceBallotVote(decision, phase);
+      if (ballot) {
+        console.warn(`[AI] ${agent.displayName} (${provider}) ballot coerced from bare vote/candidateId key`);
+        decision = ballot;
+      }
+    }
     if (expectedAction && decision.action !== expectedAction) {
       const canonical = normalizeAction(decision.action, expectedAction);
 
@@ -1063,7 +1082,7 @@ export async function generateAgentDecision(
 
         const retryStart = Date.now();
         try {
-          const retryRaw = await callProvider(provider, agent, rc, systemPrompt, retryContext);
+          const retryRaw = await callProvider(provider, agent, rc, systemPrompt, retryContext, undefined, phase);
           const rs = retryRaw.indexOf('{');
           const re = retryRaw.lastIndexOf('}');
           if (rs !== -1 && re !== -1) {
@@ -1187,6 +1206,8 @@ export async function summarizeAgentDecisions(agentId: string): Promise<void> {
       rc,
       `You are summarizing your own decision history. Write 2-3 sentences capturing the key themes, positions taken, and any shifts in your voting or behavior. Be specific about bills and policies.`,
       `Summarize these ${unsummarized.length} decisions:\n${decisionsText}\n\nRespond with ONLY the summary text, no JSON.`,
+      undefined,
+      'memory_summary',
     );
 
     const cleanSummary = summaryText.replace(/```/g, '').replace(/^["']|["']$/g, '').trim();
@@ -1244,7 +1265,7 @@ export async function generateGazetteArticle(
       `no markdown, no text outside the JSON.`;
     const contextMessage = `Today's verified events:\n${digest}\n\nWrite the recap now. JSON only.`;
 
-    const raw = await callProvider(provider, gazetteRecord, rc, systemPrompt, contextMessage);
+    const raw = await callProvider(provider, gazetteRecord, rc, systemPrompt, contextMessage, undefined, 'gazette');
 
     const s = raw.indexOf('{');
     const e = raw.lastIndexOf('}');
@@ -1349,7 +1370,7 @@ export async function generateTenKReport(
       `Reporting period: ${periodLabel}\n\nScoreboard digest (verified figures):\n${digest}\n\n` +
       `Write the report now. JSON only.`;
 
-    const raw = await callProvider(provider, tenKRecord, rc, systemPrompt, contextMessage, TEN_K_MAX_OUTPUT_TOKENS);
+    const raw = await callProvider(provider, tenKRecord, rc, systemPrompt, contextMessage, TEN_K_MAX_OUTPUT_TOKENS, 'ten_k_report');
     return parseTenKArticle(raw);
   } catch (err) {
     console.warn('[AI] 10-K report generation failed:', err instanceof Error ? err.message : err);

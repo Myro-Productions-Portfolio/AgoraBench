@@ -37,6 +37,7 @@ import {
   gazetteIssues,
   fiscalTickSummaries,
   metricSnapshots,
+  electionPolls,
 } from '@db/schema/index';
 import { generateAgentDecision, buildSimulationStateBlock, summarizeAgentDecisions, generateForumPost, generateForumReply, generateGazetteArticle, generateTenKReport } from '../services/ai.js';
 import { applyAmendment } from '../lib/applyAmendment.js';
@@ -57,7 +58,7 @@ import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
 import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
-import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
+import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, snapshotPolls, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5940,6 +5941,7 @@ agentTickQueue.process(async () => {
       const candidates = await db
         .select({
           agentId: campaigns.agentId,
+          campaignId: campaigns.id,
           platform: campaigns.platform,
           contributions: campaigns.contributions,
           endorsements: campaigns.endorsements,
@@ -6036,6 +6038,29 @@ agentTickQueue.process(async () => {
         }
       }
 
+      /* Latest poll for the ballot prompt (pollsEnabled only). */
+      const ballotPollShare = new Map<string, number>();
+      const ballotPollRank = new Map<string, number>();
+      if (rc.pollsEnabled) {
+        try {
+          const [pollRow] = await db
+            .select({ results: electionPolls.results })
+            .from(electionPolls)
+            .where(eq(electionPolls.electionId, election.id))
+            .orderBy(desc(electionPolls.tick))
+            .limit(1);
+          if (pollRow) {
+            const entries = Object.entries(pollRow.results).sort((a, b) => b[1] - a[1]);
+            entries.forEach(([campaignId, share], i) => {
+              ballotPollShare.set(campaignId, share);
+              ballotPollRank.set(campaignId, i + 1);
+            });
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 14 ballot: poll lookup failed (ballots proceed without it):', err);
+        }
+      }
+
       const candidateBlock = candidates
         .map((c) => {
           const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
@@ -6045,7 +6070,9 @@ agentTickQueue.process(async () => {
             if (!rc.endorsementsEnabled) return '';
             try { return `, endorsements: ${(JSON.parse(c.endorsements ?? '[]') as string[]).length}`; } catch { return ', endorsements: 0'; }
           })();
-          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%${endorsementNote}): ${c.platform}`;
+          const pollShare = ballotPollShare.get(c.campaignId);
+          const pollNote = pollShare !== undefined ? `, latest poll: ${pollShare}% (#${ballotPollRank.get(c.campaignId)})` : '';
+          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%${endorsementNote}${pollNote}): ${c.platform}`;
           const record = fiscalRecordMap.get(c.agentId);
           return record ? `${base}\n    ${record}` : base;
         })
@@ -6789,6 +6816,24 @@ agentTickQueue.process(async () => {
         cappedCampaigns15.push(campaign);
       }
 
+      /* Latest poll standings for speech context (pollsEnabled only —
+         yesterday's snapshot, since this tick's polls run after speeches). */
+      const latestPollByElection15 = new Map<string, Record<string, number>>();
+      if (rc.pollsEnabled && cappedCampaigns15.length > 0) {
+        try {
+          const pollRows15 = await db
+            .select({ electionId: electionPolls.electionId, results: electionPolls.results })
+            .from(electionPolls)
+            .where(inArray(electionPolls.electionId, campaigningElectionIds))
+            .orderBy(desc(electionPolls.tick));
+          for (const row of pollRows15) {
+            if (!latestPollByElection15.has(row.electionId)) latestPollByElection15.set(row.electionId, row.results);
+          }
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 poll context failed (speeches proceed without it):', err);
+        }
+      }
+
       const results = await Promise.allSettled(
         cappedCampaigns15.map((campaign) => {
           const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
@@ -6800,8 +6845,17 @@ agentTickQueue.process(async () => {
             ? `Your campaign war chest: $${Math.max(0, funds15.contributions - funds15.spent).toLocaleString('en-US')} on hand. `
             : '';
 
+          /* Own poll standing (pollsEnabled only — flag off adds nothing). */
+          const pollNote15 = (() => {
+            const pollResults = latestPollByElection15.get(election.id);
+            const share = pollResults?.[campaign.id];
+            if (share === undefined) return '';
+            const rank = Object.values(pollResults!).filter((v) => v > share).length + 1;
+            return `Latest poll: you stand at ${share}% (rank ${rank} of ${Object.keys(pollResults!).length}). `;
+          })();
+
           const contextMessage =
-            `You are campaigning for ${election.positionType}. ${financeNote15}Make a brief campaign statement that reflects your values and platform. ` +
+            `You are campaigning for ${election.positionType}. ${financeNote15}${pollNote15}Make a brief campaign statement that reflects your values and platform. ` +
             `Respond with: {"action":"campaign_speech","reasoning":"your one-line speech","data":{"boost":50}}`;
 
           return generateAgentDecision(
@@ -6900,6 +6954,16 @@ agentTickQueue.process(async () => {
           await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
           console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
         }
+      }
+    }
+
+    /* Poll snapshots — campaigning AND voting races, every tick, outside the
+       no-campaigning-elections guard so a voting-phase race still polls. */
+    if (rc.pollsEnabled) {
+      try {
+        await snapshotPolls({ activeAgents, tickNumber });
+      } catch (err) {
+        console.warn('[SIMULATION] Phase 15 poll snapshot error:', err);
       }
     }
   } catch (err) {

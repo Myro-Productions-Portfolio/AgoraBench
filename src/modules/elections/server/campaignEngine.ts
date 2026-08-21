@@ -14,27 +14,36 @@ import { eq, and, inArray, sql } from 'drizzle-orm';
 import { db } from '@db/connection';
 import {
   agents,
+  elections,
   campaigns,
   transactions,
   agentRelationships,
+  agentPolicyPositions,
   activityEvents,
   positions,
   parties,
   partyMemberships,
+  governmentEvents,
   campaignDonations,
   donationStances,
   campaignEndorsements,
+  electionPolls,
 } from '@db/schema/index';
 import { generateAgentDecision } from '@core/server/services/ai.js';
 import type { RuntimeConfig } from '@core/server/runtimeConfig';
+import { broadcast } from '@core/server/websocket.js';
 import { officeRank } from '@core/server/lib/electionMath.js';
 import {
   campaignRng,
   donationAmount,
   spendAmount,
+  computePollSnapshot,
   STANCE_ASKS_PER_TICK,
   ENDORSE_ASKS_PER_TICK,
+  DEBATE_GLOW_TICKS,
   type Generosity,
+  type PollVoter,
+  type PollCandidate,
 } from '@core/server/lib/campaignMath.js';
 
 export interface EngineElection {
@@ -57,6 +66,7 @@ export interface EngineAgent {
   personality: string | null;
   model?: string | null;
   ownerUserId?: string | null;
+  approvalRating?: number | null;
 }
 
 export interface CampaignFunds {
@@ -666,4 +676,142 @@ export async function runEndorsements(opts: {
     }
   }
   if (endorsed > 0) console.warn(`[CAMPAIGN] ${endorsed} endorsement(s) recorded`);
+}
+
+/* ── Polls — honest snapshots from the real ballot's signal families ─── */
+
+export async function snapshotPolls(opts: {
+  activeAgents: EngineAgent[];
+  tickNumber: number;
+}): Promise<void> {
+  const { activeAgents, tickNumber } = opts;
+
+  const pollElections = await db
+    .select({ id: elections.id, positionType: elections.positionType })
+    .from(elections)
+    .where(inArray(elections.status, ['campaigning', 'voting']));
+  if (pollElections.length === 0) return;
+
+  const campaignRows = await db
+    .select({
+      id: campaigns.id,
+      electionId: campaigns.electionId,
+      agentId: campaigns.agentId,
+      spent: campaigns.spent,
+    })
+    .from(campaigns)
+    .where(and(eq(campaigns.status, 'active'), inArray(campaigns.electionId, pollElections.map((e) => e.id))));
+  if (campaignRows.length === 0) return;
+
+  const agentIds = activeAgents.map((a) => a.id);
+  const [partyRows, policyRows] = await Promise.all([
+    db
+      .select({ agentId: partyMemberships.agentId, partyId: partyMemberships.partyId })
+      .from(partyMemberships)
+      .where(inArray(partyMemberships.agentId, agentIds)),
+    db
+      .select({
+        agentId: agentPolicyPositions.agentId,
+        category: agentPolicyPositions.category,
+        supportCount: agentPolicyPositions.supportCount,
+        opposeCount: agentPolicyPositions.opposeCount,
+      })
+      .from(agentPolicyPositions)
+      .where(inArray(agentPolicyPositions.agentId, agentIds)),
+  ]);
+  const partyByAgent = new Map(partyRows.map((r) => [r.agentId, r.partyId]));
+  const policyByAgent = new Map<string, Record<string, number>>();
+  for (const r of policyRows) {
+    let vec = policyByAgent.get(r.agentId);
+    if (!vec) { vec = {}; policyByAgent.set(r.agentId, vec); }
+    vec[r.category] = r.supportCount - r.opposeCount;
+  }
+
+  const agentById = new Map(activeAgents.map((a) => [a.id, a]));
+
+  for (const election of pollElections) {
+    try {
+      const raceCampaigns = campaignRows.filter((c) => c.electionId === election.id);
+      if (raceCampaigns.length === 0) continue;
+      const candidateIds = new Set(raceCampaigns.map((c) => c.agentId));
+
+      /* Electorate = active agents minus the race's own candidates — the
+         exact real-ballot eligibility set. */
+      const voterAgents = activeAgents.filter((a) => !candidateIds.has(a.id));
+      if (voterAgents.length === 0) continue;
+
+      const alignmentRows = await db
+        .select({
+          agentId: agentRelationships.agentId,
+          targetAgentId: agentRelationships.targetAgentId,
+          voteAlignment: agentRelationships.voteAlignment,
+        })
+        .from(agentRelationships)
+        .where(and(
+          inArray(agentRelationships.agentId, voterAgents.map((v) => v.id)),
+          inArray(agentRelationships.targetAgentId, [...candidateIds]),
+        ));
+      const alignmentMap = new Map<string, number>();
+      for (const r of alignmentRows) alignmentMap.set(`${r.agentId}:${r.targetAgentId}`, r.voteAlignment);
+
+      /* Debate glow: completed debates in this race won within the glow
+         window — read from the events table, no in-memory carry. */
+      const glowAgentIds = new Set<string>();
+      const debateRows = await db
+        .select({ outcome: governmentEvents.outcome, scheduledTick: governmentEvents.scheduledTick })
+        .from(governmentEvents)
+        .where(and(
+          eq(governmentEvents.type, 'campaign_debate'),
+          eq(governmentEvents.status, 'completed'),
+          eq(governmentEvents.relatedElectionId, election.id),
+        ));
+      for (const d of debateRows) {
+        if (d.scheduledTick == null || tickNumber - d.scheduledTick > DEBATE_GLOW_TICKS) continue;
+        try {
+          const outcome = JSON.parse(d.outcome ?? '{}') as { winnerAgentId?: string };
+          if (outcome.winnerAgentId) glowAgentIds.add(outcome.winnerAgentId);
+        } catch { /* malformed outcome — no glow */ }
+      }
+
+      const voters: PollVoter[] = voterAgents.map((v) => ({
+        id: v.id,
+        partyId: partyByAgent.get(v.id) ?? null,
+        policyVector: policyByAgent.get(v.id) ?? {},
+      }));
+      const candidates: PollCandidate[] = raceCampaigns.map((c) => ({
+        campaignId: c.id,
+        agentId: c.agentId,
+        approvalRating: agentById.get(c.agentId)?.approvalRating ?? 50,
+        partyId: partyByAgent.get(c.agentId) ?? null,
+        policyVector: policyByAgent.get(c.agentId) ?? {},
+        spent: c.spent ?? 0,
+        debateGlow: glowAgentIds.has(c.agentId),
+      }));
+
+      const snapshot = computePollSnapshot(election.id, tickNumber, voters, candidates, alignmentMap);
+      if (snapshot.sampleSize === 0) continue;
+
+      /* UNIQUE(election, tick) + do-nothing = crash-rerun safe. */
+      await db
+        .insert(electionPolls)
+        .values({
+          electionId: election.id,
+          tick: tickNumber,
+          results: snapshot.results,
+          undecidedPct: snapshot.undecidedPct,
+          sampleSize: snapshot.sampleSize,
+        })
+        .onConflictDoNothing();
+
+      broadcast('election:poll', {
+        electionId: election.id,
+        tick: tickNumber,
+        results: snapshot.results,
+        undecidedPct: snapshot.undecidedPct,
+        sampleSize: snapshot.sampleSize,
+      });
+    } catch (err) {
+      console.warn(`[CAMPAIGN] Poll snapshot failed (election ${election.id}):`, err instanceof Error ? err.message : err);
+    }
+  }
 }

@@ -12,6 +12,9 @@ interface CampaignCardProps {
   endorsements: number;
   contributions: number;
   pollPercentage: number;
+  /** True when pollPercentage is a real poll share (pollsEnabled snapshots)
+      rather than the contribution-share proxy — flips the label. */
+  pollIsReal?: boolean;
   accentColor: string;
   index: number;
 }
@@ -32,9 +35,11 @@ export function CampaignCard({
   endorsements,
   contributions,
   pollPercentage,
+  pollIsReal = false,
   index,
 }: CampaignCardProps) {
   const color = COLORS[index % COLORS.length];
+  const shareLabel = pollIsReal ? 'Poll standing' : 'Contribution share';
 
   return (
     <article className="card overflow-hidden transition-all duration-200 hover:-translate-y-0.5">
@@ -82,13 +87,14 @@ export function CampaignCard({
             aria-valuenow={pollPercentage}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Contribution share: ${pollPercentage}%`}
+            aria-label={`${shareLabel}: ${pollPercentage}%`}
           />
         </div>
-        {/* Every caller passes contribution share (no poll time-series exists) —
-            label it honestly (broadcast spec §4.2/§4.6). */}
+        {/* Label follows the data: real poll share when snapshots exist
+            (pollIsReal), else the contribution-share proxy — honestly named
+            either way (broadcast spec §4.2/§4.6). */}
         <div className="flex justify-between text-badge text-text-muted mb-4">
-          <span>Contribution share</span>
+          <span>{shareLabel}</span>
           <span className="font-mono">{pollPercentage}%</span>
         </div>
 

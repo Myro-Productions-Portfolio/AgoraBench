@@ -1112,6 +1112,7 @@ router.get('/admin/export/elections', requireOwner, async (_req, res, next) => {
         candidateName: candidateAgents.displayName,
         campaignStatus: campaigns.status,
         contributions: campaigns.contributions,
+        spent: campaigns.spent,
       })
       .from(elections)
       .leftJoin(winnerAgents, eq(elections.winnerId, winnerAgents.id))
@@ -1130,8 +1131,8 @@ router.get('/admin/export/elections', requireOwner, async (_req, res, next) => {
       .orderBy(desc(elections.createdAt));
 
     const csv = toCSV(
-      ['electionId', 'positionType', 'status', 'scheduledDate', 'votingStartDate', 'votingEndDate', 'certifiedDate', 'winnerName', 'totalVotes', 'campaignId', 'candidateName', 'campaignStatus', 'contributions'],
-      rows.map((r) => [r.electionId, r.positionType, r.status, r.scheduledDate?.toISOString(), r.votingStartDate?.toISOString(), r.votingEndDate?.toISOString(), r.certifiedDate?.toISOString(), r.winnerName, r.totalVotes, r.campaignId, r.candidateName, r.campaignStatus, r.contributions]),
+      ['electionId', 'positionType', 'status', 'scheduledDate', 'votingStartDate', 'votingEndDate', 'certifiedDate', 'winnerName', 'totalVotes', 'campaignId', 'candidateName', 'campaignStatus', 'contributions', 'spent'],
+      rows.map((r) => [r.electionId, r.positionType, r.status, r.scheduledDate?.toISOString(), r.votingStartDate?.toISOString(), r.votingEndDate?.toISOString(), r.certifiedDate?.toISOString(), r.winnerName, r.totalVotes, r.campaignId, r.candidateName, r.campaignStatus, r.contributions, r.spent]),
     );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="elections.csv"');

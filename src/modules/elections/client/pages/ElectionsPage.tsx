@@ -38,15 +38,25 @@ interface EnrichedCampaign {
 
 interface DetailCandidate {
   agentId: string;
+  campaignId: string;
   displayName: string;
   avatarConfig: string | null;
   alignment: string | null;
   platform: string;
   contributions: number;
+  spent: number;
   voteCount: number;
   votePercentage: number;
   party: { name: string; abbreviation: string } | null;
   isWinner: boolean;
+}
+
+/* Campaign-realism poll snapshot (results keyed by campaignId). */
+interface PollSnapshotRow {
+  tick: number;
+  results: Record<string, number>;
+  undecidedPct: number;
+  sampleSize: number;
 }
 
 interface ElectoralCollegeBlock {
@@ -69,6 +79,8 @@ interface ElectionDetail {
   winnerId: string | null;
   candidates: DetailCandidate[];
   rollCall: { voterId: string; candidateId: string | null }[];
+  pollHistory?: PollSnapshotRow[];
+  latestPoll?: PollSnapshotRow;
   electoralCollege?: ElectoralCollegeBlock;
 }
 
@@ -440,16 +452,61 @@ function NationalTally({
 
 /* ── Candidate dossier drawer (real data only — no sparklines, no itinerary) ─ */
 
+/* ── Poll trend sparkline (campaign realism — renders only with 2+ snapshots) ── */
+
+function PollSparkline({
+  history,
+  candidates,
+  colorByAgent,
+}: {
+  history: PollSnapshotRow[];
+  candidates: DetailCandidate[];
+  colorByAgent: Record<string, string>;
+}) {
+  if (history.length < 2 || candidates.length === 0) return null;
+  const W = 280;
+  const H = 72;
+  const PAD = 4;
+  const xs = (i: number) => PAD + (i * (W - 2 * PAD)) / (history.length - 1);
+  const ys = (v: number) => H - PAD - (Math.min(100, Math.max(0, v)) * (H - 2 * PAD)) / 100;
+  return (
+    <div className="rounded-lg border border-border bg-surface p-4 mt-4">
+      <h4 className="text-badge text-text-muted mb-2">Poll Trend</h4>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label="Poll share trend by candidate">
+        {candidates.map((c) => (
+          <polyline
+            key={c.campaignId}
+            points={history.map((row, i) => `${xs(i)},${ys(row.results[c.campaignId] ?? 0)}`).join(' ')}
+            fill="none"
+            stroke={colorByAgent[c.agentId] ?? '#888888'}
+            strokeWidth={1.5}
+          />
+        ))}
+      </svg>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+        {candidates.map((c) => (
+          <span key={c.campaignId} className="flex items-center gap-1 text-badge text-text-muted">
+            <span className="inline-block w-2 h-2 rounded-full" style={{ background: colorByAgent[c.agentId] ?? '#888888' }} />
+            {c.displayName}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DossierDrawer({
   candidate,
   campaign,
   contributionShare,
+  pollShare,
   showVotes,
   onClose,
 }: {
   candidate: DetailCandidate;
   campaign: EnrichedCampaign | null;
   contributionShare: number;
+  pollShare: number | null;
   showVotes: boolean;
   onClose: () => void;
 }) {
@@ -511,6 +568,18 @@ function DossierDrawer({
             <div className="font-mono text-lg text-gold">{contributionShare}%</div>
             <div className="text-stat-label text-text-muted uppercase">Contribution share</div>
           </div>
+          {candidate.spent > 0 && (
+            <div className="rounded border border-border/50 bg-capitol-deep/30 p-3">
+              <div className="font-mono text-lg text-gold">{formatMoney(candidate.spent)}</div>
+              <div className="text-stat-label text-text-muted uppercase">Spent</div>
+            </div>
+          )}
+          {pollShare !== null && (
+            <div className="rounded border border-border/50 bg-capitol-deep/30 p-3">
+              <div className="font-mono text-lg text-gold">{pollShare}%</div>
+              <div className="text-stat-label text-text-muted uppercase">Poll standing</div>
+            </div>
+          )}
           {campaign && (
             <div className="rounded border border-border/50 bg-capitol-deep/30 p-3">
               <div className="font-mono text-lg text-gold">{parseEndorsementCount(campaign.endorsements)}</div>
@@ -783,6 +852,17 @@ export function ElectionsPage() {
     };
   }, [phase, detailTargetId, fetchDetail, fetchElectoral, subscribe]);
 
+  /* Poll snapshots land once per tick — refetch the focused race's detail
+     (campaign trail and election night alike). */
+  useEffect(() => {
+    if (!detailTargetId) return;
+    const unsub = subscribe('election:poll', (data) => {
+      const electionId = (data as { electionId?: string } | null)?.electionId;
+      if (!electionId || electionId === detailTargetId) void fetchDetail(detailTargetId);
+    });
+    return () => unsub();
+  }, [detailTargetId, fetchDetail, subscribe]);
+
   /* ── Derived view data ── */
 
   const activeDetail = detail && detail.id === detailTargetId ? detail : null;
@@ -801,6 +881,17 @@ export function ElectionsPage() {
   const totalContributions = candidates.reduce((sum, c) => sum + c.contributions, 0);
   const contributionShareOf = (c: DetailCandidate): number =>
     totalContributions > 0 ? Math.round((c.contributions / totalContributions) * 100) : 0;
+
+  /* Real poll data (pollsEnabled snapshots) — when present it replaces the
+     contribution-share proxy everywhere a share renders. */
+  const latestPoll = activeDetail?.latestPoll ?? null;
+  const pollHistory = activeDetail?.pollHistory ?? [];
+  const pollShareOf = (c: DetailCandidate): number | null =>
+    latestPoll ? latestPoll.results[c.campaignId] ?? 0 : null;
+  const displayShareOf = (c: DetailCandidate): number => pollShareOf(c) ?? contributionShareOf(c);
+  const pollLeader = latestPoll
+    ? [...candidates].sort((a, b) => (pollShareOf(b) ?? 0) - (pollShareOf(a) ?? 0))[0] ?? null
+    : null;
 
   const campaignByAgent = useMemo(() => {
     const map: Record<string, EnrichedCampaign> = {};
@@ -877,7 +968,9 @@ export function ElectionsPage() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     {[...candidates]
-                      .sort((a, b) => b.contributions - a.contributions)
+                      .sort((a, b) => latestPoll
+                        ? (pollShareOf(b) ?? 0) - (pollShareOf(a) ?? 0)
+                        : b.contributions - a.contributions)
                       .map((c, idx) => (
                         <CampaignCard
                           key={c.agentId}
@@ -888,7 +981,8 @@ export function ElectionsPage() {
                           platform={c.platform}
                           endorsements={campaignByAgent[c.agentId] ? parseEndorsementCount(campaignByAgent[c.agentId]!.endorsements) : 0}
                           contributions={c.contributions}
-                          pollPercentage={contributionShareOf(c)}
+                          pollPercentage={displayShareOf(c)}
+                          pollIsReal={latestPoll !== null}
                           accentColor={CAMPAIGN_ACCENT_COLORS[idx % CAMPAIGN_ACCENT_COLORS.length]!}
                           index={idx}
                         />
@@ -923,8 +1017,15 @@ export function ElectionsPage() {
                   { label: 'Candidates', value: candidates.length },
                   { label: 'Parties', value: new Set(candidates.filter((c) => c.party).map((c) => c.party!.name)).size },
                   { label: 'Total raised', value: formatMoney(totalContributions) },
+                  ...(latestPoll && pollLeader
+                    ? [
+                        { label: 'Leading (poll)', value: `${pollLeader.displayName} — ${pollShareOf(pollLeader) ?? 0}%` },
+                        { label: 'Undecided', value: `${latestPoll.undecidedPct}%` },
+                      ]
+                    : []),
                 ]}
               />
+              <PollSparkline history={pollHistory} candidates={candidates} colorByAgent={colorByAgent} />
               <div className="relative min-h-[440px]">
                 <ActivityFeed items={activityItems} fill />
               </div>
@@ -1119,6 +1220,7 @@ export function ElectionsPage() {
           candidate={dossierCandidate}
           campaign={campaignByAgent[dossierCandidate.agentId] ?? null}
           contributionShare={contributionShareOf(dossierCandidate)}
+          pollShare={pollShareOf(dossierCandidate)}
           showVotes={phase !== 'campaign'}
           onClose={() => setDossierAgentId(null)}
         />

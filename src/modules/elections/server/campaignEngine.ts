@@ -17,16 +17,23 @@ import {
   campaigns,
   transactions,
   agentRelationships,
+  activityEvents,
+  positions,
+  parties,
+  partyMemberships,
   campaignDonations,
   donationStances,
+  campaignEndorsements,
 } from '@db/schema/index';
 import { generateAgentDecision } from '@core/server/services/ai.js';
 import type { RuntimeConfig } from '@core/server/runtimeConfig';
+import { officeRank } from '@core/server/lib/electionMath.js';
 import {
   campaignRng,
   donationAmount,
   spendAmount,
   STANCE_ASKS_PER_TICK,
+  ENDORSE_ASKS_PER_TICK,
   type Generosity,
 } from '@core/server/lib/campaignMath.js';
 
@@ -489,4 +496,174 @@ export async function runCampaignSpending(opts: {
     console.warn(`[CAMPAIGN] ${spendCount} campaign(s) spent $${spendTotal.toLocaleString('en-US')} total`);
   }
   return funds;
+}
+
+/* ── Endorsements — public signals from the political establishment ──── */
+
+/** Eligible endorser set for one race: (active officeholders ∪ party
+    leaders) − race candidates − already-decided, id-sorted (deterministic
+    ask order). Pure — exported for the set-math test. */
+export function eligibleEndorsers(input: {
+  officeholderIds: Iterable<string>;
+  partyLeaderIds: Iterable<string>;
+  candidateIds: Set<string>;
+  decidedIds: Set<string>;
+}): string[] {
+  const pool = new Set<string>([...input.officeholderIds, ...input.partyLeaderIds]);
+  return [...pool]
+    .filter((id) => !input.candidateIds.has(id) && !input.decidedIds.has(id))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export async function runEndorsements(opts: {
+  elections: EngineElection[];
+  campaigns: EngineCampaign[];
+  activeAgents: EngineAgent[];
+  platformByCampaignId: Map<string, string>;
+  tickNumber: number;
+  rc: Readonly<RuntimeConfig>;
+  updateApproval: (agentId: string, delta: number, eventType: string, reason: string) => Promise<void>;
+}): Promise<void> {
+  const { elections: races, activeAgents, platformByCampaignId, tickNumber, rc } = opts;
+  if (races.length === 0) return;
+
+  const raceIds = races.map((e) => e.id);
+  const agentById = new Map(activeAgents.map((a) => [a.id, a]));
+
+  const [officeholderRows, leaderRows, existing] = await Promise.all([
+    db
+      .select({ agentId: positions.agentId, type: positions.type })
+      .from(positions)
+      .where(eq(positions.isActive, true)),
+    db
+      .select({ agentId: partyMemberships.agentId })
+      .from(partyMemberships)
+      .innerJoin(parties, eq(partyMemberships.partyId, parties.id))
+      .where(and(eq(partyMemberships.role, 'leader'), eq(parties.isActive, true))),
+    db
+      .select({ electionId: campaignEndorsements.electionId, endorserAgentId: campaignEndorsements.endorserAgentId })
+      .from(campaignEndorsements)
+      .where(inArray(campaignEndorsements.electionId, raceIds)),
+  ]);
+
+  const officeholderIds = officeholderRows.filter((p) => officeRank(p.type) > 0).map((p) => p.agentId);
+  const partyLeaderIds = leaderRows.map((r) => r.agentId);
+  const decidedByElection = new Map<string, Set<string>>();
+  for (const row of existing) {
+    let set = decidedByElection.get(row.electionId);
+    if (!set) { set = new Set(); decidedByElection.set(row.electionId, set); }
+    set.add(row.endorserAgentId);
+  }
+
+  const asks: Array<{ election: EngineElection; endorser: EngineAgent; raceCampaigns: EngineCampaign[] }> = [];
+  for (const election of [...races].sort((a, b) => a.id.localeCompare(b.id))) {
+    const raceCampaigns = opts.campaigns.filter((c) => c.electionId === election.id && c.status === 'active');
+    if (raceCampaigns.length === 0) continue;
+    const eligible = eligibleEndorsers({
+      officeholderIds,
+      partyLeaderIds,
+      candidateIds: new Set(raceCampaigns.map((c) => c.agentId)),
+      decidedIds: decidedByElection.get(election.id) ?? new Set(),
+    });
+    for (const endorserId of eligible) {
+      const endorser = agentById.get(endorserId);
+      if (!endorser) continue;
+      asks.push({ election, endorser, raceCampaigns });
+      if (asks.length >= ENDORSE_ASKS_PER_TICK) break;
+    }
+    if (asks.length >= ENDORSE_ASKS_PER_TICK) break;
+  }
+  if (asks.length === 0) return;
+
+  const results = await Promise.allSettled(
+    asks.map(({ election, endorser, raceCampaigns }) => {
+      const candidateBlock = raceCampaigns
+        .map((c) => {
+          const name = agentById.get(c.agentId)?.displayName ?? 'Unknown';
+          const platform = (platformByCampaignId.get(c.id) ?? '').slice(0, 200);
+          return `  - ${name} (id: ${c.agentId}): ${platform}`;
+        })
+        .join('\n');
+      const contextMessage =
+        `A ${election.positionType} election campaign is underway. Candidates:\n${candidateBlock}\n\n` +
+        `As a public figure, you may publicly endorse one candidate — a visible signal voters will see — or stay neutral. ` +
+        `Respond with: {"action":"endorsement","reasoning":"one sentence","data":{"endorse":true,"candidateId":"<chosen candidate id, or null to stay neutral>"}}`;
+      return generateAgentDecision(agentRecord(endorser, rc), contextMessage, 'endorsement')
+        .then((decision) => ({ election, endorser, raceCampaigns, decision }));
+    }),
+  );
+
+  let endorsed = 0;
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.warn('[CAMPAIGN] Endorsement call rejected (retry next tick):', result.reason);
+      continue;
+    }
+    const { election, endorser, raceCampaigns, decision } = result.value;
+    if (decision.action === 'idle' && decision.reasoning === 'api error') continue;
+
+    let target: EngineCampaign | null = null;
+    if (decision.action === 'endorsement') {
+      const rawEndorse = decision.data?.['endorse'];
+      const wants = rawEndorse === true || String(rawEndorse).toLowerCase() === 'true' || String(rawEndorse).toLowerCase() === 'yes';
+      if (wants) {
+        const candidateId = String(decision.data?.['candidateId'] ?? '');
+        target = raceCampaigns.find((c) => c.agentId === candidateId) ?? null;
+      }
+    }
+
+    if (!target) {
+      /* Asked-and-neutral marker (campaignId NULL) — never re-asked. */
+      await db
+        .insert(campaignEndorsements)
+        .values({ electionId: election.id, endorserAgentId: endorser.id, campaignId: null, tick: tickNumber })
+        .onConflictDoNothing();
+      continue;
+    }
+
+    const chosen = target;
+    const candidateName = agentById.get(chosen.agentId)?.displayName ?? 'Unknown';
+    try {
+      let applied = false;
+      await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(campaignEndorsements)
+          .values({ electionId: election.id, endorserAgentId: endorser.id, campaignId: chosen.id, tick: tickNumber })
+          .onConflictDoNothing()
+          .returning({ id: campaignEndorsements.id });
+        if (inserted.length === 0) return; // lost a rerun race — already decided
+        /* Write-through into the legacy JSON cache so the existing readers
+           (boost multiplier, ElectionsPage, DossierDrawer, agentProfile)
+           keep working with zero edits. Read-merge-write, never overwrite. */
+        const [row] = await tx
+          .select({ endorsements: campaigns.endorsements })
+          .from(campaigns)
+          .where(eq(campaigns.id, chosen.id))
+          .limit(1);
+        let list: string[] = [];
+        try { list = JSON.parse(row?.endorsements ?? '[]') as string[]; } catch { list = []; }
+        if (!list.includes(endorser.id)) {
+          await tx
+            .update(campaigns)
+            .set({ endorsements: JSON.stringify([...list, endorser.id]) })
+            .where(eq(campaigns.id, chosen.id));
+        }
+        applied = true;
+      });
+      if (!applied) continue;
+
+      await db.insert(activityEvents).values({
+        type: 'campaign_endorsement',
+        agentId: endorser.id,
+        title: 'Campaign endorsement',
+        description: `${endorser.displayName} endorsed ${candidateName} for ${election.positionType}: ${decision.reasoning}`.slice(0, 1000),
+        metadata: JSON.stringify({ electionId: election.id, campaignId: chosen.id, candidateId: chosen.agentId }),
+      });
+      await opts.updateApproval(chosen.agentId, 1, 'endorsement_received', `${candidateName} was endorsed by ${endorser.displayName}`);
+      endorsed += 1;
+    } catch (err) {
+      console.warn(`[CAMPAIGN] Endorsement write failed (${endorser.id} -> ${chosen.id}):`, err instanceof Error ? err.message : err);
+    }
+  }
+  if (endorsed > 0) console.warn(`[CAMPAIGN] ${endorsed} endorsement(s) recorded`);
 }

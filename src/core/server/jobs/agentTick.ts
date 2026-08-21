@@ -57,7 +57,7 @@ import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
 import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
-import { runDonationStances, runDonationDrip, runCampaignSpending, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
+import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -5942,6 +5942,7 @@ agentTickQueue.process(async () => {
           agentId: campaigns.agentId,
           platform: campaigns.platform,
           contributions: campaigns.contributions,
+          endorsements: campaigns.endorsements,
           displayName: agents.displayName,
           alignment: agents.alignment,
           approvalRating: agents.approvalRating,
@@ -6038,7 +6039,13 @@ agentTickQueue.process(async () => {
       const candidateBlock = candidates
         .map((c) => {
           const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
-          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%): ${c.platform}`;
+          /* Public-signal riders (flags off = byte-identical ballot prompt).
+             Contributions stay campaign-side — never shown to voters. */
+          const endorsementNote = (() => {
+            if (!rc.endorsementsEnabled) return '';
+            try { return `, endorsements: ${(JSON.parse(c.endorsements ?? '[]') as string[]).length}`; } catch { return ', endorsements: 0'; }
+          })();
+          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%${endorsementNote}): ${c.platform}`;
           const record = fiscalRecordMap.get(c.agentId);
           return record ? `${base}\n    ${record}` : base;
         })
@@ -6707,10 +6714,10 @@ agentTickQueue.process(async () => {
          Each sub-block is caught separately: finance can never fail the tick,
          and a failed drip still lets spending run on yesterday's chest. */
       let campaignFundsById = new Map<string, CampaignFunds>();
+      const platformByCampaignId15 = new Map(activeCampaigns.map((c) => [c.id, c.platform]));
       if (rc.campaignFinanceEnabled) {
-        const platformByCampaignId = new Map(activeCampaigns.map((c) => [c.id, c.platform]));
         try {
-          await runDonationStances({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId, tickNumber, rc });
+          await runDonationStances({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId: platformByCampaignId15, tickNumber, rc });
         } catch (err) {
           console.warn('[SIMULATION] Phase 15 donation stances error:', err);
         }
@@ -6723,6 +6730,15 @@ agentTickQueue.process(async () => {
           campaignFundsById = await runCampaignSpending({ elections: activeCampaigningElections, activeAgents, tickNumber, rc });
         } catch (err) {
           console.warn('[SIMULATION] Phase 15 campaign spending error:', err);
+        }
+      }
+
+      /* Endorsements — own flag, independent of the finance switch. */
+      if (rc.endorsementsEnabled) {
+        try {
+          await runEndorsements({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId: platformByCampaignId15, tickNumber, rc, updateApproval });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 endorsements error:', err);
         }
       }
 
@@ -7430,6 +7446,8 @@ agentTickQueue.process(async () => {
                entry, upheld rulings never reach the Gazette
                (law_struck_down is already listed above). */
             'law_upheld',
+            /* Campaign realism — same hard-whitelist rule. */
+            'campaign_endorsement',
           ]),
           gte(activityEvents.createdAt, tickFiredAt),
         ))

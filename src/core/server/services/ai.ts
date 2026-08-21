@@ -65,6 +65,8 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   nominate:            'nominate',
   /* Campaign realism: one-time donor stance per (election, agent) */
   donation_stance:     'donation_stance',
+  /* Campaign realism: one-time endorsement decision per (election, endorser) */
+  endorsement:         'endorsement',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action

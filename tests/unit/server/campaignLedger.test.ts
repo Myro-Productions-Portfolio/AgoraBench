@@ -1,10 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
+import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
   donationLedgerRows, expenditureLedgerRows, chooseDonationTarget,
   type EngineCampaign,
 } from '@modules/elections/server/campaignEngine';
 import { donationAmount, spendAmount, campaignRng } from '@core/server/lib/campaignMath';
 import { tallyElectionVotes, pickContributionsFallback, selectTopNWinners, type CandidateStanding } from '@core/server/lib/electionMath';
+import { campaignDonations } from '@modules/elections/db/schema/campaignFinance';
+import { campaigns } from '@modules/elections/db/schema/elections';
 
 /* ---- Conservation fold — the engine materializes exactly these row
        shapes inside its per-donation / per-expenditure transactions. ---- */
@@ -73,6 +78,110 @@ describe('donation ledger conservation', () => {
       expect(spent).toBeLessThanOrEqual(contributions);
     }
     expect(spent).toBeGreaterThan(0);
+  });
+});
+
+/* ---- Rerun safety: the two money movers under same-tickNumber reruns --
+       Bull retries + stalled-job requeue re-run a tick with the SAME
+       tickNumber. Schema constraints + write predicates make both movers
+       0-row no-ops on the second pass; these tests pin (1) the schema
+       declarations and the engine's write protocol (source-structural,
+       same style as campaignMintBranch.test.ts), and (2) the rollback
+       semantics as a ledger fold. ---- */
+
+const engineSource = readFileSync(
+  resolve(__dirname, '../../../src/modules/elections/server/campaignEngine.ts'),
+  'utf8',
+);
+
+describe('rerun-safe money movers', () => {
+  it('campaign_donations declares UNIQUE(campaign_id, donor_agent_id, tick)', () => {
+    const cfg = getTableConfig(campaignDonations);
+    const unique = cfg.uniqueConstraints.find(
+      (u) => u.name === 'campaign_donations_campaign_donor_tick_unique',
+    );
+    expect(unique).toBeDefined();
+    expect(unique!.columns.map((c) => c.name).sort()).toEqual(
+      ['campaign_id', 'donor_agent_id', 'tick'].sort(),
+    );
+  });
+
+  it('campaigns carries last_spend_tick and the engine guards the spend UPDATE with it', () => {
+    const cfg = getTableConfig(campaigns);
+    expect(cfg.columns.some((c) => c.name === 'last_spend_tick')).toBe(true);
+    /* Source pins: rerun predicate + overspend predicate on the UPDATE, and
+       the ledger insert only after the guard (guarded.length check). */
+    expect(engineSource).toContain('lastSpendTick} IS NULL OR ${campaigns.lastSpendTick} <');
+    expect(engineSource).toContain('spent} + ${amount} <= ${campaigns.contributions}');
+    expect(engineSource.indexOf('guarded.length === 0')).toBeGreaterThan(-1);
+    expect(engineSource.indexOf('guarded.length === 0')).toBeLessThan(
+      engineSource.indexOf('expenditureLedgerRows({ amount, candidateName, positionType })'),
+    );
+  });
+
+  it('drip tracks the RETURNING balance, never an in-memory subtraction', () => {
+    expect(engineSource).toContain('balances.set(donorId, newBalance)');
+    expect(engineSource).not.toContain('balances.set(donorId, (balances.get(donorId) ?? 0) - amount)');
+    /* And the drip insert must NOT swallow the rerun violation (match the
+       call form — a comment naming the API is allowed). */
+    const dripSlice = engineSource.slice(
+      engineSource.indexOf('export async function runDonationDrip'),
+      engineSource.indexOf('export async function runCampaignSpending'),
+    );
+    expect(dripSlice).not.toContain('.onConflictDoNothing(');
+  });
+
+  it('rerun fold: a duplicate (campaign, donor, tick) aborts the whole donation, rolling the debit back', () => {
+    /* Models the engine tx protocol: debit -> tx row -> donation insert
+       (unique-guarded) -> contributions. A dup key throws mid-tx; every
+       prior write in the model is discarded, mirroring ROLLBACK. */
+    const seen = new Set<string>();
+    let balance = 250_000;
+    let contributions = 0;
+    const apply = (campaignId: string, donorId: string, tick: number, amount: number): void => {
+      const pre = { balance, contributions };
+      try {
+        balance -= amount;
+        const key = `${campaignId}:${donorId}:${tick}`;
+        if (seen.has(key)) throw new Error('campaign_donations_campaign_donor_tick_unique');
+        seen.add(key);
+        contributions += amount;
+      } catch (err) {
+        balance = pre.balance;
+        contributions = pre.contributions;
+        throw err;
+      }
+    };
+    apply('c1', 'donor-1', 100, 500);
+    expect(balance).toBe(249_500);
+    expect(contributions).toBe(500);
+    expect(() => apply('c1', 'donor-1', 100, 500)).toThrow(/campaign_donations_campaign_donor_tick_unique/);
+    expect(balance).toBe(249_500);      // debit rolled back
+    expect(contributions).toBe(500);    // no double credit
+  });
+
+  it('spend fold: same-tick rerun and overspend are 0-row no-ops (no ledger row, no spent change)', () => {
+    let spent = 0;
+    let lastSpendTick: number | null = null;
+    const contributions = 1_000;
+    const ledgerRows: number[] = [];
+    const guardedSpend = (tick: number, amount: number): boolean => {
+      const passes = (lastSpendTick === null || lastSpendTick < tick) && spent + amount <= contributions;
+      if (!passes) return false;   // 0 rows -> tx commits empty, nothing written
+      spent += amount;
+      lastSpendTick = tick;
+      ledgerRows.push(amount);
+      return true;
+    };
+    expect(guardedSpend(100, 400)).toBe(true);
+    expect(guardedSpend(100, 400)).toBe(false);  // rerun, same tick
+    expect(spent).toBe(400);
+    expect(ledgerRows).toEqual([400]);
+    expect(guardedSpend(101, 700)).toBe(false);  // 400 + 700 > 1000 overspend
+    expect(spent).toBe(400);
+    expect(guardedSpend(101, 600)).toBe(true);   // exactly to the chest limit
+    expect(spent).toBe(1_000);
+    expect(ledgerRows).toEqual([400, 600]);
   });
 });
 

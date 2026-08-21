@@ -23,6 +23,10 @@
 -- Deploy dark: nothing writes these until campaignFinanceEnabled flips.
 
 ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "spent" bigint NOT NULL DEFAULT 0;--> statement-breakpoint
+-- last_spend_tick: rerun guard — the spend UPDATE's predicate (last_spend_tick
+-- IS NULL OR last_spend_tick < tick AND spent + X <= contributions) makes a
+-- crashed-tick rerun a 0-row no-op instead of a double spend.
+ALTER TABLE "campaigns" ADD COLUMN IF NOT EXISTS "last_spend_tick" integer;--> statement-breakpoint
 ALTER TABLE "campaigns" ALTER COLUMN "contributions" SET DATA TYPE bigint;--> statement-breakpoint
 ALTER TABLE "government_events" ADD COLUMN IF NOT EXISTS "scheduled_tick" integer;--> statement-breakpoint
 
@@ -33,7 +37,11 @@ CREATE TABLE IF NOT EXISTS "campaign_donations" (
   "donor_agent_id" uuid NOT NULL REFERENCES "agents"("id"),
   "amount" bigint NOT NULL,
   "tick" integer NOT NULL,
-  "created_at" timestamp with time zone DEFAULT now() NOT NULL
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  -- Rerun guard: a crashed-tick rerun re-attempts the same (campaign, donor,
+  -- tick) triple; the violation aborts that donation's transaction so the
+  -- wallet debit rolls back with it. One drip per donor per campaign per tick.
+  CONSTRAINT "campaign_donations_campaign_donor_tick_unique" UNIQUE ("campaign_id", "donor_agent_id", "tick")
 );--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "campaign_donations_campaign_id_idx" ON "campaign_donations" ("campaign_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "campaign_donations_donor_agent_id_idx" ON "campaign_donations" ("donor_agent_id");--> statement-breakpoint

@@ -21,6 +21,11 @@ export const campaignDonations = pgTable(
   (t) => ({
     campaignIdx: index('campaign_donations_campaign_id_idx').on(t.campaignId),
     donorIdx: index('campaign_donations_donor_agent_id_idx').on(t.donorAgentId),
+    /* Rerun guard: violation aborts the drip transaction, rolling the wallet
+       debit back with it — one drip per donor per campaign per tick. */
+    campaignDonorTickUnique: unique('campaign_donations_campaign_donor_tick_unique').on(
+      t.campaignId, t.donorAgentId, t.tick,
+    ),
   }),
 );
 

@@ -387,6 +387,7 @@ export async function runDonationDrip(opts: {
       if (amount <= 0) return;
       const candidateName = agentById.get(target.agentId)?.displayName ?? 'Unknown';
       try {
+        let newBalance = 0;
         await db.transaction(async (tx) => {
           /* balanceAfter comes from RETURNING — the exact post-debit chain
              value, never an in-memory subtraction. */
@@ -396,6 +397,7 @@ export async function runDonationDrip(opts: {
             .where(and(eq(agents.id, donorId), sql`${agents.balance} >= ${amount}`))
             .returning({ balance: agents.balance });
           if (!updated) throw new Error('insufficient balance');
+          newBalance = updated.balance;
           const rows = donationLedgerRows({
             donorId,
             amount,
@@ -408,17 +410,25 @@ export async function runDonationDrip(opts: {
             selfFunded,
           });
           await tx.insert(transactions).values(rows.txRow);
+          /* No onConflictDoNothing: a crashed-tick rerun re-attempts the same
+             (campaign, donor, tick) triple — the unique violation aborts this
+             transaction, rolling the wallet debit back with it. */
           await tx.insert(campaignDonations).values(rows.donationRow);
           await tx
             .update(campaigns)
             .set({ contributions: sql`${campaigns.contributions} + ${rows.contributionsDelta}` })
             .where(eq(campaigns.id, target.id));
         });
-        balances.set(donorId, (balances.get(donorId) ?? 0) - amount);
+        balances.set(donorId, newBalance);
         donationCount += 1;
         donationTotal += amount;
       } catch (err) {
-        console.warn(`[CAMPAIGN] Donation failed (${donorId} -> ${target.id}):`, err instanceof Error ? err.message : err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('campaign_donations_campaign_donor_tick_unique')) {
+          console.warn(`[CAMPAIGN] Donation skipped (${donorId} -> ${target.id}): already recorded this tick (rerun)`);
+        } else {
+          console.warn(`[CAMPAIGN] Donation failed (${donorId} -> ${target.id}):`, msg);
+        }
       }
     };
 
@@ -486,21 +496,37 @@ export async function runCampaignSpending(opts: {
     const candidateName = agentById.get(row.agentId)?.displayName ?? 'Unknown';
     const positionType = electionById.get(row.electionId)?.positionType ?? 'office';
     try {
+      /* Guarded spend: the predicate makes a crashed-tick rerun (same
+         tickNumber, lastSpendTick already stamped) and any would-be overspend
+         a 0-row no-op — the ledger row is only written after the guard
+         reports exactly one row, inside the same transaction. */
+      let applied = false;
       await db.transaction(async (tx) => {
+        const guarded = await tx
+          .update(campaigns)
+          .set({ spent: sql`${campaigns.spent} + ${amount}`, lastSpendTick: tickNumber })
+          .where(and(
+            eq(campaigns.id, row.id),
+            sql`(${campaigns.lastSpendTick} IS NULL OR ${campaigns.lastSpendTick} < ${tickNumber})`,
+            sql`${campaigns.spent} + ${amount} <= ${campaigns.contributions}`,
+          ))
+          .returning({ id: campaigns.id });
+        if (guarded.length === 0) return;
         const rowsOut = expenditureLedgerRows({ amount, candidateName, positionType });
         await tx.insert(transactions).values(rowsOut.txRow);
-        await tx
-          .update(campaigns)
-          .set({ spent: sql`${campaigns.spent} + ${rowsOut.spentDelta}` })
-          .where(eq(campaigns.id, row.id));
+        applied = true;
       });
-      funds.set(row.id, {
-        spentThisTick: amount,
-        contributions: row.contributions ?? 0,
-        spent: (row.spent ?? 0) + amount,
-      });
-      spendCount += 1;
-      spendTotal += amount;
+      if (applied) {
+        funds.set(row.id, {
+          spentThisTick: amount,
+          contributions: row.contributions ?? 0,
+          spent: (row.spent ?? 0) + amount,
+        });
+        spendCount += 1;
+        spendTotal += amount;
+      } else {
+        funds.set(row.id, { spentThisTick: 0, contributions: row.contributions ?? 0, spent: row.spent ?? 0 });
+      }
     } catch (err) {
       funds.set(row.id, { spentThisTick: 0, contributions: row.contributions ?? 0, spent: row.spent ?? 0 });
       console.warn(`[CAMPAIGN] Expenditure failed (campaign ${row.id}):`, err instanceof Error ? err.message : err);

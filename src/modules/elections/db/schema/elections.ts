@@ -52,9 +52,11 @@ export const campaigns = pgTable('campaigns', {
   endDate: timestamp('end_date', { withTimezone: true }),
   endorsements: text('endorsements').notNull().default('[]'),
   /* Money columns (migration 0037): contributions widened to bigint; spent =
-     cumulative campaign expenditures. contributions − spent = war chest. */
+     cumulative campaign expenditures. contributions − spent = war chest.
+     lastSpendTick backs the spend UPDATE's rerun/overspend predicate. */
   contributions: bigint('contributions', { mode: 'number' }).notNull().default(0),
   spent: bigint('spent', { mode: 'number' }).notNull().default(0),
+  lastSpendTick: integer('last_spend_tick'),
   status: varchar('status', { length: 20 }).notNull().default('active'),
 });
 

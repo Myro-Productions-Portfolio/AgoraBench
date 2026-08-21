@@ -56,6 +56,8 @@ import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants'
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
+import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
+import { runDonationStances, runDonationDrip, runCampaignSpending, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
 import { pullRealitySnapshots, backfillHistory, REALITY_PULL_EVERY_N_TICKS } from '@modules/government/server/lib/realityFeed.js';
 import { pullScoreboardReality } from '@modules/government/server/lib/scoreboardFeed.js';
@@ -6700,6 +6702,30 @@ agentTickQueue.process(async () => {
         .from(campaigns)
         .where(and(eq(campaigns.status, 'active'), inArray(campaigns.electionId, campaigningElectionIds)));
 
+      /* Campaign finance (deploy dark): stances -> drip/self-fund -> spending.
+         Iterates ALL active campaigns — never behind the speech-chance filter.
+         Each sub-block is caught separately: finance can never fail the tick,
+         and a failed drip still lets spending run on yesterday's chest. */
+      let campaignFundsById = new Map<string, CampaignFunds>();
+      if (rc.campaignFinanceEnabled) {
+        const platformByCampaignId = new Map(activeCampaigns.map((c) => [c.id, c.platform]));
+        try {
+          await runDonationStances({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, platformByCampaignId, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 donation stances error:', err);
+        }
+        try {
+          await runDonationDrip({ elections: activeCampaigningElections, campaigns: activeCampaigns, activeAgents, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 donation drip error:', err);
+        }
+        try {
+          campaignFundsById = await runCampaignSpending({ elections: activeCampaigningElections, activeAgents, tickNumber, rc });
+        } catch (err) {
+          console.warn('[SIMULATION] Phase 15 campaign spending error:', err);
+        }
+      }
+
       /* Filter eligible campaigns with desperation-gradient speech chance */
       const eligibleCampaigns: typeof activeCampaigns = [];
       for (const campaign of activeCampaigns) {
@@ -6728,7 +6754,8 @@ agentTickQueue.process(async () => {
           rc.campaignSpeechChance * urgencyFactor * (1 + deficitRatio * 0.5) * approvalModifier15,
         );
 
-        if (Math.random() >= dynamicSpeechChance) continue;
+        /* Seeded roll (campaign-realism rider): replayable from (tick, id). */
+        if (campaignRng(tickNumber, campaign.id, 'speech')() >= dynamicSpeechChance) continue;
         eligibleCampaigns.push(campaign);
       }
 
@@ -6751,8 +6778,14 @@ agentTickQueue.process(async () => {
           const election = activeCampaigningElections.find((e) => e.id === campaign.electionId)!;
           const campaignAgent = activeAgents.find((a) => a.id === campaign.agentId)!;
 
+          /* War-chest note (finance era only — flag off adds nothing). */
+          const funds15 = campaignFundsById.get(campaign.id);
+          const financeNote15 = rc.campaignFinanceEnabled && funds15
+            ? `Your campaign war chest: $${Math.max(0, funds15.contributions - funds15.spent).toLocaleString('en-US')} on hand. `
+            : '';
+
           const contextMessage =
-            `You are campaigning for ${election.positionType}. Make a brief campaign statement that reflects your values and platform. ` +
+            `You are campaigning for ${election.positionType}. ${financeNote15}Make a brief campaign statement that reflects your values and platform. ` +
             `Respond with: {"action":"campaign_speech","reasoning":"your one-line speech","data":{"boost":50}}`;
 
           return generateAgentDecision(
@@ -6786,32 +6819,71 @@ agentTickQueue.process(async () => {
         /* Enforce max speeches per tick */
         if ((speechCountThisTick.get(campaign.agentId) ?? 0) >= rc.maxCampaignSpeechesPerTick) continue;
 
-        const rawBoost = Number(decision.data?.['boost'] ?? 50);
-        const clampedBoost = Math.max(10, Math.min(100, rawBoost));
+        if (rc.campaignFinanceEnabled) {
+          /* Real-money era: speeches persuade, never mint. Approval bump is
+             reach-scaled by this tick's spending; the speech also lands as a
+             visible retrospective rally on the events calendar. */
+          const reach15 = reachFactor(campaignFundsById.get(campaign.id)?.spentThisTick ?? 0);
+          const speechDelta15 = speechApprovalDelta(reach15);
 
-        /* Scale boost by approval and endorsement count */
-        const endorsementCount = (() => {
-          try { return (JSON.parse(campaign.endorsements ?? '[]') as string[]).length; } catch { return 0; }
-        })();
-        const boost = Math.round(
-          clampedBoost
-          * ((campaignAgent.approvalRating ?? 50) / 50)
-          * (1 + endorsementCount * 0.10),
-        );
+          await db.insert(activityEvents).values({
+            type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
+            description: decision.reasoning,
+            metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, reach: Number(reach15.toFixed(2)), approvalDelta: speechDelta15 }),
+          });
+          broadcast('campaign:speech', {
+            campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
+            agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost: 0,
+          });
+          speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
+          await updateApproval(campaignAgent.id, speechDelta15, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
+          try {
+            await db.insert(governmentEvents).values({
+              type: 'election_rally',
+              title: `Campaign rally: ${campaignAgent.displayName}`.slice(0, 200),
+              description: decision.reasoning.slice(0, 500),
+              scheduledAt: new Date(),
+              durationMinutes: 60,
+              organizerId: campaignAgent.id,
+              attendeeIds: JSON.stringify([campaignAgent.id]),
+              status: 'completed',
+              relatedElectionId: election.id,
+              scheduledTick: tickNumber,
+            });
+          } catch (err) {
+            console.warn('[SIMULATION] Phase 15 rally row failed (speech already recorded):', err);
+          }
+          console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (approval +${speechDelta15}, reach ${reach15.toFixed(2)})`);
+        } else {
+          /* Legacy speech-mint — byte-identical flag-off behavior, pinned by
+             tests/unit/server/campaignMintBranch.test.ts. Do not touch. */
+          const rawBoost = Number(decision.data?.['boost'] ?? 50);
+          const clampedBoost = Math.max(10, Math.min(100, rawBoost));
 
-        await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
-        await db.insert(activityEvents).values({
-          type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
-          description: decision.reasoning,
-          metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, boost }),
-        });
-        broadcast('campaign:speech', {
-          campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
-          agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost,
-        });
-        speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
-        await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
-        console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
+          /* Scale boost by approval and endorsement count */
+          const endorsementCount = (() => {
+            try { return (JSON.parse(campaign.endorsements ?? '[]') as string[]).length; } catch { return 0; }
+          })();
+          const boost = Math.round(
+            clampedBoost
+            * ((campaignAgent.approvalRating ?? 50) / 50)
+            * (1 + endorsementCount * 0.10),
+          );
+
+          await db.update(campaigns).set({ contributions: sql`${campaigns.contributions} + ${boost}` }).where(eq(campaigns.id, campaign.id));
+          await db.insert(activityEvents).values({
+            type: 'campaign_speech', agentId: campaignAgent.id, title: 'Campaign speech',
+            description: decision.reasoning,
+            metadata: JSON.stringify({ campaignId: campaign.id, electionId: election.id, positionType: election.positionType, boost }),
+          });
+          broadcast('campaign:speech', {
+            campaignId: campaign.id, electionId: election.id, agentId: campaignAgent.id,
+            agentName: campaignAgent.displayName, positionType: election.positionType, speech: decision.reasoning, boost,
+          });
+          speechCountThisTick.set(campaign.agentId, (speechCountThisTick.get(campaign.agentId) ?? 0) + 1);
+          await updateApproval(campaignAgent.id, 1, 'campaign_speech', `${campaignAgent.displayName} gave a campaign speech`);
+          console.warn(`[SIMULATION] ${campaignAgent.displayName} made campaign speech for ${election.positionType} (+${boost} contributions)`);
+        }
       }
     }
   } catch (err) {

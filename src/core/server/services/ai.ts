@@ -63,6 +63,8 @@ const PHASE_ACTION_MAP: Record<string, string> = {
   court_opinion:       'write_opinion',
   /* Appointment flow: president nominates a candidate for a vacant seat */
   nominate:            'nominate',
+  /* Campaign realism: one-time donor stance per (election, agent) */
+  donation_stance:     'donation_stance',
 };
 
 // Known aliases that Ollama and other models hallucinate for each canonical action

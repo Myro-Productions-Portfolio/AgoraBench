@@ -57,6 +57,7 @@ import { ALIGNMENT_ORDER, COMMITTEE_TYPES, GOVERNMENT } from '@shared/constants'
 import { alignmentDistance } from '../services/simulationCore.js';
 import { finalizeElection } from '@modules/elections/server/finalizeElection.js';
 import { pickSpeakerNominees, tallyMajorityBallot, type SeatedMember, tenureTicksPreferred, presidentTermExpired, filterCandidacyEligible, registrationShouldClose, electionTickSchedule, registrationShouldCloseAtTick, votingShouldOpenAtTick, votingShouldCloseAtTick, wallDateForTick, ELECTION_LIFECYCLE_TYPES, ELECTION_OFFICE_LABEL, candidacyExcludedAgentIds, congressGeneralDue } from '../lib/electionMath.js';
+import { buildBallotCandidateLines, buildBallotContextMessage } from '../lib/ballotPrompt.js';
 import { campaignRng, reachFactor, speechApprovalDelta } from '../lib/campaignMath.js';
 import { runDonationStances, runDonationDrip, runCampaignSpending, runEndorsements, snapshotPolls, scheduleDebates, cancelPendingDebates, runDueDebates, type CampaignFunds } from '@modules/elections/server/campaignEngine.js';
 import { runAppointment, getSittingPresident } from '@modules/government/server/appointments.js';
@@ -6083,22 +6084,29 @@ agentTickQueue.process(async () => {
         }
       }
 
-      const candidateBlock = candidates
-        .map((c) => {
-          const party = candidatePartyMap.get(c.agentId) ?? 'Independent';
-          /* Public-signal riders (flags off = byte-identical ballot prompt).
-             Contributions stay campaign-side — never shown to voters. */
-          const endorsementNote = (() => {
-            if (!rc.endorsementsEnabled) return '';
-            try { return `, endorsements: ${(JSON.parse(c.endorsements ?? '[]') as string[]).length}`; } catch { return ', endorsements: 0'; }
-          })();
+      /* Compact, budgeted candidate lines (ballot-truncation fix — see
+         ballotPrompt.ts): platforms excerpted so a crowded field fits
+         rc.maxPromptLengthChars instead of overflowing it. */
+      const candidateBlock = buildBallotCandidateLines(
+        candidates.map((c) => {
           const pollShare = ballotPollShare.get(c.campaignId);
-          const pollNote = pollShare !== undefined ? `, latest poll: ${pollShare}% (#${ballotPollRank.get(c.campaignId)})` : '';
-          const base = `  - ${c.displayName} (id: ${c.agentId}, party: ${party}, approval: ${c.approvalRating ?? 50}%${endorsementNote}${pollNote}): ${c.platform}`;
-          const record = fiscalRecordMap.get(c.agentId);
-          return record ? `${base}\n    ${record}` : base;
-        })
-        .join('\n');
+          return {
+            agentId: c.agentId,
+            displayName: c.displayName,
+            party: candidatePartyMap.get(c.agentId) ?? 'Independent',
+            approvalRating: c.approvalRating,
+            platform: c.platform,
+            /* Public-signal riders (flags off = byte-identical ballot prompt).
+               Contributions stay campaign-side — never shown to voters. */
+            endorsementNote: (() => {
+              if (!rc.endorsementsEnabled) return '';
+              try { return `, endorsements: ${(JSON.parse(c.endorsements ?? '[]') as string[]).length}`; } catch { return ', endorsements: 0'; }
+            })(),
+            pollNote: pollShare !== undefined ? `, latest poll: ${pollShare}% (#${ballotPollRank.get(c.campaignId)})` : '',
+            fiscalRecord: fiscalRecordMap.get(c.agentId) ?? null,
+          };
+        }),
+      ).join('\n');
 
       const results = await Promise.allSettled(
         eligibleVoters.map((voter) => {
@@ -6112,11 +6120,9 @@ agentTickQueue.process(async () => {
             .filter((l): l is string => l !== null)
             .join('\n');
 
-          const contextMessage =
-            `You are voting in the ${election.positionType} election. Candidates:\n${candidateBlock}` +
-            (alignmentLines ? `\n\n${alignmentLines}` : '') +
-            `\n\nRespond with exactly this JSON structure: ` +
-            `{"action":"election_vote","reasoning":"one sentence","data":{"candidateId":"<the id of your chosen candidate>"}}`;
+          /* Instruction-FIRST assembly: truncation can never eat the
+             response-format instruction again (the zero-ballot root cause). */
+          const contextMessage = buildBallotContextMessage(election.positionType, candidateBlock, alignmentLines);
 
           return generateAgentDecision(
             {
